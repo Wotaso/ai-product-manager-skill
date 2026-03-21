@@ -1,7 +1,36 @@
 # Product Manager Skill
 
-A focused agent skill to help product teams turn analytics and user signals into clear product decisions, prioritized execution plans, and actionable engineering tasks.
-This is the canonical merged skill for PM outputs plus growth-autopilot issue generation.
+Use this skill to turn product signals into prioritized decisions, execution plans, and implementation-ready tasks.
+
+## Start Here
+
+### 1) Prerequisites
+
+- A coding agent (Codex, Claude Code, or OpenClaw).
+- If you want automatic/autopilot execution, prefer OpenClaw.
+- `node` + `npx` installed.
+- Optional for auto issue creation: `GITHUB_TOKEN`.
+
+### 2) Install
+
+Install from the dedicated repository:
+
+```bash
+npx skills add Wotaso/ai-product-manager-skill
+```
+
+### 3) Init Prompt (copy/paste)
+
+```text
+Use product-manager-skill.
+Analyze this week-over-week funnel drop (signup -> activation),
+propose top 3 opportunities by expected impact, and output:
+1) hypothesis
+2) KPI target
+3) implementation scope
+4) acceptance criteria
+5) release risk
+```
 
 ## What This Skill Does
 
@@ -26,36 +55,9 @@ It can help you:
 - roadmap prioritization under limited engineering capacity
 - post-launch readouts and next-step recommendations
 
-## Installation
-
-Install the whole skill pack:
-
-```bash
-npx skills add wotaso/analyticscli-skills
-```
-
-Install only this skill:
-
-```bash
-npx skills add wotaso/analyticscli-skills --skill product-manager-skill
-```
-
 ## Quick Start
 
-After installation, call the skill with a concrete PM task and context.
-
-Example prompt:
-
-```text
-Use product-manager-skill.
-Analyze this week-over-week funnel drop (signup -> activation),
-propose top 3 opportunities by expected impact, and output:
-1) hypothesis
-2) KPI target
-3) implementation scope
-4) acceptance criteria
-5) release risk
-```
+After installation, run the init prompt above with your real analytics and product context.
 
 ## Recommended Inputs
 
@@ -124,7 +126,7 @@ GITHUB_TOKEN=ghp_xxx node scripts/openclaw-growth-engineer.mjs \
 
 ## Versioning
 
-Keep instruction-pack changes in `SKILL.md` metadata versioning once the skill is added to the public pack.
+Keep instruction-pack changes in `SKILL.md` metadata versioning in the dedicated public repo.
 
 ## License
 
