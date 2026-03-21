@@ -21,7 +21,7 @@ This skill is kept for backward compatibility only.
 Install and use:
 
 ```bash
-npx skills add wotaso/analyticscli-skills --skill product-manager-skill
+npx skills add Wotaso/ai-product-manager-skill
 ```
 
 ## References
