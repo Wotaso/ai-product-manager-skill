@@ -39,7 +39,7 @@ metadata: {"author":"wotaso","version":"0.4.0","openclaw":{"emoji":"📌","homep
 - strategic context (OKRs, business goals, target segment)
 - existing roadmap or in-flight initiatives
 - repository root (for file/module mapping when generating issue drafts)
-- GitHub repo + token (only when issue auto-creation is requested)
+- GitHub repo + token (required baseline; use least-privilege fine-grained token)
 
 ## Autopilot Preconditions (Mandatory)
 
@@ -57,10 +57,11 @@ Before running issue generation/autopilot mode, verify and report:
 - Runtime dependencies:
   - `node` for analyzer/runner
   - `analyticscli` CLI for analytics data extraction
+  - `analyticscli-cli` skill must be installed/fetched (for canonical analytics source refresh workflow)
   - optional charting: `python3` + `matplotlib`
 - Secrets:
-  - `GITHUB_TOKEN` (required when `--create-issues`)
-  - `ANALYTICSCLI_READONLY_TOKEN`
+  - `GITHUB_TOKEN` (required baseline; fine-grained PAT with repository `Issues: Read/Write`, `Contents: Read`)
+  - `ANALYTICSCLI_READONLY_TOKEN` (recommended; required for non-keychain CLI auth)
   - `REVENUECAT_API_KEY`
   - `SENTRY_AUTH_TOKEN`
   - optional `FEEDBACK_API_TOKEN`

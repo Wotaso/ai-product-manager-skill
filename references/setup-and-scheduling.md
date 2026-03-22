@@ -37,7 +37,7 @@ This writes non-secret configuration to:
 
 Expected environment variable names:
 
-- `GITHUB_TOKEN`
+- `GITHUB_TOKEN` (required baseline; fine-grained PAT with `Issues: Read/Write` + `Contents: Read`)
 - `ANALYTICSCLI_READONLY_TOKEN`
 - `REVENUECAT_API_KEY`
 - `SENTRY_AUTH_TOKEN`
@@ -109,8 +109,9 @@ The check validates:
 - config file readability
 - source paths/commands
 - required binaries (`analyticscli`, `python3`)
+- required skill availability (`analyticscli-cli`)
 - optional chart dependency (`matplotlib`)
-- required env vars for configured actions
+- required env vars for baseline execution (`GITHUB_TOKEN`) and enabled channels
 - live connector/API smoke tests for enabled channels
 
 ## 5) Data Refresh Workflow
@@ -155,7 +156,7 @@ node scripts/openclaw-growth-engineer.mjs \
 
 ## 8) GitHub Issue Creation
 
-Use `--create-issues` only when `GITHUB_TOKEN` is available:
+Use a fine-grained `GITHUB_TOKEN` (no full-account token needed):
 
 ```bash
 node scripts/openclaw-growth-engineer.mjs \

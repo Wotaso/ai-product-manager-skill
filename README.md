@@ -11,8 +11,9 @@ It also supports a growth-autopilot workflow that can generate and optionally cr
 - If you want automatic/autopilot execution, prefer OpenClaw.
 - `node` + `npx` installed.
 - For analytics source preparation: `analyticscli` CLI.
+- `analyticscli-cli` skill installed/fetched.
+- GitHub repo configured + `GITHUB_TOKEN` available (least privilege).
 - For charting: `python3` + `matplotlib`.
-- Optional for auto issue creation: `GITHUB_TOKEN`.
 
 ### 2) Install
 
@@ -113,7 +114,7 @@ You should expect structured PM artifacts such as:
 
 | Env var | Required when | Where to get it | Minimum scope |
 | --- | --- | --- | --- |
-| `GITHUB_TOKEN` | only for `--create-issues` | GitHub -> Settings -> Developer settings -> Fine-grained PAT | Repository Issues: Read/Write, Contents: Read |
+| `GITHUB_TOKEN` | baseline requirement for this workflow | GitHub -> Settings -> Developer settings -> Fine-grained PAT | Repository Issues: Read/Write, Contents: Read (no full token needed) |
 | `ANALYTICSCLI_READONLY_TOKEN` | analytics source in command mode (or explicit token use) | `dash.analyticscli.com` -> Project -> API Keys -> `readonly_token` | Read-only analytics access |
 | `REVENUECAT_API_KEY` | RevenueCat source refresh | RevenueCat dashboard -> Project -> API Keys -> Secret API key | Read-only where possible |
 | `SENTRY_AUTH_TOKEN` | Sentry source refresh | Sentry -> User Settings -> Auth Tokens | Read-only issue/event scopes |
