@@ -41,14 +41,12 @@ propose top 3 opportunities by expected impact, and output:
 When user says "start/run the skill", the agent should not ask generic intake questions first.
 It should execute:
 
-1. Try repo mode first:
-   - `node scripts/openclaw-growth-start.mjs --config data/openclaw-growth-engineer/config.json`
-2. Always support portable mode first-class:
+1. Run portable startup checks first-class:
    - validate `analyticscli` + auth + `GITHUB_TOKEN` + repo detection
    - run bounded `analyticscli` queries
    - generate prioritized issue drafts and create GitHub issues when allowed
-3. If repo helper scripts are missing, portable mode must continue (missing script is not a blocker by itself).
-4. If blockers exist in either mode: stop and return concrete missing/failing items (no manual summary intake).
+2. Missing local repo scripts must never block startup.
+3. If blockers exist: stop and return concrete missing/failing items (no manual summary intake).
 
 Important:
 - In `start/run` mode, missing prerequisites should be returned as a blocker checklist (config/API keys/access), not as a request for manual analytics summaries.
