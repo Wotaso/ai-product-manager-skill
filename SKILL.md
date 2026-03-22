@@ -3,7 +3,7 @@ name: product-manager-skill
 description: Turn analytics and customer signals into prioritized product decisions, PRD drafts, experiment plans, and implementation-ready GitHub backlog issues.
 license: MIT
 homepage: https://github.com/wotaso/analyticscli-skills
-metadata: {"author":"wotaso","version":"0.7.0","openclaw":{"emoji":"📌","homepage":"https://github.com/wotaso/analyticscli-skills"}}
+metadata: {"author":"wotaso","version":"0.8.0","openclaw":{"emoji":"📌","homepage":"https://github.com/wotaso/analyticscli-skills"}}
 ---
 
 # Product Manager Skill
@@ -27,6 +27,7 @@ metadata: {"author":"wotaso","version":"0.7.0","openclaw":{"emoji":"📌","homep
 - For implementation outputs, include explicit file/module hypotheses.
 - For autopilot mode, run a preflight checklist and list missing dependencies/secrets explicitly.
 - If the user says "start/run the skill", do not ask generic discovery questions first. Run the startup protocol below.
+- In `start/run`, never require workspace-local helper files under `scripts/` or `data/` as a hard prerequisite.
 
 ## Required Inputs (Manual PM Mode Only)
 
@@ -88,7 +89,7 @@ This protocol must work even when the user prompt is vague and even when repo-sp
    - include command to repeat the same run path
 
 Never block on "please provide goal + datasource" if config and sources already exist.
-Never fail only because files like `scripts/openclaw-growth-start.mjs` are missing in the workspace.
+Never fail only because local helper files are missing in the workspace.
 If config or runtime prerequisites are missing, return only a concrete missing-items checklist (config path, API keys, repo access, missing binaries/skills). Do not ask for manual data summaries in start/run mode.
 
 ## Standard Output Format

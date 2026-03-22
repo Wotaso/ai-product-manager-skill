@@ -51,6 +51,7 @@ It should execute:
 Important:
 - In `start/run` mode, missing prerequisites should be returned as a blocker checklist (config/API keys/access), not as a request for manual analytics summaries.
 - Missing local repo scripts must not be treated as hard stop; portable mode is required.
+- Missing workspace files under `scripts/` or `data/` must not be treated as blockers in portable mode.
 
 ## Required Tooling And Data Connectors
 
@@ -154,7 +155,7 @@ Issue quality depends on code scanning.
 - Optionally restrict scanning with `--code-roots apps,packages` for speed and relevance.
 - If code is not readable, the analyzer falls back to low-confidence module hypotheses.
 
-## Local Autopilot Workflow
+## Local Monorepo Workflow (Optional, not required for OpenClaw start/run)
 
 This skill includes the local MVP autopilot flow via:
 

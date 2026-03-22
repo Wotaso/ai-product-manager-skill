@@ -104,7 +104,7 @@ OpenClaw/ClawHub installs can run in two modes:
 - Portable mode: no repo scripts; run setup + first pass directly from `analyticscli` + GitHub API checks.
 
 Portable mode must not ask for manual analytics summary files during `start/run`.
-Missing repo scripts alone must not block execution.
+Missing repo scripts or other workspace-local helper files alone must not block execution.
 
 Preferred (auto setup + first run orchestration):
 
