@@ -155,6 +155,12 @@ Issue quality depends on code scanning.
 - Optionally restrict scanning with `--code-roots apps,packages` for speed and relevance.
 - If code is not readable, the analyzer falls back to low-confidence module hypotheses.
 
+## Bundled Runtime (ClawHub / OpenClaw installs)
+
+The published skill includes the same growth-engineer scripts and `data/openclaw-growth-engineer/*.example.json` templates as the Agentic Analytics monorepo, under `scripts/` and `data/` at the project root after install. That is what OpenClaw uses for `node scripts/openclaw-growth-start.mjs`.
+
+In the upstream monorepo, those files are mirrored from `scripts/` and `data/openclaw-growth-engineer/` via `pnpm pm-skill:sync-runtime` whenever the canonical scripts change.
+
 ## Local Monorepo Workflow (Optional, not required for OpenClaw start/run)
 
 This skill includes the local MVP autopilot flow via:
