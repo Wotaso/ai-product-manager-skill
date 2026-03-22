@@ -1,6 +1,7 @@
 # Product Manager Skill
 
 Use this skill to turn product signals into prioritized decisions, execution plans, and implementation-ready tasks.
+It also supports a growth-autopilot workflow that can generate and optionally create GitHub issues from analytics + code context.
 
 ## Start Here
 
@@ -9,6 +10,8 @@ Use this skill to turn product signals into prioritized decisions, execution pla
 - A coding agent (Codex, Claude Code, or OpenClaw).
 - If you want automatic/autopilot execution, prefer OpenClaw.
 - `node` + `npx` installed.
+- For analytics source preparation: `analyticscli` CLI.
+- For charting: `python3` + `matplotlib`.
 - Optional for auto issue creation: `GITHUB_TOKEN`.
 
 ### 2) Install
@@ -31,6 +34,22 @@ propose top 3 opportunities by expected impact, and output:
 4) acceptance criteria
 5) release risk
 ```
+
+## Required Tooling And Data Connectors
+
+Install AnalyticsCLI tools:
+
+```bash
+npm i -g @analyticscli/cli
+npm i @analyticscli/sdk@preview
+```
+
+Notes:
+
+- The SDK package is currently published on `@preview`.
+- When stable releases are available, use `@analyticscli/sdk` without a dist-tag.
+- RevenueCat data is expected via RevenueCat MCP/agent export to `revenuecat_summary.json`.
+- Sentry data is expected via Sentry MCP/agent export to `sentry_summary.json`.
 
 ## What This Skill Does
 
@@ -79,6 +98,45 @@ You should expect structured PM artifacts such as:
 - post-release KPI review template
 - ranked issue drafts with file/module hypotheses and implementation steps
 
+## Required Secrets (What We Need + Where To Get It)
+
+| Env var | Required when | Where to get it | Minimum scope |
+| --- | --- | --- | --- |
+| `GITHUB_TOKEN` | only for `--create-issues` | GitHub -> Settings -> Developer settings -> Fine-grained PAT | Repository Issues: Read/Write, Contents: Read |
+| `ANALYTICSCLI_READONLY_TOKEN` | analytics source in command mode (or explicit token use) | `dash.analyticscli.com` -> Project -> API Keys -> `readonly_token` | Read-only analytics access |
+| `REVENUECAT_API_KEY` | RevenueCat source refresh | RevenueCat dashboard -> Project -> API Keys -> Secret API key | Read-only where possible |
+| `SENTRY_AUTH_TOKEN` | Sentry source refresh | Sentry -> User Settings -> Auth Tokens | Read-only issue/event scopes |
+| `FEEDBACK_API_TOKEN` | optional public feedback API | generate random secret (`openssl rand -hex 32`) | Token match only |
+
+Detailed secret guidance: [`references/required-secrets.md`](references/required-secrets.md)
+
+## Secure Secret Storage Standard (OpenClaw + VPS)
+
+These rules are mandatory:
+
+- Never store tokens in repo files, JSON config, command arguments, or logs.
+- Store secrets in OpenClaw secret storage and inject only at runtime.
+- On VPS, keep secrets in a root-owned env file outside the repository.
+- Restrict file permissions (`0600`) and owner (`root:root`).
+
+Recommended VPS baseline:
+
+1. Create `/etc/openclaw-growth/env` (outside git checkout), owned by root, mode `600`.
+2. Put only `KEY=VALUE` lines there.
+3. Reference it from `systemd` via `EnvironmentFile=/etc/openclaw-growth/env`.
+4. Run the service under a dedicated non-root user with repo read access.
+
+Full setup examples: [`references/setup-and-scheduling.md`](references/setup-and-scheduling.md)
+
+## Ensure Code Can Be Read (For File/Module Mapping)
+
+Issue quality depends on code scanning.
+
+- Always set `--repo-root` to the target repository root.
+- Ensure the runner user can read that directory recursively.
+- Optionally restrict scanning with `--code-roots apps,packages` for speed and relevance.
+- If code is not readable, the analyzer falls back to low-confidence module hypotheses.
+
 ## Local Autopilot Workflow
 
 This skill includes the local MVP autopilot flow via:
@@ -86,6 +144,12 @@ This skill includes the local MVP autopilot flow via:
 - `scripts/openclaw-growth-engineer.mjs`
 - `scripts/openclaw-growth-wizard.mjs`
 - `scripts/openclaw-growth-runner.mjs`
+
+Preflight checks (dependencies, files, secrets):
+
+```bash
+node scripts/openclaw-growth-preflight.mjs --config data/openclaw-growth-engineer/config.json
+```
 
 Generate issue drafts:
 
@@ -98,6 +162,16 @@ node scripts/openclaw-growth-engineer.mjs \
   --max-issues 4
 ```
 
+Generate charts from analytics signals (`matplotlib`):
+
+```bash
+python3 -m pip install matplotlib
+python3 scripts/openclaw-growth-charts.py \
+  --analytics data/openclaw-growth-engineer/analytics_summary.example.json \
+  --out-dir data/openclaw-growth-engineer/charts \
+  --manifest data/openclaw-growth-engineer/charts.manifest.json
+```
+
 Generate and auto-create GitHub issues:
 
 ```bash
@@ -106,6 +180,7 @@ GITHUB_TOKEN=ghp_xxx node scripts/openclaw-growth-engineer.mjs \
   --revenuecat data/openclaw-growth-engineer/revenuecat_summary.example.json \
   --sentry data/openclaw-growth-engineer/sentry_summary.example.json \
   --repo-root . \
+  --chart-manifest data/openclaw-growth-engineer/charts.manifest.json \
   --create-issues \
   --repo owner/repo \
   --labels ai-growth,autogenerated,product
@@ -123,6 +198,14 @@ GITHUB_TOKEN=ghp_xxx node scripts/openclaw-growth-engineer.mjs \
 2. Validate top recommendations with engineering + design.
 3. Convert approved outputs into tickets.
 4. Review KPI movement after release and rerun the skill.
+
+## References
+
+- [`SKILL.md`](SKILL.md)
+- [`references/setup-and-scheduling.md`](references/setup-and-scheduling.md)
+- [`references/required-secrets.md`](references/required-secrets.md)
+- [`references/input-schema.md`](references/input-schema.md)
+- [`references/issue-template.md`](references/issue-template.md)
 
 ## Versioning
 
