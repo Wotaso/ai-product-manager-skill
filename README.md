@@ -35,6 +35,17 @@ propose top 3 opportunities by expected impact, and output:
 5) release risk
 ```
 
+### 4) OpenClaw "Start Skill" Behavior
+
+When user says "start/run the skill", the agent should not ask generic intake questions first.
+It should execute:
+
+1. `node scripts/openclaw-growth-preflight.mjs --config data/openclaw-growth-engineer/config.json --test-connections`
+2. If preflight has fails: stop and return concrete missing/failing items.
+3. If preflight passes and user explicitly asked to start: run first pass immediately:
+   - `node scripts/openclaw-growth-runner.mjs --config data/openclaw-growth-engineer/config.json`
+4. If user did not explicitly ask to start, ask once whether first run should begin now.
+
 ## Required Tooling And Data Connectors
 
 Install AnalyticsCLI tools:
@@ -148,7 +159,7 @@ This skill includes the local MVP autopilot flow via:
 Preflight checks (dependencies, files, secrets):
 
 ```bash
-node scripts/openclaw-growth-preflight.mjs --config data/openclaw-growth-engineer/config.json
+node scripts/openclaw-growth-preflight.mjs --config data/openclaw-growth-engineer/config.json --test-connections
 ```
 
 Generate issue drafts:

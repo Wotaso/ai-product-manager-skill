@@ -101,7 +101,7 @@ Do not place secret values in unit files, repository files, shell history, or co
 Run preflight:
 
 ```bash
-node scripts/openclaw-growth-preflight.mjs --config data/openclaw-growth-engineer/config.json
+node scripts/openclaw-growth-preflight.mjs --config data/openclaw-growth-engineer/config.json --test-connections
 ```
 
 The check validates:
@@ -111,6 +111,7 @@ The check validates:
 - required binaries (`analyticscli`, `python3`)
 - optional chart dependency (`matplotlib`)
 - required env vars for configured actions
+- live connector/API smoke tests for enabled channels
 
 ## 5) Data Refresh Workflow
 
