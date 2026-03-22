@@ -157,9 +157,21 @@ Issue quality depends on code scanning.
 
 ## Bundled Runtime (ClawHub / OpenClaw installs)
 
-The published skill includes the same growth-engineer scripts and `data/openclaw-growth-engineer/*.example.json` templates as the Agentic Analytics monorepo, under `scripts/` and `data/` at the project root after install. That is what OpenClaw uses for `node scripts/openclaw-growth-start.mjs`.
+The published skill ships the same growth-engineer scripts and `data/openclaw-growth-engineer/*.example.json` templates as the Agentic Analytics monorepo. ClawHub installs them under **`skills/product-manager-skill/`**, while OpenClaw and the docs assume **`scripts/`** and **`data/`** at the **workspace root**.
 
-In the upstream monorepo, those files are mirrored from `scripts/` and `data/openclaw-growth-engineer/` via `pnpm pm-skill:sync-runtime` whenever the canonical scripts change.
+After install, run this **once** from the workspace root (it copies into `./scripts` and `./data/openclaw-growth-engineer`):
+
+```bash
+bash skills/product-manager-skill/scripts/bootstrap-openclaw-workspace.sh
+```
+
+Then:
+
+```bash
+node scripts/openclaw-growth-start.mjs --config data/openclaw-growth-engineer/config.json
+```
+
+In the upstream monorepo, files under `skills/product-manager-skill/` are mirrored from `scripts/` and `data/openclaw-growth-engineer/` via `pnpm pm-skill:sync-runtime` whenever the canonical scripts change.
 
 ## Local Monorepo Workflow (Optional, not required for OpenClaw start/run)
 

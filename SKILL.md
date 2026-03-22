@@ -3,7 +3,7 @@ name: product-manager-skill
 description: Turn analytics and customer signals into prioritized product decisions, PRD drafts, experiment plans, and implementation-ready GitHub backlog issues.
 license: MIT
 homepage: https://github.com/wotaso/analyticscli-skills
-metadata: {"author":"wotaso","version":"0.8.1","openclaw":{"emoji":"📌","homepage":"https://github.com/wotaso/analyticscli-skills"}}
+metadata: {"author":"wotaso","version":"0.8.2","openclaw":{"emoji":"📌","homepage":"https://github.com/wotaso/analyticscli-skills"}}
 ---
 
 # Product Manager Skill
@@ -73,6 +73,11 @@ If anything is missing, stop autopilot and return a concrete "missing items" lis
 
 When the user asks to start/run/kick off the skill, execute this exact sequence.
 This protocol must work even when the user prompt is vague and even when repo-specific helper scripts are missing.
+
+0. ClawHub layout (only when `scripts/openclaw-growth-start.mjs` is missing at workspace root):
+   - ClawHub installs skills under `skills/<slug>/`. If `skills/product-manager-skill/scripts/openclaw-growth-start.mjs` exists but `scripts/openclaw-growth-start.mjs` does not, run once from workspace root:
+     - `bash skills/product-manager-skill/scripts/bootstrap-openclaw-workspace.sh`
+   - Then the standard paths `scripts/...` and `data/openclaw-growth-engineer/...` exist at the workspace root for tools that expect them.
 
 1. Start in portable mode first (always):
    - Ensure dependencies and auth without asking for manual analytics summaries:

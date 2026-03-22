@@ -100,7 +100,8 @@ Do not place secret values in unit files, repository files, shell history, or co
 
 OpenClaw/ClawHub installs can run in two modes:
 
-- Repo mode: local `scripts/openclaw-growth-start.mjs` is available.
+- Repo mode: local `scripts/openclaw-growth-start.mjs` is available at the workspace root.
+- ClawHub layout: the skill lives under `skills/product-manager-skill/`; copy runtime to the workspace root once with `bash skills/product-manager-skill/scripts/bootstrap-openclaw-workspace.sh`, then use the commands below.
 - Portable mode: no repo scripts; run setup + first pass directly from `analyticscli` + GitHub API checks.
 
 Portable mode must not ask for manual analytics summary files during `start/run`.
