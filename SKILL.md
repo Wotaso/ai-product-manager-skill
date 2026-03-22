@@ -3,7 +3,7 @@ name: product-manager-skill
 description: Turn analytics and customer signals into prioritized product decisions, PRD drafts, experiment plans, and implementation-ready GitHub backlog issues.
 license: MIT
 homepage: https://github.com/wotaso/analyticscli-skills
-metadata: {"author":"wotaso","version":"0.4.0","openclaw":{"emoji":"📌","homepage":"https://github.com/wotaso/analyticscli-skills"}}
+metadata: {"author":"wotaso","version":"0.5.0","openclaw":{"emoji":"📌","homepage":"https://github.com/wotaso/analyticscli-skills"}}
 ---
 
 # Product Manager Skill
@@ -28,7 +28,7 @@ metadata: {"author":"wotaso","version":"0.4.0","openclaw":{"emoji":"📌","homep
 - For autopilot mode, run a preflight checklist and list missing dependencies/secrets explicitly.
 - If the user says "start/run the skill", do not ask generic discovery questions first. Run the startup protocol below.
 
-## Required Inputs
+## Required Inputs (Manual PM Mode Only)
 
 - problem statement or objective
 - at least one data source summary (analytics, feedback, revenue, errors)
@@ -74,23 +74,21 @@ When the user asks to start/run/kick off the skill, execute this exact sequence:
 
 1. Discover config path:
    - default `data/openclaw-growth-engineer/config.json`
-   - if missing, run setup wizard or return exact missing-file instruction
-2. Validate setup + live channel auth:
-   - run `node scripts/openclaw-growth-preflight.mjs --config <path> --test-connections`
-   - this must include both env/secrets validation and API/connector smoke tests
-3. Handle preflight result:
-   - if any `fail`: stop and return a blocking checklist with concrete fixes
-   - if only `warn`: continue, but list warnings
-4. Start first run behavior:
-   - if user explicitly said `start/run` -> run first analysis immediately:
-     - `node scripts/openclaw-growth-runner.mjs --config <path>`
-   - otherwise ask exactly once: `Preflight passed. Start first run now?`
-5. After run:
+2. Run unified bootstrap/start command:
+   - if user explicitly said `start/run`:
+     - `node scripts/openclaw-growth-start.mjs --config <path>`
+   - otherwise:
+     - `node scripts/openclaw-growth-start.mjs --config <path> --setup-only`
+3. Handle start command result:
+   - if any blockers: return the blocker checklist exactly as reported
+   - if setup-only succeeded: ask exactly once `Setup passed. Start first run now?`
+4. After run:
    - report whether drafts were generated and whether GitHub issues were created
    - include output file path from config (`project.outFile`)
    - include next command for loop mode (`--loop`)
 
 Never block on "please provide goal + datasource" if config and sources already exist.
+If config or runtime prerequisites are missing, return only a concrete missing-items checklist (config path, API keys, repo access, missing binaries/skills). Do not ask for manual data summaries in start/run mode.
 
 ## Standard Output Format
 
@@ -139,7 +137,19 @@ Each issue draft must include:
 
 ## Local Autopilot Commands And Checks
 
-Preflight:
+One-command setup/start:
+
+```bash
+node scripts/openclaw-growth-start.mjs --config data/openclaw-growth-engineer/config.json
+```
+
+Setup-only (no first run):
+
+```bash
+node scripts/openclaw-growth-start.mjs --config data/openclaw-growth-engineer/config.json --setup-only
+```
+
+Preflight (direct):
 
 ```bash
 node scripts/openclaw-growth-preflight.mjs --config data/openclaw-growth-engineer/config.json --test-connections

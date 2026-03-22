@@ -98,6 +98,18 @@ Do not place secret values in unit files, repository files, shell history, or co
 
 ## 4) Validate Before Running
 
+Preferred (auto setup + first run orchestration):
+
+```bash
+node scripts/openclaw-growth-start.mjs --config data/openclaw-growth-engineer/config.json
+```
+
+Setup-only (no first run):
+
+```bash
+node scripts/openclaw-growth-start.mjs --config data/openclaw-growth-engineer/config.json --setup-only
+```
+
 Run preflight:
 
 ```bash

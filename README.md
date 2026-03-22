@@ -41,11 +41,14 @@ propose top 3 opportunities by expected impact, and output:
 When user says "start/run the skill", the agent should not ask generic intake questions first.
 It should execute:
 
-1. `node scripts/openclaw-growth-preflight.mjs --config data/openclaw-growth-engineer/config.json --test-connections`
-2. If preflight has fails: stop and return concrete missing/failing items.
-3. If preflight passes and user explicitly asked to start: run first pass immediately:
-   - `node scripts/openclaw-growth-runner.mjs --config data/openclaw-growth-engineer/config.json`
-4. If user did not explicitly ask to start, ask once whether first run should begin now.
+1. `node scripts/openclaw-growth-start.mjs --config data/openclaw-growth-engineer/config.json`
+2. If blockers exist: stop and return concrete missing/failing items.
+3. If user did not explicitly ask to start, use setup-only mode first:
+   - `node scripts/openclaw-growth-start.mjs --config data/openclaw-growth-engineer/config.json --setup-only`
+4. Ask once whether first run should begin now, then run start command without `--setup-only`.
+
+Important:
+- In `start/run` mode, missing prerequisites should be returned as a blocker checklist (config/API keys/access), not as a request for manual analytics summaries.
 
 ## Required Tooling And Data Connectors
 
@@ -161,6 +164,12 @@ Preflight checks (dependencies, files, secrets):
 
 ```bash
 node scripts/openclaw-growth-preflight.mjs --config data/openclaw-growth-engineer/config.json --test-connections
+```
+
+Unified setup + first run:
+
+```bash
+node scripts/openclaw-growth-start.mjs --config data/openclaw-growth-engineer/config.json
 ```
 
 Generate issue drafts:
