@@ -41,14 +41,17 @@ propose top 3 opportunities by expected impact, and output:
 When user says "start/run the skill", the agent should not ask generic intake questions first.
 It should execute:
 
-1. `node scripts/openclaw-growth-start.mjs --config data/openclaw-growth-engineer/config.json`
-2. If blockers exist: stop and return concrete missing/failing items.
-3. If user did not explicitly ask to start, use setup-only mode first:
-   - `node scripts/openclaw-growth-start.mjs --config data/openclaw-growth-engineer/config.json --setup-only`
-4. Ask once whether first run should begin now, then run start command without `--setup-only`.
+1. Try repo mode first:
+   - `node scripts/openclaw-growth-start.mjs --config data/openclaw-growth-engineer/config.json`
+2. If repo helper scripts are not present, switch to portable mode automatically:
+   - validate `analyticscli` + auth + `GITHUB_TOKEN` + repo detection
+   - run bounded `analyticscli` queries
+   - generate prioritized issue drafts and create GitHub issues when allowed
+3. If blockers exist in either mode: stop and return concrete missing/failing items (no manual summary intake).
 
 Important:
 - In `start/run` mode, missing prerequisites should be returned as a blocker checklist (config/API keys/access), not as a request for manual analytics summaries.
+- Missing local repo scripts must not be treated as hard stop; portable mode is required.
 
 ## Required Tooling And Data Connectors
 

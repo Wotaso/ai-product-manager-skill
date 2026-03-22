@@ -3,7 +3,7 @@ name: product-manager-skill
 description: Turn analytics and customer signals into prioritized product decisions, PRD drafts, experiment plans, and implementation-ready GitHub backlog issues.
 license: MIT
 homepage: https://github.com/wotaso/analyticscli-skills
-metadata: {"author":"wotaso","version":"0.5.0","openclaw":{"emoji":"📌","homepage":"https://github.com/wotaso/analyticscli-skills"}}
+metadata: {"author":"wotaso","version":"0.6.0","openclaw":{"emoji":"📌","homepage":"https://github.com/wotaso/analyticscli-skills"}}
 ---
 
 # Product Manager Skill
@@ -70,22 +70,26 @@ If anything is missing, stop autopilot and return a concrete "missing items" lis
 
 ## OpenClaw Startup Protocol (Mandatory)
 
-When the user asks to start/run/kick off the skill, execute this exact sequence:
+When the user asks to start/run/kick off the skill, execute this exact sequence.
+This protocol must work even when the user prompt is vague and even when repo-specific helper scripts are missing.
 
-1. Discover config path:
-   - default `data/openclaw-growth-engineer/config.json`
-2. Run unified bootstrap/start command:
-   - if user explicitly said `start/run`:
-     - `node scripts/openclaw-growth-start.mjs --config <path>`
-   - otherwise:
-     - `node scripts/openclaw-growth-start.mjs --config <path> --setup-only`
-3. Handle start command result:
-   - if any blockers: return the blocker checklist exactly as reported
-   - if setup-only succeeded: ask exactly once `Setup passed. Start first run now?`
-4. After run:
+1. Detect execution mode:
+   - Repo mode: if `scripts/openclaw-growth-start.mjs` exists in current workspace, use repo mode.
+   - Portable mode: if script is missing, use portable mode (must not fail with "missing script").
+2. Repo mode:
+   - if user explicitly said `start/run`: `node scripts/openclaw-growth-start.mjs --config data/openclaw-growth-engineer/config.json`
+   - otherwise: `node scripts/openclaw-growth-start.mjs --config data/openclaw-growth-engineer/config.json --setup-only`
+3. Portable mode (no repo scripts available):
+   - Ensure dependencies and auth without asking for manual analytics summaries:
+     - check `analyticscli` binary (`command -v analyticscli`)
+     - check analytics auth (`analyticscli projects list` with token or existing login)
+     - check `GITHUB_TOKEN` presence (fine-grained token: repository `Issues: Read/Write`, `Contents: Read`)
+     - detect GitHub repo from `git remote origin` if available; if not available, ask once for `owner/repo`
+   - If any check fails, return only a concrete blocker checklist with exact fix commands.
+   - If checks pass, run first pass directly via `analyticscli` commands (bounded, deterministic), then generate 3-5 prioritized issue drafts and create GitHub issues when allowed.
+4. After run (both modes):
    - report whether drafts were generated and whether GitHub issues were created
-   - include output file path from config (`project.outFile`)
-   - include next command for loop mode (`--loop`)
+   - include command to repeat the same run path
 
 Never block on "please provide goal + datasource" if config and sources already exist.
 If config or runtime prerequisites are missing, return only a concrete missing-items checklist (config path, API keys, repo access, missing binaries/skills). Do not ask for manual data summaries in start/run mode.
