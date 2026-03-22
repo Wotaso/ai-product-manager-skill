@@ -43,11 +43,12 @@ It should execute:
 
 1. Try repo mode first:
    - `node scripts/openclaw-growth-start.mjs --config data/openclaw-growth-engineer/config.json`
-2. If repo helper scripts are not present, switch to portable mode automatically:
+2. Always support portable mode first-class:
    - validate `analyticscli` + auth + `GITHUB_TOKEN` + repo detection
    - run bounded `analyticscli` queries
    - generate prioritized issue drafts and create GitHub issues when allowed
-3. If blockers exist in either mode: stop and return concrete missing/failing items (no manual summary intake).
+3. If repo helper scripts are missing, portable mode must continue (missing script is not a blocker by itself).
+4. If blockers exist in either mode: stop and return concrete missing/failing items (no manual summary intake).
 
 Important:
 - In `start/run` mode, missing prerequisites should be returned as a blocker checklist (config/API keys/access), not as a request for manual analytics summaries.

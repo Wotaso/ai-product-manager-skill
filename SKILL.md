@@ -3,7 +3,7 @@ name: product-manager-skill
 description: Turn analytics and customer signals into prioritized product decisions, PRD drafts, experiment plans, and implementation-ready GitHub backlog issues.
 license: MIT
 homepage: https://github.com/wotaso/analyticscli-skills
-metadata: {"author":"wotaso","version":"0.6.0","openclaw":{"emoji":"📌","homepage":"https://github.com/wotaso/analyticscli-skills"}}
+metadata: {"author":"wotaso","version":"0.6.1","openclaw":{"emoji":"📌","homepage":"https://github.com/wotaso/analyticscli-skills"}}
 ---
 
 # Product Manager Skill
@@ -73,20 +73,21 @@ If anything is missing, stop autopilot and return a concrete "missing items" lis
 When the user asks to start/run/kick off the skill, execute this exact sequence.
 This protocol must work even when the user prompt is vague and even when repo-specific helper scripts are missing.
 
-1. Detect execution mode:
-   - Repo mode: if `scripts/openclaw-growth-start.mjs` exists in current workspace, use repo mode.
-   - Portable mode: if script is missing, use portable mode (must not fail with "missing script").
-2. Repo mode:
-   - if user explicitly said `start/run`: `node scripts/openclaw-growth-start.mjs --config data/openclaw-growth-engineer/config.json`
-   - otherwise: `node scripts/openclaw-growth-start.mjs --config data/openclaw-growth-engineer/config.json --setup-only`
-3. Portable mode (no repo scripts available):
+1. Start in portable mode first (always):
    - Ensure dependencies and auth without asking for manual analytics summaries:
      - check `analyticscli` binary (`command -v analyticscli`)
      - check analytics auth (`analyticscli projects list` with token or existing login)
      - check `GITHUB_TOKEN` presence (fine-grained token: repository `Issues: Read/Write`, `Contents: Read`)
      - detect GitHub repo from `git remote origin` if available; if not available, ask once for `owner/repo`
    - If any check fails, return only a concrete blocker checklist with exact fix commands.
-   - If checks pass, run first pass directly via `analyticscli` commands (bounded, deterministic), then generate 3-5 prioritized issue drafts and create GitHub issues when allowed.
+2. If repo helper exists, optionally upgrade to repo mode:
+   - if `scripts/openclaw-growth-start.mjs` exists:
+     - `start/run` -> `node scripts/openclaw-growth-start.mjs --config data/openclaw-growth-engineer/config.json`
+     - otherwise -> `node scripts/openclaw-growth-start.mjs --config data/openclaw-growth-engineer/config.json --setup-only`
+   - if script is missing, continue in portable mode and do not report missing script as blocker.
+3. Portable mode execution:
+   - run first pass directly via `analyticscli` commands (bounded, deterministic)
+   - generate 3-5 prioritized issue drafts and create GitHub issues when allowed
 4. After run (both modes):
    - report whether drafts were generated and whether GitHub issues were created
    - include command to repeat the same run path
