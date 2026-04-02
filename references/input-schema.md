@@ -1,12 +1,19 @@
-# Input Schema (MVP)
+# Input Schema
 
-The script accepts loose JSON, but this schema is the recommended structure.
+The analyzer accepts multiple JSON shapes.
+Preferred order:
 
-## `analytics_summary.json`
+1. shared `signals[]`
+2. crash-style `issues[]`
+3. feedback-style `items[]`
+
+## Shared `signals[]`
+
+Use this for analytics, revenue, store, and custom connectors:
 
 ```json
 {
-  "project": "my-product",
+  "project": "my-mobile-app",
   "window": "last_30d",
   "signals": [
     {
@@ -32,34 +39,15 @@ The script accepts loose JSON, but this schema is the recommended structure.
 }
 ```
 
-## `revenuecat_summary.json`
+## Crash `issues[]`
 
-```json
-{
-  "signals": [
-    {
-      "id": "trial_to_paid_down",
-      "title": "Trial-to-paid conversion dropped in weekly package",
-      "area": "paywall",
-      "priority": "high",
-      "metric": "trial_to_paid",
-      "current_value": 0.08,
-      "baseline_value": 0.12,
-      "delta_percent": -33.0,
-      "evidence": ["Drop is strongest on iOS and onboarding entry paywall"],
-      "keywords": ["subscription", "pricing", "trial", "weekly"]
-    }
-  ]
-}
-```
-
-## `sentry_summary.json`
+Works for Sentry, GlitchTip, Crashlytics-style exports:
 
 ```json
 {
   "issues": [
     {
-      "id": "sentry_1431",
+      "id": "glitchtip_1431",
       "title": "TypeError in paywall purchase callback",
       "priority": "high",
       "impact": "Conversion blocker in purchase flow",
@@ -72,7 +60,9 @@ The script accepts loose JSON, but this schema is the recommended structure.
 }
 ```
 
-## `feedback_summary.json`
+## Feedback `items[]`
+
+Works for support, app reviews, in-app feedback, store review exports:
 
 ```json
 {
@@ -86,8 +76,25 @@ The script accepts loose JSON, but this schema is the recommended structure.
       "count": 14,
       "channel": "support_tickets",
       "comment": "Users ask for a faster path to first result",
+      "locations": [
+        { "location_id": "onboarding/profile_step", "count": 9 },
+        { "location_id": "onboarding/permissions_gate", "count": 5 }
+      ],
       "keywords": ["onboarding", "friction", "first value"]
     }
   ]
 }
 ```
+
+## Extra Connectors
+
+For `sources.extra[]`, the connector key becomes the source label in generated output.
+
+Examples:
+
+- `glitchtip`
+- `asc_cli`
+- `app_store_reviews`
+- `play_console`
+
+If your connector can already emit shared `signals[]`, use that shape. It is the least ambiguous path.

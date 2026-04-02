@@ -1,77 +1,118 @@
-# Setup And Scheduling Best Practice
+# Setup And Scheduling
 
-## Secret Handling
+This is the recommended OpenClaw-first baseline.
 
-- Store secrets in OpenClaw secret storage and inject as environment variables at runtime.
-- Do not persist API keys in project config files or command arguments.
-- Keep config files non-secret and commit-safe.
-- Use source-specific env var names:
-  - `GITHUB_TOKEN`
-  - `ANALYTICSCLI_READONLY_TOKEN`
-  - `REVENUECAT_API_KEY`
-  - `SENTRY_AUTH_TOKEN`
+## 1) Install Runtime
 
-## Wizard + Config
+```bash
+npx -y clawhub install openclaw-growth-engineer
+bash skills/openclaw-growth-engineer/scripts/bootstrap-openclaw-workspace.sh
+```
 
-- Run interactive setup:
-  - `node scripts/openclaw-growth-wizard.mjs`
-- Wizard writes:
-  - `data/openclaw-growth-engineer/config.json`
-- Config includes:
-  - source connection mode (`file` or `command`)
-  - schedule and skip policies
-  - issue creation behavior
-  - optional chart generation behavior (`charting.enabled`)
+## 2) Generate Config
 
-## Interval Execution
+```bash
+node scripts/openclaw-growth-wizard.mjs
+```
 
-- Run once:
-  - `node scripts/openclaw-growth-runner.mjs --config data/openclaw-growth-engineer/config.json`
-- Continuous interval loop:
-  - `node scripts/openclaw-growth-runner.mjs --config data/openclaw-growth-engineer/config.json --loop`
+The config is non-secret and commit-safe:
 
-## Change Detection
+- `data/openclaw-growth-engineer/config.json`
 
-Runner tracks source payload hashes and issue-set fingerprint in:
-- `data/openclaw-growth-engineer/state.json`
+## 3) Choose GitHub Delivery Mode
 
-Skip behavior:
-- no source payload change -> skip full analysis (if enabled)
-- source changed but issue set unchanged -> skip GitHub issue creation (if enabled)
+Set in config:
 
-This keeps cost and noise low while still running on a fixed interval.
+- `actions.mode = "issue"`
+- or `actions.mode = "pull_request"`
 
-## Feedback API (Optional)
+PR mode creates proposal branches and draft PRs with `.openclaw/proposals/...md` files.
 
-Run local feedback ingest API:
+## 4) Configure Connectors
 
-- `node scripts/openclaw-feedback-api.mjs --port 4310`
+Built-in sources:
 
-Endpoints:
+- `analytics`
+- `revenuecat`
+- `sentry`
+- `feedback`
 
-- `POST /feedback`
-- `GET /summary`
-- `GET /health`
+Extra sources:
 
-Optional auth:
+- add entries to `sources.extra[]`
+- use `mode=file` for the most stable setup
+- use `mode=command` only when the command deterministically returns JSON
 
-- set `FEEDBACK_API_TOKEN`
-- send header `x-feedback-token`
+Recommended mobile extras:
 
-If you connect a domain/reverse proxy, point feedback source mode to command:
+- `glitchtip`
+- `asc-cli`
+- `app-store-reviews`
+- `play-console`
 
-- `curl -s https://your-domain/summary`
+## 5) Store Secrets
 
-## Charting (Optional)
+Prefer OpenClaw secret storage.
+Inject env vars at runtime only.
 
-When `charting.enabled=true`, runner tries to generate charts via:
+Never store secrets in:
 
-- default command:
-  - `python3 scripts/openclaw-growth-charts.py ...`
+- repo files
+- config JSON
+- shell history
+- issue/PR content
 
-Requirements:
+## 6) Validate
 
-- `python3`
-- `matplotlib` (`python3 -m pip install matplotlib`)
+```bash
+node scripts/openclaw-growth-preflight.mjs --config data/openclaw-growth-engineer/config.json --test-connections
+```
 
-Generated chart manifest is passed to analyzer and chart images can be embedded in GitHub issues.
+Checks include:
+
+- `analyticscli`
+- `analyticscli-cli` skill presence
+- GitHub repo access
+- connector file/command readiness
+- required secrets
+- live smoke tests where possible
+
+## 7) Run
+
+One pass:
+
+```bash
+node scripts/openclaw-growth-runner.mjs --config data/openclaw-growth-engineer/config.json
+```
+
+Loop:
+
+```bash
+node scripts/openclaw-growth-runner.mjs --config data/openclaw-growth-engineer/config.json --loop
+```
+
+## 8) Feedback Collection
+
+Optional local feedback API:
+
+```bash
+node scripts/openclaw-feedback-api.mjs --port 4310
+```
+
+Expected payload fields now support:
+
+- `feedback`
+- `location` / `locationId`
+- `appSurface`
+- `metadata`
+
+The generated summary aggregates recurring themes and top feedback locations.
+
+## 9) Mobile Feedback Best Practice
+
+- Use tenant-owned backend/proxy endpoints for app-side feedback submission
+- Keep `locationId` stable and code-oriented
+- Example ids:
+  - `onboarding/paywall`
+  - `settings/restore`
+  - `profile/delete_account`
