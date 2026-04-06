@@ -86,16 +86,36 @@ export function getDefaultSourceHint(service) {
   return '- Any connector is supported when it can produce JSON in the shared `signals[]` shape.\n- Use `issues[]` for crash tools or `items[]` for feedback-like tools when that fits better.';
 }
 
+export function getDefaultSourceCommand(service) {
+  const normalized = normalizeServiceType(service);
+  if (normalized === 'analytics' || normalized === 'analyticscli') {
+    return 'node scripts/export-analytics-summary.mjs';
+  }
+  if (
+    normalized === 'asc' ||
+    normalized === 'asc-cli' ||
+    normalized === 'app-store-connect' ||
+    normalized === 'app_store_connect'
+  ) {
+    return 'node scripts/export-asc-summary.mjs';
+  }
+  return null;
+}
+
 export function buildExtraSourceConfig(service, options = {}) {
   const normalizedService = normalizeServiceType(service);
   const key = normalizeSourceKey(options.key || normalizedService || `extra_${Date.now()}`);
+  const defaultCommand = getDefaultSourceCommand(normalizedService || key);
+  const mode = options.mode || (defaultCommand ? 'command' : 'file');
   return {
     key,
     label: options.label || normalizedService || key,
     service: normalizedService || key,
     enabled: options.enabled !== false,
-    mode: options.mode || 'file',
-    path: options.path || getDefaultSourcePath(key),
+    mode,
+    ...(mode === 'command'
+      ? { command: options.command || defaultCommand || '' }
+      : { path: options.path || getDefaultSourcePath(key) }),
     hint: options.hint || getDefaultSourceHint(normalizedService || key),
     secretEnv: options.secretEnv || null,
   };

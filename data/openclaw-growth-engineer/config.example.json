@@ -12,8 +12,8 @@
   "sources": {
     "analytics": {
       "enabled": true,
-      "mode": "file",
-      "path": "data/openclaw-growth-engineer/analytics_summary.example.json"
+      "mode": "command",
+      "command": "node scripts/export-analytics-summary.mjs"
     },
     "revenuecat": {
       "enabled": false,
@@ -47,7 +47,7 @@
         "enabled": false,
         "mode": "command",
         "command": "node scripts/export-asc-summary.mjs",
-        "secretEnv": "ASC_API_KEY_ID"
+        "secretEnv": "ASC_KEY_ID"
       }
     ]
   },

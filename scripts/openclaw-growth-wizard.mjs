@@ -6,6 +6,7 @@ import process from 'node:process';
 import { createInterface } from 'node:readline/promises';
 import {
   buildExtraSourceConfig,
+  getDefaultSourceCommand,
   getDefaultSourceHint,
   getDefaultSourcePath,
 } from './openclaw-growth-shared.mjs';
@@ -86,6 +87,8 @@ async function askChoice(rl, label, options, defaultValue) {
 
 async function askSourceConfig(rl, sourceName, defaultPath, hint, options = {}) {
   const forceEnabled = Boolean(options.forceEnabled);
+  const defaultCommand = String(options.defaultCommand || '').trim();
+  const defaultMode = defaultCommand ? 'command' : 'file';
   const enabled = forceEnabled
     ? true
     : await askYesNo(rl, `Enable source "${sourceName}"?`, sourceName === 'analytics');
@@ -99,12 +102,12 @@ async function askSourceConfig(rl, sourceName, defaultPath, hint, options = {}) 
   }
 
   process.stdout.write(`Where to get ${sourceName} data:\n${hint}\n`);
-  const modeInput = await ask(rl, 'Mode (file/command)', 'file');
+  const modeInput = await ask(rl, 'Mode (file/command)', defaultMode);
   const mode = modeInput.toLowerCase() === 'command' ? 'command' : 'file';
   const value = await ask(
     rl,
     mode === 'file' ? `${sourceName} JSON file path` : `${sourceName} command`,
-    mode === 'file' ? defaultPath : '',
+    mode === 'file' ? defaultPath : defaultCommand,
   );
 
   if (mode === 'file') {
@@ -163,7 +166,10 @@ async function main() {
       'analytics',
       'data/openclaw-growth-engineer/analytics_summary.example.json',
       getDefaultSourceHint('analytics'),
-      { forceEnabled: true },
+      {
+        forceEnabled: true,
+        defaultCommand: getDefaultSourceCommand('analytics'),
+      },
     );
     const revenuecat = await askSourceConfig(
       rl,
@@ -192,12 +198,10 @@ async function main() {
       .split(',')
       .map((value) => value.trim())
       .filter(Boolean)
-      .map((service) =>
-        buildExtraSourceConfig(service, {
-          mode: 'file',
-          path: getDefaultSourcePath(service),
-        }),
-      );
+      .map((service) => {
+        const defaultCommand = getDefaultSourceCommand(service);
+        return buildExtraSourceConfig(service, defaultCommand ? {} : { mode: 'file', path: getDefaultSourcePath(service) });
+      });
 
     const autoCreateIssues =
       actionMode === 'issue'

@@ -1,59 +1,59 @@
 # OpenClaw Growth Engineer
 
 OpenClaw-first growth autopilot for mobile apps.
-It correlates analytics, monetization, crashes, feedback, store/release signals, and repo context into implementation-ready GitHub output.
 
-## Install
+It pulls together analytics, monetization, crashes, feedback, store signals, and repo context and turns them into implementation-ready GitHub issues or draft PR proposals.
 
-OpenClaw / ClawHub:
+If you only want the normal setup path: install it, bootstrap the workspace once, run the wizard, then run `openclaw-growth-start`.
+
+## Quick Start
+
+1. Install in OpenClaw / ClawHub:
 
 ```bash
 npx -y clawhub install openclaw-growth-engineer
 ```
 
-After install, copy the runtime into the workspace root once:
+2. Copy the runtime into your repo once:
 
 ```bash
 bash skills/openclaw-growth-engineer/scripts/bootstrap-openclaw-workspace.sh
 ```
 
-That creates:
-
-- `scripts/openclaw-growth-*.mjs`
-- `scripts/openclaw-feedback-api.mjs`
-- `data/openclaw-growth-engineer/*.example.json`
-
-## Setup
-
-Generate non-secret config:
+3. Create the non-secret config with the wizard:
 
 ```bash
 node scripts/openclaw-growth-wizard.mjs
 ```
 
-This writes:
-
-- `data/openclaw-growth-engineer/config.json`
-
-The wizard lets you choose:
-
-- GitHub delivery mode: `issue` or `pull_request`
-- built-in connectors
-- extra connectors under `sources.extra[]`
-- charting
-
-## Core Commands
-
-Preflight:
-
-```bash
-node scripts/openclaw-growth-preflight.mjs --config data/openclaw-growth-engineer/config.json --test-connections
-```
-
-Unified setup + first run:
+4. Run the guided setup + first preflight:
 
 ```bash
 node scripts/openclaw-growth-start.mjs --config data/openclaw-growth-engineer/config.json
+```
+
+## What It Does
+
+- Reads analytics by default and can add RevenueCat, Sentry, feedback, and store/release connectors.
+- Correlates product signals with repo context.
+- Creates GitHub issues or draft pull requests, depending on your selected mode.
+
+## What The Wizard Writes
+
+The wizard writes only the commit-safe config:
+
+- `data/openclaw-growth-engineer/config.json`
+
+You do not need to hand-edit `config.json` for the basic setup.
+
+Secrets should stay out of repo files. The normal path is to let OpenClaw manage the runtime environment or secret store and keep the config non-secret.
+
+## Main Commands
+
+Preflight only:
+
+```bash
+node scripts/openclaw-growth-preflight.mjs --config data/openclaw-growth-engineer/config.json --test-connections
 ```
 
 One run:
@@ -68,69 +68,20 @@ Loop mode:
 node scripts/openclaw-growth-runner.mjs --config data/openclaw-growth-engineer/config.json --loop
 ```
 
-## GitHub Output Modes
+## Advanced Topics
 
-Issue mode:
+Keep the README short and use the references below only when you need more control:
 
-- creates implementation-ready GitHub issues
-- best for backlog-first planning
-
-Pull-request mode:
-
-- creates draft PRs
-- adds `.openclaw/proposals/<date>/<slug>.md` files into the repo
-- good when you want the requested change documented directly inside the codebase
-
-## Connector Strategy
-
-Built-in:
-
-- `analytics`
-- `revenuecat`
-- `sentry`
-- `feedback`
-
-Extra mobile connectors via `sources.extra[]`:
-
-- `glitchtip`
-- `asc-cli`
-- `firebase-crashlytics`
-- `app-store-reviews`
-- `play-console`
-- `stripe`
-- `adapty`
-- `superwall`
-
-Any extra connector works when it outputs:
-
-- `signals[]`
-- or `issues[]` for crash tools
-- or `items[]` for feedback/review tools
-
-## Feedback Best Practice
-
-- For tenant mobile apps, use the SDK `submitFeedback(...)` helper only against a tenant-owned backend/proxy or an explicitly app-scoped external feedback endpoint
-- Always send a stable `locationId`
-- Do not emit raw feedback text into analytics events
-- Let OpenClaw consume the aggregated feedback summary plus the lightweight `feedback:submitted` analytics events
-
-## Current RevenueCat Status
-
-What already exists without this skill:
-
-- RevenueCat webhook live sync into analytics events via the API route
-- analytics/event-side correlation when the same stable user id is used
-
-What is still not a guided dashboard/CLI connector today:
-
-- no dedicated dashboard "connect RevenueCat" flow
-- no dedicated `analyticscli revenuecat connect` command
-
-This skill fills the operational gap by letting OpenClaw consume RevenueCat summaries directly via `mode=file` or `mode=command`.
-
-## References
-
-- [SKILL.md](SKILL.md)
+- [Advanced Setup](references/advanced-setup.md)
 - [Setup And Scheduling](references/setup-and-scheduling.md)
 - [Required Secrets](references/required-secrets.md)
 - [Input Schema](references/input-schema.md)
+
+## Workspace Files
+
+The bootstrap step creates the runtime files below:
+
+- `scripts/openclaw-growth-*.mjs`
+- `scripts/openclaw-feedback-api.mjs`
+- `data/openclaw-growth-engineer/*.example.json`
+- `data/openclaw-growth-engineer/config.example.json`

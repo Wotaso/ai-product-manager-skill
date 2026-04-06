@@ -4,7 +4,7 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import { spawn } from 'node:child_process';
-import { getActionMode } from './openclaw-growth-shared.mjs';
+import { getActionMode, getDefaultSourceCommand } from './openclaw-growth-shared.mjs';
 
 const DEFAULT_CONFIG_PATH = 'data/openclaw-growth-engineer/config.json';
 const DEFAULT_TEMPLATE_PATH = 'data/openclaw-growth-engineer/config.example.json';
@@ -179,8 +179,8 @@ async function ensureConfig(configPath) {
       ...template.sources,
       analytics: {
         enabled: true,
-        mode: 'file',
-        path: 'data/openclaw-growth-engineer/analytics_summary.json',
+        mode: 'command',
+        command: getDefaultSourceCommand('analytics'),
       },
       revenuecat: {
         ...(template.sources?.revenuecat || {}),

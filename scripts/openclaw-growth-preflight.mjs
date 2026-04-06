@@ -9,6 +9,7 @@ import {
   classifyServiceKind,
   getActionMode,
   getAllSourceEntries,
+  getDefaultSourceCommand,
   getGitHubActionNoun,
   getGitHubConnectionSummary,
   getGitHubRequirementText,
@@ -122,6 +123,12 @@ function parseCommandHead(command) {
   if (!trimmed) return null;
   const parts = trimmed.split(/\s+/).filter(Boolean);
   return parts.length > 0 ? parts[0] : null;
+}
+
+function isPortableCommandDefault(sourceName, command) {
+  const expected = getDefaultSourceCommand(sourceName);
+  if (!expected) return false;
+  return String(command || '').trim().startsWith(expected);
 }
 
 function truncate(value, max = 240) {
@@ -435,6 +442,23 @@ async function runConnectionChecks({ checks, config, timeoutMs }) {
         : `failed (${analyticsConnection.detail})`,
       analyticsConnection.ok ? 'pass' : analyticsSource?.mode === 'command' ? 'fail' : 'warn',
     );
+
+    if (analyticsSource?.mode === 'command') {
+      const command = String(analyticsSource.command || '').trim();
+      if (!command) {
+        addCheck(checks, 'connection:analytics-command', false, 'analytics source uses command mode but no command configured');
+      } else {
+        const commandCheck = await testCommandSourceJson(command);
+        addCheck(
+          checks,
+          'connection:analytics-command',
+          commandCheck.ok,
+          commandCheck.ok
+            ? 'analytics command smoke test passed'
+            : `analytics command smoke test failed (${commandCheck.detail})`,
+        );
+      }
+    }
   } else {
     addCheck(checks, 'connection:analytics', true, 'source disabled');
   }
@@ -696,11 +720,14 @@ async function main() {
           continue;
         }
 
+        const usesPortableDefault = isPortableCommandDefault(sourceName, command);
         addCheck(
           checks,
           `source:${sourceName}:mode`,
-          false,
-          'mode=command configured (allowed, but file mode is the recommended default)',
+          usesPortableDefault,
+          usesPortableDefault
+            ? 'mode=command configured with built-in portable exporter'
+            : 'mode=command configured (allowed, but file mode is the recommended default)',
           'warn',
         );
 

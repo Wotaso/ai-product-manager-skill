@@ -18,7 +18,7 @@ For `sources.extra[]`, set `secretEnv` only when the connector actually needs it
 Examples:
 
 - `GLITCHTIP_API_TOKEN`
-- `ASC_API_KEY_ID`
+- `ASC_KEY_ID`
 - `ASC_ISSUER_ID`
 - `ASC_PRIVATE_KEY`
 - `PLAY_CONSOLE_SERVICE_ACCOUNT_JSON`
