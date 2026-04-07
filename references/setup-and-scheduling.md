@@ -5,7 +5,7 @@ This is the recommended OpenClaw-first baseline.
 ## 1) Install Runtime
 
 ```bash
-npx  clawhub install openclaw-growth-engineer
+npx -y clawhub install ai-product-manager
 bash skills/openclaw-growth-engineer/scripts/bootstrap-openclaw-workspace.sh
 ```
 

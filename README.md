@@ -11,7 +11,7 @@ If you only want the normal setup path: install it, bootstrap the workspace once
 1. Install in OpenClaw / ClawHub:
 
 ```bash
-npx  clawhub install openclaw-growth-engineer
+npx -y clawhub install ai-product-manager
 ```
 
 2. Copy the runtime into your repo once:
