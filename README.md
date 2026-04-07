@@ -68,6 +68,24 @@ Loop mode:
 node scripts/openclaw-growth-runner.mjs --config data/openclaw-growth-engineer/config.json --loop
 ```
 
+## Maintainer Notes
+
+In this monorepo, `skills/openclaw-growth-engineer/src` is the canonical OpenClaw runtime source. The checked-in `skills/openclaw-growth-engineer/scripts/*.mjs` files are build output. The root `scripts/openclaw-*` files and `skills/product-manager-skill/scripts/openclaw-*` files are mirrors.
+
+Run this after editing runtime scripts:
+
+```bash
+pnpm openclaw-skill:quality
+```
+
+In the standalone skill repository, run:
+
+```bash
+npm run quality
+```
+
+The checked-in `.mjs` files are the zero-install runtime artifact for OpenClaw workspaces. Edit `.mts` files under `src/`, then run the quality command to rebuild and verify the runtime.
+
 ## Advanced Topics
 
 Keep the README short and use the references below only when you need more control:
