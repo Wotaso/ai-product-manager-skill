@@ -96,7 +96,7 @@ node scripts/openclaw-growth-runner.mjs --config data/openclaw-growth-engineer/c
 Optional local feedback API:
 
 ```bash
-node scripts/openclaw-feedback-api.mjs --port 4310
+FEEDBACK_API_TOKEN=<token> node scripts/openclaw-feedback-api.mjs --port 4310
 ```
 
 Expected payload fields now support:

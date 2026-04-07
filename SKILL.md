@@ -3,7 +3,7 @@ name: openclaw-growth-engineer
 description: OpenClaw-first growth autopilot for mobile apps. Correlate analytics, crashes, billing, feedback, store signals, and repo context into implementation-ready GitHub issues or draft pull requests.
 license: MIT
 homepage: https://github.com/wotaso/analyticscli-skills
-metadata: {"author":"wotaso","version":"1.0.0","openclaw":{"emoji":"🚀","homepage":"https://github.com/wotaso/analyticscli-skills"}}
+metadata: {"author":"wotaso","version":"1.0.3","openclaw":{"emoji":"🚀","homepage":"https://github.com/wotaso/analyticscli-skills","requires":{"bins":["node","analyticscli"],"env":["GITHUB_TOKEN"]},"primaryEnv":"GITHUB_TOKEN"}}
 ---
 
 # OpenClaw Growth Engineer
@@ -105,6 +105,7 @@ When the user says "start", "run", or "kick off" the skill:
    - `node scripts/openclaw-growth-runner.mjs --config data/openclaw-growth-engineer/config.json`
 
 Do not block startup merely because local helper files are missing. Bootstrap the workspace first when the skill was installed under `skills/openclaw-growth-engineer/`.
+By default, startup generates local issue drafts only. Create GitHub issues or draft pull requests only when config explicitly enables `actions.autoCreateIssues=true` or `actions.autoCreatePullRequests=true`.
 
 ## Output Rules
 

@@ -36,7 +36,8 @@ node scripts/openclaw-growth-start.mjs --config data/openclaw-growth-engineer/co
 
 - Reads analytics by default and can add RevenueCat, Sentry, feedback, and store/release connectors.
 - Correlates product signals with repo context.
-- Creates GitHub issues or draft pull requests, depending on your selected mode.
+- Generates local issue drafts by default.
+- Creates GitHub issues or draft pull requests only when artifact creation is explicitly enabled in config.
 
 ## What The Wizard Writes
 

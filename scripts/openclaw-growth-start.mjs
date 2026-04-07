@@ -188,7 +188,7 @@ async function ensureConfig(configPath) {
         actions: {
             ...template.actions,
             mode: 'issue',
-            autoCreateIssues: true,
+            autoCreateIssues: false,
             autoCreatePullRequests: false,
             draftPullRequests: true,
             proposalBranchPrefix: 'openclaw/proposals',

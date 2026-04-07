@@ -167,9 +167,9 @@ export function getActionMode(config) {
 export function shouldAutoCreateGitHubArtifact(config) {
     const mode = getActionMode(config);
     if (mode === 'pull_request') {
-        return config?.actions?.autoCreatePullRequests !== false;
+        return config?.actions?.autoCreatePullRequests === true;
     }
-    return config?.actions?.autoCreateIssues !== false;
+    return config?.actions?.autoCreateIssues === true;
 }
 export function getGitHubRequirementText(actionMode) {
     if (actionMode === 'pull_request') {

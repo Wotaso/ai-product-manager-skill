@@ -4,12 +4,15 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 const DEFAULT_PORT = 4310;
+const DEFAULT_HOST = '127.0.0.1';
 const DEFAULT_DIR = 'data/openclaw-growth-engineer/feedback-api';
 const FEEDBACK_HEADERS = ['x-feedback-token', 'x-feedback-key'];
 function parseArgs(argv) {
     const args = {
         port: DEFAULT_PORT,
+        host: DEFAULT_HOST,
         dir: DEFAULT_DIR,
+        allowUnauthenticated: false,
     };
     for (let i = 0; i < argv.length; i += 1) {
         const token = argv[i];
@@ -21,9 +24,16 @@ function parseArgs(argv) {
             args.port = Number.parseInt(next, 10) || DEFAULT_PORT;
             i += 1;
         }
+        else if (token === '--host') {
+            args.host = next || DEFAULT_HOST;
+            i += 1;
+        }
         else if (token === '--dir') {
             args.dir = next;
             i += 1;
+        }
+        else if (token === '--allow-unauthenticated') {
+            args.allowUnauthenticated = true;
         }
         else if (token === '--help' || token === '-h') {
             printHelpAndExit(0);
@@ -42,12 +52,13 @@ function printHelpAndExit(exitCode, reason = null) {
 OpenClaw Feedback API (MVP)
 
 Usage:
-  node scripts/openclaw-feedback-api.mjs [--port 4310] [--dir data/openclaw-growth-engineer/feedback-api]
+  node scripts/openclaw-feedback-api.mjs [--host 127.0.0.1] [--port 4310] [--dir data/openclaw-growth-engineer/feedback-api]
 
 Auth:
-  Optional env FEEDBACK_API_TOKEN.
-  If set, clients must send header: x-feedback-token: <token>
+  Required env FEEDBACK_API_TOKEN.
+  Clients must send header: x-feedback-token: <token>
   The API also accepts: x-feedback-key: <token>
+  Local-only development can opt out with: --allow-unauthenticated
 `);
     process.exit(exitCode);
 }
@@ -166,6 +177,9 @@ async function main() {
     const eventsFile = path.join(storageDir, 'events.ndjson');
     const summaryFile = path.join(storageDir, 'feedback_summary.json');
     const requiredToken = process.env.FEEDBACK_API_TOKEN || null;
+    if (!requiredToken && !args.allowUnauthenticated) {
+        throw new Error('FEEDBACK_API_TOKEN is required. For local-only development, rerun with --allow-unauthenticated.');
+    }
     await ensureDir(storageDir);
     const server = createServer(async (req, res) => {
         try {
@@ -220,14 +234,14 @@ async function main() {
             });
         }
     });
-    server.listen(args.port, () => {
-        process.stdout.write(`Feedback API listening on http://localhost:${args.port}\n`);
+    server.listen(args.port, args.host, () => {
+        process.stdout.write(`Feedback API listening on http://${args.host}:${args.port}\n`);
         process.stdout.write(`Data dir: ${storageDir}\n`);
         if (requiredToken) {
             process.stdout.write('Auth: enabled (x-feedback-token or x-feedback-key required)\n');
         }
         else {
-            process.stdout.write('Auth: disabled (set FEEDBACK_API_TOKEN to enable)\n');
+            process.stdout.write('Auth: disabled by explicit --allow-unauthenticated\n');
         }
     });
 }

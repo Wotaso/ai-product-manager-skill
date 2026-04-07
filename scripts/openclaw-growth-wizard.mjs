@@ -150,10 +150,10 @@ async function main() {
             return buildExtraSourceConfig(service, defaultCommand ? {} : { mode: 'file', path: getDefaultSourcePath(service) });
         });
         const autoCreateIssues = actionMode === 'issue'
-            ? await askYesNo(rl, 'Create GitHub issues automatically when new ideas are found?', true)
+            ? await askYesNo(rl, 'Create GitHub issues automatically when new ideas are found?', false)
             : false;
         const autoCreatePullRequests = actionMode === 'pull_request'
-            ? await askYesNo(rl, 'Create draft pull requests with implementation proposal files automatically?', true)
+            ? await askYesNo(rl, 'Create draft pull requests with implementation proposal files automatically?', false)
             : false;
         const enableCharting = await askYesNo(rl, 'Generate matplotlib charts from analytics signals and include them in generated GitHub artifacts?', false);
         const chartCommand = enableCharting

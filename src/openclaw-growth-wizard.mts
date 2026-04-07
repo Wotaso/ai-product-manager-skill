@@ -205,14 +205,14 @@ async function main() {
 
     const autoCreateIssues =
       actionMode === 'issue'
-        ? await askYesNo(rl, 'Create GitHub issues automatically when new ideas are found?', true)
+        ? await askYesNo(rl, 'Create GitHub issues automatically when new ideas are found?', false)
         : false;
     const autoCreatePullRequests =
       actionMode === 'pull_request'
         ? await askYesNo(
             rl,
             'Create draft pull requests with implementation proposal files automatically?',
-            true,
+            false,
           )
         : false;
     const enableCharting = await askYesNo(

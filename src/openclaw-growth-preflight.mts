@@ -796,18 +796,18 @@ async function main() {
       checks,
       actionMode === 'pull_request' ? 'github-pull-request-create' : 'github-issue-create',
       actionMode === 'pull_request'
-        ? config.actions?.autoCreatePullRequests !== false
-        : config.actions?.autoCreateIssues !== false,
+        ? config.actions?.autoCreatePullRequests === true
+        : config.actions?.autoCreateIssues === true,
       actionMode === 'pull_request'
-        ? config.actions?.autoCreatePullRequests !== false
+        ? config.actions?.autoCreatePullRequests === true
           ? 'enabled'
-          : 'disabled (allowed, but GitHub baseline requirements still apply)'
-        : config.actions?.autoCreateIssues !== false
+          : 'disabled by default (drafts only; enable explicitly to create GitHub artifacts)'
+        : config.actions?.autoCreateIssues === true
           ? 'enabled'
-          : 'disabled (allowed, but GitHub baseline requirements still apply)',
+          : 'disabled by default (drafts only; enable explicitly to create GitHub artifacts)',
       (actionMode === 'pull_request'
-        ? config.actions?.autoCreatePullRequests !== false
-        : config.actions?.autoCreateIssues !== false)
+        ? config.actions?.autoCreatePullRequests === true
+        : config.actions?.autoCreateIssues === true)
         ? 'pass'
         : 'warn',
     );
