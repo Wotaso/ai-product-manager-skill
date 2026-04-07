@@ -2,8 +2,7 @@
 # Copy growth-engineer runtime from a ClawHub skill install into the OpenClaw workspace root
 # so `node scripts/openclaw-growth-start.mjs` works (paths match docs + OpenClaw run).
 #
-# Typical layout after `clawhub install product-manager-skill` or
-# `clawhub install openclaw-growth-engineer`:
+# Typical layout after installing a bundled growth runtime skill:
 #   <workspace>/skills/<skill-slug>/scripts/*.mjs
 # This script creates:
 #   <workspace>/scripts/*.mjs

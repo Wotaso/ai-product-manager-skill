@@ -231,7 +231,7 @@ function remediationForCheck(checkName, configPath) {
     return 'Install AnalyticsCLI CLI (`npm i -g @analyticscli/cli`).';
   }
   if (checkName === 'dependency:analyticscli-skill') {
-    return 'Install/fetch `analyticscli-cli` skill in OpenClaw/ClawHub.';
+    return 'Install/fetch the AnalyticsCLI agent skills from GitHub, or the canonical `ai-product-manager` skill from ClawHub.';
   }
   if (checkName === 'project:github-repo') {
     return `Set \`project.githubRepo\` in ${configPath} (owner/repo).`;
