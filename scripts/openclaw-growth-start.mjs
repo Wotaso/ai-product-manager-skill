@@ -219,9 +219,6 @@ function remediationForCheck(checkName, configPath) {
     if (checkName === 'dependency:analyticscli') {
         return 'Run AnalyticsCLI CLI with `npx -y @analyticscli/cli@preview --help`, or use `@analyticscli/cli` after stable release.';
     }
-    if (checkName === 'dependency:analyticscli-skill') {
-        return 'Install/fetch the AnalyticsCLI agent skills from GitHub, or the canonical `ai-product-manager` skill from ClawHub.';
-    }
     if (checkName === 'project:github-repo') {
         return `Set \`project.githubRepo\` in ${configPath} (owner/repo).`;
     }

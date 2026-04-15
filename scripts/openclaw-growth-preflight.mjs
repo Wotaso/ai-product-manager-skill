@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 import { promises as fs } from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import { spawn } from 'node:child_process';
@@ -148,27 +147,6 @@ function getSecretName(config, key, fallback) {
 }
 function sourceEnabled(config, sourceName) {
     return Boolean(config?.sources?.[sourceName] && config.sources[sourceName].enabled !== false);
-}
-function resolveAnalyticsSkillCandidates(config) {
-    const repoRoot = path.resolve(String(config?.project?.repoRoot || '.'));
-    const home = os.homedir();
-    return [
-        path.join(repoRoot, 'skills/analyticscli-cli/SKILL.md'),
-        path.join(repoRoot, 'agent/skills/analyticscli-cli-skill.md'),
-        path.join(process.cwd(), 'skills/analyticscli-cli/SKILL.md'),
-        path.join(process.cwd(), 'agent/skills/analyticscli-cli-skill.md'),
-        path.join(home, '.openclaw/skills/analyticscli-cli/SKILL.md'),
-        path.join(home, '.codex/skills/analyticscli-cli/SKILL.md'),
-    ];
-}
-async function detectAnalyticsSkill(config) {
-    const candidates = resolveAnalyticsSkillCandidates(config);
-    for (const candidate of candidates) {
-        if (await fileExists(candidate)) {
-            return { ok: true, path: candidate, checked: candidates };
-        }
-    }
-    return { ok: false, path: null, checked: candidates };
 }
 async function fetchWithTimeout(url, options, timeoutMs) {
     const controller = new AbortController();
@@ -515,10 +493,6 @@ async function main() {
         addCheck(checks, 'source:analytics:required', analyticsEnabled, analyticsEnabled ? 'enabled' : 'analytics source is required and cannot be disabled');
         const analyticscliExists = await commandExists('analyticscli');
         addCheck(checks, 'dependency:analyticscli', analyticscliExists, analyticscliExists ? 'analyticscli binary found' : 'analyticscli binary missing');
-        const analyticsSkill = await detectAnalyticsSkill(config);
-        addCheck(checks, 'dependency:analyticscli-skill', analyticsSkill.ok, analyticsSkill.ok
-            ? `found (${analyticsSkill.path})`
-            : `missing (checked: ${analyticsSkill.checked.join(', ')})`);
         const githubRepo = String(config.project?.githubRepo || '').trim();
         addCheck(checks, 'project:github-repo', Boolean(githubRepo), githubRepo ? `configured (${githubRepo})` : 'project.githubRepo is required');
         const githubTokenEnv = getSecretName(config, 'githubTokenEnv', 'GITHUB_TOKEN');

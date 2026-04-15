@@ -89,9 +89,10 @@ async function askSourceConfig(rl, sourceName, defaultPath, hint, options: Recor
   const forceEnabled = Boolean(options.forceEnabled);
   const defaultCommand = String(options.defaultCommand || '').trim();
   const defaultMode = defaultCommand ? 'command' : 'file';
+  const defaultEnabled = options.defaultEnabled ?? sourceName === 'analytics';
   const enabled = forceEnabled
     ? true
-    : await askYesNo(rl, `Enable source "${sourceName}"?`, sourceName === 'analytics');
+    : await askYesNo(rl, `Enable source "${sourceName}"?`, defaultEnabled);
   if (!enabled) {
     return {
       enabled: false,
@@ -124,6 +125,8 @@ async function askSourceConfig(rl, sourceName, defaultPath, hint, options: Recor
     mode,
     command: value,
     hint,
+    ...(options.cursorMode ? { cursorMode: options.cursorMode } : {}),
+    ...(options.initialLookback ? { initialLookback: options.initialLookback } : {}),
   };
 }
 
@@ -188,6 +191,12 @@ async function main() {
       'feedback',
       'data/openclaw-growth-engineer/feedback_summary.example.json',
       getDefaultSourceHint('feedback'),
+      {
+        defaultEnabled: true,
+        defaultCommand: getDefaultSourceCommand('feedback'),
+        cursorMode: 'auto_since_last_fetch',
+        initialLookback: '30d',
+      },
     );
     const extraSourcesRaw = await ask(
       rl,

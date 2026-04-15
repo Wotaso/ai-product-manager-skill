@@ -91,6 +91,9 @@ export function getDefaultSourceCommand(service) {
   if (normalized === 'analytics' || normalized === 'analyticscli') {
     return 'node scripts/export-analytics-summary.mjs';
   }
+  if (normalized === 'feedback') {
+    return 'analyticscli feedback summary --format json';
+  }
   if (
     normalized === 'asc' ||
     normalized === 'asc-cli' ||

@@ -157,6 +157,7 @@ async function assertHardRequirements(config) {
     const missing = [];
     const analyticsSource = config?.sources?.analytics;
     const actionMode = getActionMode(config);
+    const requiresGitHubDelivery = shouldAutoCreateGitHubArtifact(config);
     if (!analyticsSource || analyticsSource.enabled === false) {
         missing.push('sources.analytics must be enabled');
     }
@@ -164,17 +165,15 @@ async function assertHardRequirements(config) {
     if (!analyticscliExists) {
         missing.push('analyticscli binary is required');
     }
-    const analyticsSkill = await findAnalyticsSkillPath(config);
-    if (!analyticsSkill.path) {
-        missing.push(`analyticscli skill missing (checked: ${analyticsSkill.checked.join(', ')})`);
-    }
-    const githubRepo = String(config?.project?.githubRepo || '').trim();
-    if (!githubRepo) {
-        missing.push('project.githubRepo is required');
-    }
-    const githubTokenEnv = getSecretName(config, 'githubTokenEnv', 'GITHUB_TOKEN');
-    if (!process.env[githubTokenEnv]) {
-        missing.push(`${githubTokenEnv} env var is required (${getGitHubRequirementText(actionMode)})`);
+    if (requiresGitHubDelivery) {
+        const githubRepo = String(config?.project?.githubRepo || '').trim();
+        if (!githubRepo) {
+            missing.push('project.githubRepo is required when GitHub auto-create is enabled');
+        }
+        const githubTokenEnv = getSecretName(config, 'githubTokenEnv', 'GITHUB_TOKEN');
+        if (!process.env[githubTokenEnv]) {
+            missing.push(`${githubTokenEnv} env var is required (${getGitHubRequirementText(actionMode)})`);
+        }
     }
     if (missing.length > 0) {
         const message = `Hard requirements missing:\n- ${missing.join('\n- ')}`;
@@ -212,17 +211,8 @@ function buildIssueFingerprint(issuesPayload) {
         : [];
     return sha256(titles.join('\n'));
 }
-async function runAnalyzer({ config, runtimeDir, createGitHubArtifact, chartManifestPath, }) {
+async function runAnalyzer({ config, runtimeDir, sourceFiles, createGitHubArtifact, chartManifestPath, }) {
     await ensureDir(runtimeDir);
-    const sourceFiles = {};
-    for (const source of getAllSourceEntries(config)) {
-        const payload = await resolveSourcePayload(source, source.key);
-        if (!payload)
-            continue;
-        const filePath = path.join(runtimeDir, `${source.key}.json`);
-        await fs.writeFile(filePath, JSON.stringify(payload, null, 2), 'utf8');
-        sourceFiles[source.key] = filePath;
-    }
     if (!sourceFiles.analytics) {
         throw new Error('Analytics source is required (enable and configure `sources.analytics`).');
     }
@@ -333,15 +323,107 @@ function computeSourceHashes(sourcePayloadMap) {
     }
     return hashes;
 }
-async function loadSourcePayloads(config) {
+function normalizeLookback(value, fallback = '30d') {
+    const normalized = String(value || fallback).trim();
+    return /^[0-9]+[dhm]$/.test(normalized) ? normalized : fallback;
+}
+function commandHasExplicitTimeBounds(command) {
+    return /(^|\s)--(?:since|until|last)\b/.test(String(command));
+}
+function resolveCursorAwareCommand(command, sourceConfig, cursorState) {
+    const rawCommand = String(command || '').trim();
+    if (!rawCommand) {
+        return rawCommand;
+    }
+    if (sourceConfig?.cursorMode !== 'auto_since_last_fetch') {
+        return rawCommand;
+    }
+    if (commandHasExplicitTimeBounds(rawCommand)) {
+        return rawCommand;
+    }
+    const lastCollectedAt = String(cursorState?.lastCollectedAt || '').trim();
+    if (lastCollectedAt) {
+        return `${rawCommand} --since ${quote(lastCollectedAt)}`;
+    }
+    const lookback = normalizeLookback(sourceConfig?.initialLookback, '30d');
+    return `${rawCommand} --last ${quote(lookback)}`;
+}
+async function resolveSourcePayloadWithCursor(sourceConfig, sourceName, cursorState) {
+    if (!sourceConfig || sourceConfig.enabled === false) {
+        return {
+            payload: null,
+            nextCursor: cursorState || null,
+            resolvedCommand: null,
+        };
+    }
+    if (sourceConfig.mode === 'command') {
+        if (!sourceConfig.command) {
+            throw new Error(`Source "${sourceName}" has mode=command but no command configured.`);
+        }
+        const resolvedCommand = resolveCursorAwareCommand(sourceConfig.command, sourceConfig, cursorState);
+        const result = await runShellCommand(String(resolvedCommand));
+        if (!result.ok) {
+            throw new Error(`Source "${sourceName}" command failed: ${result.stderr || `exit ${result.code}`}`);
+        }
+        const fetchedAt = new Date().toISOString();
+        try {
+            return {
+                payload: JSON.parse(result.stdout),
+                nextCursor: sourceConfig.cursorMode === 'auto_since_last_fetch'
+                    ? {
+                        lastCollectedAt: fetchedAt,
+                        updatedAt: fetchedAt,
+                        lastCommand: resolvedCommand,
+                    }
+                    : cursorState || null,
+                resolvedCommand,
+            };
+        }
+        catch (error) {
+            throw new Error(`Source "${sourceName}" returned non-JSON output.`);
+        }
+    }
+    if (!sourceConfig.path) {
+        throw new Error(`Source "${sourceName}" has mode=file but no path configured.`);
+    }
+    return {
+        payload: await readJson(path.resolve(String(sourceConfig.path))),
+        nextCursor: cursorState || null,
+        resolvedCommand: null,
+    };
+}
+async function loadSourcePayloads(config, state) {
     const payloads = {};
+    const sourceCursors = { ...(state?.sourceCursors || {}) };
     for (const source of getAllSourceEntries(config)) {
-        const payload = await resolveSourcePayload(source, source.key);
+        const currentCursor = sourceCursors[source.key] || null;
+        const result = await resolveSourcePayloadWithCursor(source, source.key, currentCursor);
+        const payload = result.payload;
         if (payload) {
             payloads[source.key] = payload;
         }
+        if (result.nextCursor) {
+            sourceCursors[source.key] = result.nextCursor;
+        }
     }
-    return payloads;
+    return {
+        payloads,
+        sourceCursors,
+    };
+}
+async function materializeSourceFiles(config, payloads, runtimeDir) {
+    await ensureDir(runtimeDir);
+    const sourceFiles = {};
+    for (const source of getAllSourceEntries(config)) {
+        const payload = payloads[source.key];
+        if (!payload) {
+            continue;
+        }
+        const filePath = path.join(runtimeDir, `${source.key}.json`);
+        await fs.writeFile(filePath, JSON.stringify(payload, null, 2), 'utf8');
+        sourceFiles[source.key] = filePath;
+    }
+    return sourceFiles;
 }
 function hasSourceChanges(previousHashes, currentHashes) {
     const allKeys = new Set([...Object.keys(previousHashes || {}), ...Object.keys(currentHashes || {})]);
@@ -359,9 +441,10 @@ async function runOnce(configPath, statePath) {
         sourceHashes: {},
         lastIssueFingerprint: null,
         lastRunAt: null,
+        sourceCursors: {},
     });
     const runtimeDir = path.resolve(DEFAULT_RUNTIME_DIR);
-    const payloads = await loadSourcePayloads(config);
+    const { payloads, sourceCursors } = await loadSourcePayloads(config, state);
     const currentHashes = computeSourceHashes(payloads);
     const changed = hasSourceChanges(state.sourceHashes, currentHashes);
     if (!changed && config.schedule?.skipIfNoDataChange !== false) {
@@ -370,12 +453,14 @@ async function runOnce(configPath, statePath) {
         await fs.writeFile(statePath, JSON.stringify({
             ...state,
             sourceHashes: currentHashes,
+            sourceCursors,
             lastRunAt: new Date().toISOString(),
             skippedReason: 'no_data_change',
         }, null, 2), 'utf8');
         return;
     }
     const createGitHubArtifact = shouldAutoCreateGitHubArtifact(config);
+    const sourceFiles = await materializeSourceFiles(config, payloads, runtimeDir);
     const chartManifestPath = await maybeGenerateCharts({
         config,
         payloads,
@@ -384,6 +469,7 @@ async function runOnce(configPath, statePath) {
     const dryRun = await runAnalyzer({
         config,
         runtimeDir,
+        sourceFiles,
         createGitHubArtifact: false,
         chartManifestPath,
     });
@@ -395,6 +481,7 @@ async function runOnce(configPath, statePath) {
         await fs.writeFile(statePath, JSON.stringify({
             ...state,
             sourceHashes: currentHashes,
+            sourceCursors,
             lastIssueFingerprint: issueFingerprint,
             lastRunAt: new Date().toISOString(),
             lastOutFile: dryRun.outFile,
@@ -406,6 +493,7 @@ async function runOnce(configPath, statePath) {
         await runAnalyzer({
             config,
             runtimeDir,
+            sourceFiles,
             createGitHubArtifact: true,
             chartManifestPath,
         });
@@ -417,6 +505,7 @@ async function runOnce(configPath, statePath) {
     await fs.mkdir(path.dirname(statePath), { recursive: true });
     await fs.writeFile(statePath, JSON.stringify({
         sourceHashes: currentHashes,
+        sourceCursors,
         lastIssueFingerprint: issueFingerprint,
         lastRunAt: new Date().toISOString(),
         lastOutFile: dryRun.outFile,

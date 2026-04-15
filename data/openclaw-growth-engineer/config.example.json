@@ -26,9 +26,11 @@
       "path": "data/openclaw-growth-engineer/sentry_summary.example.json"
     },
     "feedback": {
-      "enabled": false,
-      "mode": "file",
-      "path": "data/openclaw-growth-engineer/feedback_summary.example.json"
+      "enabled": true,
+      "mode": "command",
+      "command": "analyticscli feedback summary --format json",
+      "cursorMode": "auto_since_last_fetch",
+      "initialLookback": "30d"
     },
     "extra": [
       {

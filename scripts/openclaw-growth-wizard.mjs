@@ -78,9 +78,10 @@ async function askSourceConfig(rl, sourceName, defaultPath, hint, options = {}) 
     const forceEnabled = Boolean(options.forceEnabled);
     const defaultCommand = String(options.defaultCommand || '').trim();
     const defaultMode = defaultCommand ? 'command' : 'file';
+    const defaultEnabled = options.defaultEnabled ?? sourceName === 'analytics';
     const enabled = forceEnabled
         ? true
-        : await askYesNo(rl, `Enable source "${sourceName}"?`, sourceName === 'analytics');
+        : await askYesNo(rl, `Enable source "${sourceName}"?`, defaultEnabled);
     if (!enabled) {
         return {
             enabled: false,
@@ -106,6 +107,8 @@ async function askSourceConfig(rl, sourceName, defaultPath, hint, options = {}) 
         mode,
         command: value,
         hint,
+        ...(options.cursorMode ? { cursorMode: options.cursorMode } : {}),
+        ...(options.initialLookback ? { initialLookback: options.initialLookback } : {}),
     };
 }
 async function main() {
@@ -139,7 +142,12 @@ async function main() {
         });
         const revenuecat = await askSourceConfig(rl, 'revenuecat', 'data/openclaw-growth-engineer/revenuecat_summary.example.json', getDefaultSourceHint('revenuecat'));
         const sentry = await askSourceConfig(rl, 'sentry', 'data/openclaw-growth-engineer/sentry_summary.example.json', getDefaultSourceHint('sentry'));
-        const feedback = await askSourceConfig(rl, 'feedback', 'data/openclaw-growth-engineer/feedback_summary.example.json', getDefaultSourceHint('feedback'));
+        const feedback = await askSourceConfig(rl, 'feedback', 'data/openclaw-growth-engineer/feedback_summary.example.json', getDefaultSourceHint('feedback'), {
+            defaultEnabled: true,
+            defaultCommand: getDefaultSourceCommand('feedback'),
+            cursorMode: 'auto_since_last_fetch',
+            initialLookback: '30d',
+        });
         const extraSourcesRaw = await ask(rl, 'Extra connectors (comma-separated, e.g. glitchtip,asc-cli,app-store-reviews)', '');
         const extraSources = extraSourcesRaw
             .split(',')

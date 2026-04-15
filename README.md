@@ -1,51 +1,67 @@
 # OpenClaw Growth Engineer
 
-OpenClaw-first growth autopilot for mobile apps.
+OpenClaw-first growth autopilot for mobile apps, centered around a standalone `openclaw` CLI runtime plus OpenClaw itself as the AI layer.
 
-It pulls together analytics, monetization, crashes, feedback, store signals, and repo context and turns them into implementation-ready GitHub issues or draft PR proposals.
+It pulls together analytics, monetization, crashes, feedback, store signals, and repo context and turns them into proposal drafts that can be handed to OpenClaw chat, GitHub issues, or draft PRs.
 
-If you only want the normal setup path: install it, bootstrap the workspace once, run the wizard, then run `openclaw-growth-start`.
+If you only want the normal setup path: run setup once, then start the CLI.
 
 ## Quick Start
 
-1. Install in OpenClaw / ClawHub:
+1. Run setup:
 
 ```bash
-npx -y clawhub install ai-product-manager
+openclaw setup --config openclaw.config.json
 ```
 
-2. Copy the runtime into your repo once:
+This should:
+
+- initialize `openclaw.config.json`
+- reuse the existing AnalyticsCLI setup flow
+- install/update the shared skills like `analyticscli-cli` and `analyticscli-ts-sdk`
+- install the canonical OpenClaw skill path through the shared installer instead of redefining it locally
+
+2. Run preflight:
 
 ```bash
-bash skills/openclaw-growth-engineer/scripts/bootstrap-openclaw-workspace.sh
+openclaw preflight --config openclaw.config.json --test-connections
 ```
 
-3. Create the non-secret config with the wizard:
+3. Start the first pass:
 
 ```bash
-node scripts/openclaw-growth-wizard.mjs
-```
-
-4. Run the guided setup + first preflight:
-
-```bash
-node scripts/openclaw-growth-start.mjs --config data/openclaw-growth-engineer/config.json
+openclaw start --config openclaw.config.json
 ```
 
 ## What It Does
 
-- Reads analytics by default and can add RevenueCat, Sentry, feedback, and store/release connectors.
+- Reads analytics by default and can add RevenueCat, Sentry/GlitchTip, feedback, store/release connectors, Slack, and generic webhooks.
+- Uses `analyticscli feedback summary --format json` as the built-in feedback source instead of a separate duplicate feedback definition.
 - Correlates product signals with repo context.
 - Generates local issue drafts by default.
-- Creates GitHub issues or draft pull requests only when artifact creation is explicitly enabled in config.
+- Writes an OpenClaw chat outbox by default, and creates GitHub issues or draft pull requests only when GitHub artifact creation is explicitly enabled in config.
+- Leaves all conversational analysis and implementation work to OpenClaw itself.
 
 ## What The Wizard Writes
 
-The wizard writes only the commit-safe config:
+The CLI writes only the commit-safe config:
 
-- `data/openclaw-growth-engineer/config.json`
+- `openclaw.config.json`
 
-You do not need to hand-edit `config.json` for the basic setup.
+You do not need to hand-edit `openclaw.config.json` for the basic setup.
+
+One useful knob in the config is:
+
+- `strategy.proposalMode = "mandatory" | "balanced" | "creative"`
+- `deliveries.openclawChat.enabled = true | false`
+- `deliveries.github.mode = "issue" | "pull_request"`
+- `deliveries.github.autoCreate = true | false`
+- `sources.feedback.cursorMode = "auto_since_last_fetch" | "manual"`
+- `sources.feedback.initialLookback = "30d"`
+
+Use it to control how conservative the generated requests should be.
+Use the delivery flags to choose whether proposals should show up in OpenClaw chat, become GitHub issues, or land as draft PRs on a new branch.
+The feedback cursor settings make old feedback history opt-in instead of accidental: first run uses `--last 30d`, later runs use the stored `lastCollectedAt` unless the command already sets its own time range.
 
 Secrets should stay out of repo files. The normal path is to let OpenClaw manage the runtime environment or secret store and keep the config non-secret.
 
@@ -54,24 +70,27 @@ Secrets should stay out of repo files. The normal path is to let OpenClaw manage
 Preflight only:
 
 ```bash
-node scripts/openclaw-growth-preflight.mjs --config data/openclaw-growth-engineer/config.json --test-connections
+openclaw preflight --config openclaw.config.json --test-connections
 ```
 
 One run:
 
 ```bash
-node scripts/openclaw-growth-runner.mjs --config data/openclaw-growth-engineer/config.json
+openclaw run --config openclaw.config.json
 ```
 
 Loop mode:
 
 ```bash
-node scripts/openclaw-growth-runner.mjs --config data/openclaw-growth-engineer/config.json --loop
+openclaw run --config openclaw.config.json --loop
 ```
 
 ## Maintainer Notes
 
-In this monorepo, `skills/openclaw-growth-engineer/src` is the canonical OpenClaw runtime source. The checked-in `skills/openclaw-growth-engineer/scripts/*.mjs` files are build output. The root `scripts/openclaw-*` files and `skills/product-manager-skill/scripts/openclaw-*` files are mirrors.
+In this monorepo, `apps/openclaw-cli` is now the preferred runtime surface. The checked-in `skills/openclaw-growth-engineer/src` and `scripts/openclaw-*` files remain compatibility paths while the standalone CLI settles.
+
+The CLI is deliberately deterministic. It should not carry its own AI configuration.
+OpenClaw should call the CLI for data collection and proposal generation, then use OpenClaw AI itself when the user wants interpretation or implementation.
 
 Run this after editing runtime scripts:
 

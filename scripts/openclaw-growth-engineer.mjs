@@ -358,9 +358,13 @@ function toStringArray(value) {
     if (!value)
         return [];
     if (Array.isArray(value)) {
-        return value.map((item) => String(item)).filter(Boolean);
+        return value
+            .filter((item) => item !== undefined && item !== null)
+            .map((item) => String(item).trim())
+            .filter(Boolean);
     }
-    return [String(value)];
+    const normalized = String(value).trim();
+    return normalized ? [normalized] : [];
 }
 function coerceNumber(value) {
     const number = Number(value);

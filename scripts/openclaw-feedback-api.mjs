@@ -92,6 +92,7 @@ function normalizeItem(input) {
     const rawFeedback = String(input.feedback || input.message || input.comment || input.summary || '').trim();
     const locationId = String(input.locationId || input.location || metadata.locationId || '').trim();
     const surface = String(input.appSurface || input.surface || metadata.surface || '').trim();
+    const originName = String(input.originName || metadata.originName || '').trim();
     const title = String(input.title ||
         input.summary ||
         metadata.title ||
@@ -105,6 +106,7 @@ function normalizeItem(input) {
         channel: String(input.channel || surface || 'unknown'),
         surface: surface || null,
         location_id: locationId || null,
+        origin_name: originName || null,
         priority: String(input.priority || metadata.priority || 'medium').toLowerCase(),
         tags: Array.isArray(input.tags) ? input.tags.map(String) : [],
         metadata,
@@ -132,11 +134,12 @@ async function readEvents(filePath) {
 function buildSummary(events) {
     const grouped = new Map();
     for (const event of events) {
-        const key = `${event.area}:${event.title.toLowerCase()}`;
+        const key = `${event.area}:${event.origin_name || 'unknown'}:${event.title.toLowerCase()}`;
         const current = grouped.get(key) || {
             id: key.replace(/[^a-z0-9:_-]/gi, '_'),
             title: event.title,
             area: event.area,
+            origin_name: event.origin_name || null,
             priority: event.priority || 'medium',
             count: 0,
             channel: event.channel || 'mixed',
