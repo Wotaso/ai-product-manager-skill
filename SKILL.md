@@ -169,9 +169,7 @@ Use the legacy bootstrap-and-copy runtime only when the standalone CLI is unavai
   - issue mode: `Issues: Read/Write`, `Contents: Read`
   - pull-request mode: `Pull requests: Read/Write`, `Contents: Read/Write`
 - `ANALYTICSCLI_ACCESS_TOKEN`
-  - recommended canonical name for CLI/agent auth
-- `ANALYTICSCLI_READONLY_TOKEN`
-  - legacy alias; keep accepting it for older setups
+  - recommended for CLI/agent auth when no local CLI login exists
 - `REVENUECAT_API_KEY`
   - recommended for RevenueCat command/API mode
 - `SENTRY_AUTH_TOKEN`

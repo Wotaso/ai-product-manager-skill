@@ -189,7 +189,7 @@ async function testAnalyticsConnection(analyticsToken) {
         };
     }
     const command = analyticsToken
-        ? `analyticscli --token ${shellQuote(analyticsToken)} projects list`
+        ? `analyticscli --access-token ${shellQuote(analyticsToken)} projects list`
         : 'analyticscli projects list';
     const result = await runShell(command);
     if (!result.ok) {
@@ -237,6 +237,12 @@ async function testRevenueCatConnection(revenuecatToken, timeoutMs) {
             detail: error instanceof Error ? error.message : String(error),
         };
     }
+}
+function describeAnalyticsConnectionFailure(detail, analyticsTokenEnv, hasAnalyticsToken) {
+    if (!hasAnalyticsToken) {
+        return `Nearly done: I only need \`${analyticsTokenEnv}\` from you to continue setup. Create or copy an AnalyticsCLI access token in dash.analyticscli.com -> API Keys, then run \`analyticscli --api-url https://api.analyticscli.com login --access-token <access_token>\` or set \`${analyticsTokenEnv}\`. Raw error: ${detail}`;
+    }
+    return `AnalyticsCLI connection failed with \`${analyticsTokenEnv}\` set. Verify the token, selected project, and \`ANALYTICSCLI_API_URL=https://api.analyticscli.com\`. Raw error: ${detail}`;
 }
 async function testSentryConnection(sentryToken, timeoutMs) {
     if (!sentryToken) {
@@ -373,14 +379,12 @@ async function runConnectionChecks({ checks, config, timeoutMs }) {
     const requiresGitHubDelivery = shouldAutoCreateGitHubArtifact(config);
     const analyticsSource = config.sources?.analytics;
     if (sourceEnabled(config, 'analytics')) {
-        const analyticsToken = process.env[analyticsTokenEnv] ||
-            process.env.ANALYTICSCLI_ACCESS_TOKEN ||
-            process.env.ANALYTICSCLI_READONLY_TOKEN ||
-            '';
+        const analyticsToken = process.env[analyticsTokenEnv] || process.env.ANALYTICSCLI_ACCESS_TOKEN || '';
+        const hasAnalyticsToken = Boolean(analyticsToken);
         const analyticsConnection = await testAnalyticsConnection(analyticsToken);
         addCheck(checks, 'connection:analytics', analyticsConnection.ok, analyticsConnection.ok
             ? analyticsConnection.detail
-            : `failed (${analyticsConnection.detail})`, analyticsConnection.ok ? 'pass' : analyticsSource?.mode === 'command' ? 'fail' : 'warn');
+            : describeAnalyticsConnectionFailure(analyticsConnection.detail, analyticsTokenEnv, hasAnalyticsToken), analyticsConnection.ok ? 'pass' : analyticsSource?.mode === 'command' ? 'fail' : 'warn');
         if (analyticsSource?.mode === 'command') {
             const command = String(analyticsSource.command || '').trim();
             if (!command) {
@@ -617,12 +621,10 @@ async function main() {
         }
         if (sourceEnabled(config, 'analytics') && config.sources?.analytics?.mode === 'command') {
             const analyticsTokenEnv = getSecretName(config, 'analyticsTokenEnv', 'ANALYTICSCLI_ACCESS_TOKEN');
-            const hasAnalyticsToken = Boolean(process.env[analyticsTokenEnv] ||
-                process.env.ANALYTICSCLI_ACCESS_TOKEN ||
-                process.env.ANALYTICSCLI_READONLY_TOKEN);
+            const hasAnalyticsToken = Boolean(process.env[analyticsTokenEnv] || process.env.ANALYTICSCLI_ACCESS_TOKEN);
             addCheck(checks, `secret:${analyticsTokenEnv}`, hasAnalyticsToken, hasAnalyticsToken
                 ? 'set (optional if analyticscli uses stored login)'
-                : 'not set (optional if analyticscli uses local login/keychain)', hasAnalyticsToken ? 'pass' : 'warn');
+                : `nearly done: set ${analyticsTokenEnv} or run analyticscli login --access-token <access_token>`, hasAnalyticsToken ? 'pass' : 'warn');
         }
         if (args.testConnections) {
             await runConnectionChecks({

@@ -8,7 +8,6 @@ Use this checklist before running autopilot mode.
 | --- | --- | --- | --- |
 | `GITHUB_TOKEN` | Repo analysis target + GitHub issue/PR creation | Yes | Issue mode: `Issues: Read/Write`, `Contents: Read`. PR mode: `Pull requests: Read/Write`, `Contents: Read/Write` |
 | `ANALYTICSCLI_ACCESS_TOKEN` | AnalyticsCLI command auth when no local login exists | Recommended | Read-only analytics access across the account |
-| `ANALYTICSCLI_READONLY_TOKEN` | Legacy alias for `ANALYTICSCLI_ACCESS_TOKEN` | Optional | Backwards compatibility only |
 | `REVENUECAT_API_KEY` | RevenueCat command/API refresh | Recommended | Read-only where possible |
 | `SENTRY_AUTH_TOKEN` | Sentry command/API refresh | Recommended | Read-only issue/event scopes |
 
