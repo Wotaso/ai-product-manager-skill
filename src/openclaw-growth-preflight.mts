@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { promises as fs } from 'node:fs';
+import { existsSync, promises as fs } from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import { spawn } from 'node:child_process';
@@ -12,6 +12,7 @@ import {
   getGitHubActionNoun,
   getGitHubConnectionSummary,
   getGitHubRequirementText,
+  shouldAutoCreateGitHubArtifact,
 } from './openclaw-growth-shared.mjs';
 
 const DEFAULT_CONFIG_PATH = 'data/openclaw-growth-engineer/config.json';
@@ -91,9 +92,29 @@ function shellQuote(value) {
   return `'${String(value).replace(/'/g, `'\\''`)}'`;
 }
 
+function resolveShellCommand(): string {
+  const candidates = [
+    process.env.OPENCLAW_SHELL,
+    process.env.SHELL,
+    '/bin/zsh',
+    '/bin/bash',
+    '/usr/bin/bash',
+    '/bin/sh',
+    '/usr/bin/sh',
+  ].filter((value): value is string => typeof value === 'string' && value.trim().length > 0);
+
+  for (const candidate of candidates) {
+    if (existsSync(candidate)) {
+      return candidate;
+    }
+  }
+
+  return 'sh';
+}
+
 function runShell(command): Promise<ShellResult> {
   return new Promise((resolve) => {
-    const child = spawn('/bin/zsh', ['-lc', command], {
+    const child = spawn(resolveShellCommand(), ['-c', command], {
       stdio: ['ignore', 'pipe', 'pipe'],
     });
 
@@ -411,6 +432,7 @@ async function runConnectionChecks({ checks, config, timeoutMs }) {
   const githubTokenEnv = getSecretName(config, 'githubTokenEnv', 'GITHUB_TOKEN');
   const githubRepo = String(config?.project?.githubRepo || '').trim();
   const actionMode = getActionMode(config);
+  const requiresGitHubDelivery = shouldAutoCreateGitHubArtifact(config);
 
   const analyticsSource = config.sources?.analytics;
   if (sourceEnabled(config, 'analytics')) {
@@ -582,7 +604,14 @@ async function runConnectionChecks({ checks, config, timeoutMs }) {
   const githubToken = process.env[githubTokenEnv] || '';
   const githubCheckName =
     actionMode === 'pull_request' ? 'connection:github-pull-requests' : 'connection:github';
-  if (!githubToken) {
+  if (!requiresGitHubDelivery) {
+    addCheck(
+      checks,
+      githubCheckName,
+      true,
+      'skipped because GitHub artifact creation is disabled',
+    );
+  } else if (!githubToken) {
     addCheck(
       checks,
       githubCheckName,
@@ -624,6 +653,7 @@ async function main() {
 
   if (config) {
     const actionMode = getActionMode(config);
+    const requiresGitHubDelivery = shouldAutoCreateGitHubArtifact(config);
     const analyticsEnabled = sourceEnabled(config, 'analytics');
     addCheck(
       checks,
@@ -644,8 +674,13 @@ async function main() {
     addCheck(
       checks,
       'project:github-repo',
-      Boolean(githubRepo),
-      githubRepo ? `configured (${githubRepo})` : 'project.githubRepo is required',
+      Boolean(githubRepo) || !requiresGitHubDelivery,
+      githubRepo
+        ? `configured (${githubRepo})`
+        : requiresGitHubDelivery
+          ? 'project.githubRepo is required'
+          : 'not configured (optional when GitHub delivery is disabled)',
+      requiresGitHubDelivery ? 'fail' : 'warn',
     );
 
     const githubTokenEnv = getSecretName(config, 'githubTokenEnv', 'GITHUB_TOKEN');
@@ -653,10 +688,15 @@ async function main() {
     addCheck(
       checks,
       `secret:${githubTokenEnv}`,
-      hasGithubToken,
+      hasGithubToken || !requiresGitHubDelivery,
       hasGithubToken
-        ? `set (required; ${getGitHubRequirementText(actionMode)})`
-        : `missing (required; ${getGitHubRequirementText(actionMode)})`,
+        ? requiresGitHubDelivery
+          ? `set (required; ${getGitHubRequirementText(actionMode)})`
+          : 'set (optional when GitHub delivery is disabled)'
+        : requiresGitHubDelivery
+          ? `missing (required; ${getGitHubRequirementText(actionMode)})`
+          : 'optional when GitHub delivery is disabled',
+      requiresGitHubDelivery ? 'fail' : 'warn',
     );
 
     for (const source of getAllSourceEntries(config)) {

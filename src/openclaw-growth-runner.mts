@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { promises as fs } from 'node:fs';
+import { existsSync, promises as fs } from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import os from 'node:os';
@@ -134,9 +134,29 @@ async function findAnalyticsSkillPath(config) {
   return { path: null, checked: candidates };
 }
 
+function resolveShellCommand(): string {
+  const candidates = [
+    process.env.OPENCLAW_SHELL,
+    process.env.SHELL,
+    '/bin/zsh',
+    '/bin/bash',
+    '/usr/bin/bash',
+    '/bin/sh',
+    '/usr/bin/sh',
+  ].filter((value): value is string => typeof value === 'string' && value.trim().length > 0);
+
+  for (const candidate of candidates) {
+    if (existsSync(candidate)) {
+      return candidate;
+    }
+  }
+
+  return 'sh';
+}
+
 function runShellCommand(command, timeoutMs = 120_000): Promise<ShellResult> {
   return new Promise((resolve) => {
-    const child = spawn('/bin/zsh', ['-lc', command], {
+    const child = spawn(resolveShellCommand(), ['-c', command], {
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     let stdout = '';
