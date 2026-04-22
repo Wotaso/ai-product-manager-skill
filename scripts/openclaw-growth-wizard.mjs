@@ -203,7 +203,7 @@ async function main() {
             },
             secrets: {
                 githubTokenEnv: 'GITHUB_TOKEN',
-                analyticsTokenEnv: 'ANALYTICSCLI_READONLY_TOKEN',
+                analyticsTokenEnv: 'ANALYTICSCLI_ACCESS_TOKEN',
                 revenuecatTokenEnv: 'REVENUECAT_API_KEY',
                 sentryTokenEnv: 'SENTRY_AUTH_TOKEN',
             },

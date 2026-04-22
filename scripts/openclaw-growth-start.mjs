@@ -246,7 +246,7 @@ function remediationForCheck(checkName, configPath) {
         return 'Write `data/openclaw-growth-engineer/analytics_summary.json` via your analytics refresh step (API-key based source command/file generation).';
     }
     if (checkName === 'connection:analytics') {
-        return 'Verify AnalyticsCLI auth (`ANALYTICSCLI_READONLY_TOKEN` or local `analyticscli login`) and selected project.';
+        return 'Verify AnalyticsCLI auth (`ANALYTICSCLI_ACCESS_TOKEN`, legacy `ANALYTICSCLI_READONLY_TOKEN`, or local `analyticscli login`) and selected project.';
     }
     if (checkName === 'connection:github') {
         return 'Verify `GITHUB_TOKEN` and repo access to `/repos/<owner>/<repo>` + issues API.';

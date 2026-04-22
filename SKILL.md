@@ -131,6 +131,7 @@ When the user says "start", "run", or "kick off" the skill:
    - `analyticscli projects list`
    - detect `project.githubRepo` from git remote when possible
    - verify `GITHUB_TOKEN` only if GitHub delivery is enabled
+   - if the user already pasted an AnalyticsCLI token candidate, use it immediately for the check/start attempt instead of asking a follow-up token question first
 5. If preflight fails, return only a concrete blocker checklist
 6. If preflight passes, continue with `openclaw run --config openclaw.config.json`
 
@@ -167,8 +168,10 @@ Use the legacy bootstrap-and-copy runtime only when the standalone CLI is unavai
   - required only when GitHub issue or pull-request delivery is enabled
   - issue mode: `Issues: Read/Write`, `Contents: Read`
   - pull-request mode: `Pull requests: Read/Write`, `Contents: Read/Write`
+- `ANALYTICSCLI_ACCESS_TOKEN`
+  - recommended canonical name for CLI/agent auth
 - `ANALYTICSCLI_READONLY_TOKEN`
-  - recommended
+  - legacy alias; keep accepting it for older setups
 - `REVENUECAT_API_KEY`
   - recommended for RevenueCat command/API mode
 - `SENTRY_AUTH_TOKEN`

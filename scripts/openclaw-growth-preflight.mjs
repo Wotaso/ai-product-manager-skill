@@ -363,7 +363,7 @@ async function testCommandSourceJson(command) {
     };
 }
 async function runConnectionChecks({ checks, config, timeoutMs }) {
-    const analyticsTokenEnv = getSecretName(config, 'analyticsTokenEnv', 'ANALYTICSCLI_READONLY_TOKEN');
+    const analyticsTokenEnv = getSecretName(config, 'analyticsTokenEnv', 'ANALYTICSCLI_ACCESS_TOKEN');
     const revenuecatTokenEnv = getSecretName(config, 'revenuecatTokenEnv', 'REVENUECAT_API_KEY');
     const sentryTokenEnv = getSecretName(config, 'sentryTokenEnv', 'SENTRY_AUTH_TOKEN');
     const feedbackTokenEnv = getSecretName(config, 'feedbackTokenEnv', 'FEEDBACK_API_TOKEN');
@@ -373,7 +373,10 @@ async function runConnectionChecks({ checks, config, timeoutMs }) {
     const requiresGitHubDelivery = shouldAutoCreateGitHubArtifact(config);
     const analyticsSource = config.sources?.analytics;
     if (sourceEnabled(config, 'analytics')) {
-        const analyticsToken = process.env[analyticsTokenEnv] || '';
+        const analyticsToken = process.env[analyticsTokenEnv] ||
+            process.env.ANALYTICSCLI_ACCESS_TOKEN ||
+            process.env.ANALYTICSCLI_READONLY_TOKEN ||
+            '';
         const analyticsConnection = await testAnalyticsConnection(analyticsToken);
         addCheck(checks, 'connection:analytics', analyticsConnection.ok, analyticsConnection.ok
             ? analyticsConnection.detail
@@ -612,9 +615,11 @@ async function main() {
         else {
             addCheck(checks, 'charting', true, 'disabled');
         }
-        if (sourceEnabled(config, 'analytics') && config.sources?.analytics?.mode === 'command') {
-            const analyticsTokenEnv = getSecretName(config, 'analyticsTokenEnv', 'ANALYTICSCLI_READONLY_TOKEN');
-            const hasAnalyticsToken = Boolean(process.env[analyticsTokenEnv]);
+    if (sourceEnabled(config, 'analytics') && config.sources?.analytics?.mode === 'command') {
+            const analyticsTokenEnv = getSecretName(config, 'analyticsTokenEnv', 'ANALYTICSCLI_ACCESS_TOKEN');
+            const hasAnalyticsToken = Boolean(process.env[analyticsTokenEnv] ||
+                process.env.ANALYTICSCLI_ACCESS_TOKEN ||
+                process.env.ANALYTICSCLI_READONLY_TOKEN);
             addCheck(checks, `secret:${analyticsTokenEnv}`, hasAnalyticsToken, hasAnalyticsToken
                 ? 'set (optional if analyticscli uses stored login)'
                 : 'not set (optional if analyticscli uses local login/keychain)', hasAnalyticsToken ? 'pass' : 'warn');
