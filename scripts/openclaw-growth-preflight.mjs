@@ -615,7 +615,7 @@ async function main() {
         else {
             addCheck(checks, 'charting', true, 'disabled');
         }
-    if (sourceEnabled(config, 'analytics') && config.sources?.analytics?.mode === 'command') {
+        if (sourceEnabled(config, 'analytics') && config.sources?.analytics?.mode === 'command') {
             const analyticsTokenEnv = getSecretName(config, 'analyticsTokenEnv', 'ANALYTICSCLI_ACCESS_TOKEN');
             const hasAnalyticsToken = Boolean(process.env[analyticsTokenEnv] ||
                 process.env.ANALYTICSCLI_ACCESS_TOKEN ||
