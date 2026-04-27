@@ -26,6 +26,7 @@ Usage:
 
 Options:
   --config <file>        Config path (default: ${DEFAULT_CONFIG_PATH})
+  --project <id>         AnalyticsCLI project ID to use for generated source commands
   --setup-only           Run bootstrap + preflight only (skip first run)
   --no-test-connections  Skip live API smoke checks in preflight
   --help, -h             Show help
@@ -35,6 +36,7 @@ Options:
 function parseArgs(argv) {
     const args = {
         config: DEFAULT_CONFIG_PATH,
+        project: '',
         run: true,
         testConnections: true,
     };
@@ -46,6 +48,10 @@ function parseArgs(argv) {
         }
         else if (token === '--config') {
             args.config = next || args.config;
+            i += 1;
+        }
+        else if (token === '--project') {
+            args.project = String(next || '').trim();
             i += 1;
         }
         else if (token === '--setup-only') {
@@ -428,6 +434,133 @@ function parseJsonFromStdout(stdout) {
         return null;
     }
 }
+function normalizeString(value) {
+    return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+function extractProjectChoices(payload) {
+    const candidates = (() => {
+        if (Array.isArray(payload))
+            return payload;
+        if (payload && typeof payload === 'object') {
+            if (Array.isArray(payload.projects))
+                return payload.projects;
+            if (Array.isArray(payload.items))
+                return payload.items;
+            if (Array.isArray(payload.data))
+                return payload.data;
+        }
+        return [];
+    })();
+    const byId = new Map();
+    for (const candidate of candidates) {
+        if (!candidate || typeof candidate !== 'object')
+            continue;
+        const id = normalizeString(candidate.id) ||
+            normalizeString(candidate.projectId) ||
+            normalizeString(candidate.project_id);
+        if (!id)
+            continue;
+        const name = normalizeString(candidate.name) || normalizeString(candidate.displayName);
+        const slug = normalizeString(candidate.slug);
+        byId.set(id, {
+            id,
+            name,
+            slug,
+            label: name || slug || id,
+        });
+    }
+    return [...byId.values()].sort((a, b) => String(a.label).localeCompare(String(b.label)));
+}
+function isMissingProjectSelection(text) {
+    return /Project ID is missing|Pass --project <id>|analyticscli projects select/i.test(String(text || ''));
+}
+function commandHasProjectFlag(command) {
+    return /(^|\s)--project(\s|=|$)/.test(String(command || ''));
+}
+function appendProjectFlag(command, projectId) {
+    const raw = String(command || '').trim();
+    if (!raw || commandHasProjectFlag(raw))
+        return raw;
+    return `${raw} --project ${quote(projectId)}`;
+}
+async function configureAnalyticsProject(configPath, projectId) {
+    const normalizedProjectId = normalizeString(projectId);
+    if (!normalizedProjectId)
+        return false;
+    const config = await readJson(configPath);
+    let changed = false;
+    for (const sourceName of ['analytics', 'feedback']) {
+        const source = config?.sources?.[sourceName];
+        if (!source || source.enabled === false || source.mode !== 'command' || !source.command) {
+            continue;
+        }
+        const nextCommand = appendProjectFlag(source.command, normalizedProjectId);
+        if (nextCommand !== source.command) {
+            source.command = nextCommand;
+            changed = true;
+        }
+    }
+    if (!config.project || typeof config.project !== 'object') {
+        config.project = {};
+    }
+    if (config.project.analyticsProjectId !== normalizedProjectId) {
+        config.project.analyticsProjectId = normalizedProjectId;
+        changed = true;
+    }
+    if (changed) {
+        await writeJson(configPath, config);
+    }
+    return changed;
+}
+async function listAnalyticsProjects() {
+    const result = await runShellCommand('analyticscli projects list --format json', 60_000);
+    if (!result.ok) {
+        return {
+            ok: false,
+            error: result.stderr || `exit ${result.code}`,
+            projects: [],
+        };
+    }
+    const payload = parseJsonFromStdout(result.stdout);
+    return {
+        ok: true,
+        error: null,
+        projects: extractProjectChoices(payload),
+    };
+}
+async function buildProjectSelectionResponse({ configCreated, configPath, projectConfigured, rawError }) {
+    const projectList = await listAnalyticsProjects();
+    const projects = projectList.projects;
+    const singleProject = projects.length === 1 ? projects[0] : null;
+    return {
+        ok: true,
+        phase: 'project_selection_required',
+        setupComplete: false,
+        configCreated,
+        configPath,
+        projectConfigured,
+        needsUserInput: true,
+        question: projects.length > 1
+            ? 'Which AnalyticsCLI project should OpenClaw use for this setup?'
+            : 'Which AnalyticsCLI project should OpenClaw use for this setup?',
+        message: projects.length > 1
+            ? 'Multiple AnalyticsCLI projects are available. Ask the user which project to use, then persist it and retry the run.'
+            : singleProject
+                ? 'One AnalyticsCLI project is available. Persist it as the default project and retry the run.'
+                : 'AnalyticsCLI needs a selected project before the first run can query analytics.',
+        projects,
+        suggestedProjectId: singleProject?.id || null,
+        nextCommand: singleProject
+            ? `node scripts/openclaw-growth-start.mjs --config ${quote(configPath)} --project ${quote(singleProject.id)}`
+            : `node scripts/openclaw-growth-start.mjs --config ${quote(configPath)} --project <project_id>`,
+        alternatePersistCommand: singleProject
+            ? `analyticscli projects select ${singleProject.id}`
+            : 'analyticscli projects select <project_id>',
+        retryCommand: `node scripts/openclaw-growth-start.mjs --config ${quote(configPath)}`,
+        rawError: truncate(rawError, 800),
+        projectListError: projectList.ok ? null : truncate(projectList.error, 800),
+    };
+}
 function remediationForCheck(checkName, configPath) {
     if (checkName === 'dependency:analyticscli') {
         return 'Run AnalyticsCLI CLI with `npx -y @analyticscli/cli@preview --help`, or use `@analyticscli/cli` after stable release.';
@@ -478,6 +611,7 @@ async function main() {
     const args = parseArgs(process.argv.slice(2));
     const configPath = path.resolve(args.config);
     const configResult = await ensureConfig(configPath);
+    const projectConfigured = await configureAnalyticsProject(configPath, args.project);
     const analyticscliEnsure = await ensureAnalyticsCliInstalled();
     if (!analyticscliEnsure.ok) {
         process.stdout.write(`${JSON.stringify({
@@ -485,6 +619,7 @@ async function main() {
             phase: 'dependency_setup',
             configCreated: configResult.created,
             configPath,
+            projectConfigured,
             blockers: [
                 {
                     check: 'dependency:analyticscli',
@@ -515,6 +650,7 @@ async function main() {
             phase: 'preflight',
             configCreated: configResult.created,
             configPath,
+            projectConfigured,
             githubRepo: configResult.githubRepo,
             blockers,
         }, null, 2)}\n`);
@@ -527,18 +663,30 @@ async function main() {
             phase: 'setup_complete',
             configCreated: configResult.created,
             configPath,
+            projectConfigured,
             message: 'Preflight passed. First run skipped due to --setup-only.',
         }, null, 2)}\n`);
         return;
     }
     const runResult = await runFirstPass(configPath);
     if (!runResult.ok) {
+        const rawError = runResult.stderr || `exit ${runResult.code}`;
+        if (isMissingProjectSelection(rawError)) {
+            process.stdout.write(`${JSON.stringify(await buildProjectSelectionResponse({
+                configCreated: configResult.created,
+                configPath,
+                projectConfigured,
+                rawError,
+            }), null, 2)}\n`);
+            return;
+        }
         process.stdout.write(`${JSON.stringify({
             ok: false,
             phase: 'first_run',
             configCreated: configResult.created,
             configPath,
-            error: runResult.stderr || `exit ${runResult.code}`,
+            projectConfigured,
+            error: rawError,
         }, null, 2)}\n`);
         process.exitCode = 1;
         return;
@@ -549,6 +697,7 @@ async function main() {
         phase: 'first_run_complete',
         configCreated: configResult.created,
         configPath,
+        projectConfigured,
         actionMode,
         runnerOutput: runResult.stdout.trim(),
     }, null, 2)}\n`);

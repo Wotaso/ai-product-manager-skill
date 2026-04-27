@@ -3,7 +3,7 @@ name: openclaw-growth-engineer
 description: OpenClaw-first growth autopilot for mobile apps. Correlate analytics, crashes, billing, feedback, store signals, and repo context into proposal drafts that can flow into OpenClaw chat, GitHub issues, or draft pull requests.
 license: MIT
 homepage: https://github.com/wotaso/analyticscli-skills
-metadata: {"author":"wotaso","version":"1.0.18","analyticscli-target":"@analyticscli/cli","analyticscli-supported-range":">=0.1.2-preview.0 <0.2.0","openclaw":{"emoji":"🚀","homepage":"https://github.com/wotaso/analyticscli-skills","requires":{"bins":["node","analyticscli"]},"install":[{"id":"analyticscli-cli","kind":"node","package":"@analyticscli/cli@preview","bins":["analyticscli"],"label":"Install/update AnalyticsCLI CLI (npm package @analyticscli/cli@preview)"}]}}
+metadata: {"author":"wotaso","version":"1.0.20","analyticscli-target":"@analyticscli/cli","analyticscli-supported-range":">=0.1.2-preview.0 <0.2.0","openclaw":{"emoji":"🚀","homepage":"https://github.com/wotaso/analyticscli-skills","requires":{"bins":["node","analyticscli"]},"install":[{"id":"analyticscli-cli","kind":"node","package":"@analyticscli/cli@preview","bins":["analyticscli"],"label":"Install/update AnalyticsCLI CLI (npm package @analyticscli/cli@preview)"}]}}
 ---
 
 # OpenClaw Growth Engineer
@@ -53,6 +53,7 @@ Setup should feel guided for a developer, not like a silent preflight dump.
 - After each setup phase, report what was detected, what was configured, and the next concrete command OpenClaw will run.
 - Keep secrets out of prompts, repo files, logs, and command arguments; prefer OpenClaw secret storage or environment injection.
 - When SDK instrumentation is missing or weak, guide the developer through the `analyticscli-ts-sdk` setup path so analytics events become useful for later growth analysis.
+- If AnalyticsCLI has no default project and multiple projects are visible, do not report that as a hard error. List the available projects, ask the user which one to use, persist the choice with `openclaw start --config openclaw.config.json --project <project_id>` or `analyticscli projects select <project_id>`, and then retry the setup/run.
 
 During setup, ask the user this concrete selection question before requesting optional credentials:
 
@@ -82,6 +83,16 @@ Before autopilot runs, these are non-negotiable:
 GitHub connection is strongly recommended for serious analysis, even when GitHub delivery is disabled.
 Treat readable GitHub repo access as very important because analytics signals become much more actionable when OpenClaw can map funnels, events, crashes, revenue signals, and feedback back to actual code areas.
 Without repo context, findings stay generic and file/module hypotheses are lower confidence.
+
+When the user says they want to connect GitHub or the codebase, do not ask them to manually send a repo path first.
+Start the GitHub CLI setup flow yourself:
+
+1. Run `git rev-parse --show-toplevel` to detect the local repo root.
+2. Run `git remote get-url origin` and infer `owner/repo` when possible.
+3. Run `gh auth status`.
+4. If `gh` is not authenticated, start `gh auth login` and tell the user to complete the browser/device flow.
+5. After auth succeeds, use local repo context for read-only code analysis immediately.
+6. Ask for issue or pull-request write permissions only if GitHub delivery is enabled.
 
 Use the least privilege GitHub access that matches the requested workflow:
 
