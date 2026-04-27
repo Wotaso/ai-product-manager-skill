@@ -373,8 +373,9 @@ async function testAnalyticsConnection(analyticsToken) {
             detail: 'analyticscli binary missing',
         };
     }
+    const rootTokenFlag = await resolveAnalyticsCliRootTokenFlag();
     const command = analyticsToken
-        ? `analyticscli --access-token ${shellQuote(analyticsToken)} projects list`
+        ? `analyticscli ${rootTokenFlag} ${shellQuote(analyticsToken)} projects list`
         : 'analyticscli projects list';
     const result = await runShell(command);
     if (!result.ok) {
@@ -389,6 +390,13 @@ async function testAnalyticsConnection(analyticsToken) {
             ? 'analyticscli token auth check passed (`projects list`)'
             : 'analyticscli auth check passed (`projects list`)',
     };
+}
+async function resolveAnalyticsCliRootTokenFlag() {
+    const help = await runShell('analyticscli --help');
+    if (help.ok && /--access-token\b/.test(help.stdout)) {
+        return '--access-token';
+    }
+    return '--token';
 }
 async function testRevenueCatConnection(revenuecatToken, timeoutMs) {
     if (!revenuecatToken) {
@@ -425,7 +433,7 @@ async function testRevenueCatConnection(revenuecatToken, timeoutMs) {
 }
 function describeAnalyticsConnectionFailure(detail, analyticsTokenEnv, hasAnalyticsToken) {
     if (!hasAnalyticsToken) {
-        return `Nearly done: I only need \`${analyticsTokenEnv}\` from you to continue setup. Create or copy an AnalyticsCLI access token in dash.analyticscli.com -> API Keys, then run \`analyticscli --api-url https://api.analyticscli.com login --access-token <access_token>\` or set \`${analyticsTokenEnv}\`. Raw error: ${detail}`;
+        return `Nearly done: I only need \`${analyticsTokenEnv}\` from you to continue setup. Create or copy an AnalyticsCLI token in dash.analyticscli.com -> API Keys, then run \`analyticscli --api-url https://api.analyticscli.com login --readonly-token <token>\` (current preview CLI) or set \`${analyticsTokenEnv}\`. Raw error: ${detail}`;
     }
     return `AnalyticsCLI connection failed with \`${analyticsTokenEnv}\` set. Verify the token, selected project, and \`ANALYTICSCLI_API_URL=https://api.analyticscli.com\`. Raw error: ${detail}`;
 }
@@ -809,7 +817,7 @@ async function main() {
             const hasAnalyticsToken = Boolean(process.env[analyticsTokenEnv] || process.env.ANALYTICSCLI_ACCESS_TOKEN);
             addCheck(checks, `secret:${analyticsTokenEnv}`, hasAnalyticsToken, hasAnalyticsToken
                 ? 'set (optional if analyticscli uses stored login)'
-                : `nearly done: set ${analyticsTokenEnv} or run analyticscli login --access-token <access_token>`, hasAnalyticsToken ? 'pass' : 'warn');
+                : `nearly done: set ${analyticsTokenEnv} or run analyticscli login --readonly-token <token>`, hasAnalyticsToken ? 'pass' : 'warn');
         }
         if (args.testConnections) {
             await runConnectionChecks({
