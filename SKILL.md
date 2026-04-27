@@ -3,7 +3,7 @@ name: openclaw-growth-engineer
 description: OpenClaw-first growth autopilot for mobile apps. Correlate analytics, crashes, billing, feedback, store signals, and repo context into proposal drafts that can flow into OpenClaw chat, GitHub issues, or draft pull requests.
 license: MIT
 homepage: https://github.com/wotaso/analyticscli-skills
-metadata: {"author":"wotaso","version":"1.0.15","analyticscli-target":"@analyticscli/cli","analyticscli-supported-range":">=0.1.2-preview.0 <0.2.0","openclaw":{"emoji":"🚀","homepage":"https://github.com/wotaso/analyticscli-skills","requires":{"bins":["node","analyticscli"]},"install":[{"id":"analyticscli-cli","kind":"node","package":"@analyticscli/cli@preview","bins":["analyticscli"],"label":"Install/update AnalyticsCLI CLI (npm package @analyticscli/cli@preview)"}]}}
+metadata: {"author":"wotaso","version":"1.0.16","analyticscli-target":"@analyticscli/cli","analyticscli-supported-range":">=0.1.2-preview.0 <0.2.0","openclaw":{"emoji":"🚀","homepage":"https://github.com/wotaso/analyticscli-skills","requires":{"bins":["node","analyticscli"]},"install":[{"id":"analyticscli-cli","kind":"node","package":"@analyticscli/cli@preview","bins":["analyticscli"],"label":"Install/update AnalyticsCLI CLI (npm package @analyticscli/cli@preview)"}]}}
 ---
 
 # OpenClaw Growth Engineer
@@ -47,6 +47,22 @@ Setup should feel guided for a developer, not like a silent preflight dump.
 - Keep secrets out of prompts, repo files, logs, and command arguments; prefer OpenClaw secret storage or environment injection.
 - When SDK instrumentation is missing or weak, guide the developer through the `analyticscli-ts-sdk` setup path so analytics events become useful for later growth analysis.
 
+During setup, ask the user this concrete selection question before requesting optional credentials:
+
+```text
+Welche der folgenden Connections moechtest du aufsetzen? Mehrfachauswahl ist moeglich:
+1. AnalyticsCLI analytics baseline
+2. GitHub code access fuer Codeanalyse
+3. ASC CLI fuer App Store Connect Analytics-Daten
+4. RevenueCat fuer Monetization-/Subscription-Daten
+5. Sentry/GlitchTip fuer Crash-/Error-Daten
+6. Feedback/App Reviews
+7. Erstmal ueberspringen
+```
+
+Then configure only the selected connections. Do not ask for all tokens at once.
+For every selected connection, explain the minimum role/scope and exactly where the user finds the key or login flow.
+
 ## Mandatory Baseline
 
 Before autopilot runs, these are non-negotiable:
@@ -62,7 +78,8 @@ Without repo context, findings stay generic and file/module hypotheses are lower
 
 Use the least privilege GitHub access that matches the requested workflow:
 
-- code analysis only: readable repo/code access is enough
+- code analysis only: readable repo/code access is enough; prefer `gh auth status` / `gh auth login` when an existing GitHub CLI login can be reused
+- if the user must create a token, prefer a fine-grained read-only token with `Contents: Read` and `Metadata: Read`, and ask for access to all repositories only when the user wants cross-repo code analysis
 - issue creation: add issue write permission only when GitHub issue delivery is enabled
 - pull-request creation: add pull-request and contents write permission only when draft PR delivery is enabled
 
@@ -191,9 +208,26 @@ Additional connectors:
 - crash-style tools may use `issues[]`
 - feedback-style tools may use `items[]`
 
-For iOS/macOS products, recommend connecting the `asc` CLI and the related App Store Connect agent skill as an optional extra data source.
-It can add monthly App Store Connect context such as app reviews, ratings, releases, TestFlight/build signals, availability, pricing, and subscription/store metadata when those exports are available.
-This should be framed as additive signal, not a hard blocker: AnalyticsCLI remains the baseline, while ASC data helps the monthly product/growth review see more store-side context.
+For iOS/macOS products, explicitly ask whether the user wants to connect the `asc` CLI and the related App Store Connect agent skill for App Store Connect Analytics data only.
+Frame ASC as additive monthly analytics signal, not a hard blocker: AnalyticsCLI remains the baseline, while ASC Analytics reports can add App Store discovery, downloads, usage, purchase, and subscription context.
+Do not request ASC permissions for release management, TestFlight management, pricing changes, user management, or other write/admin workflows when the user only selected analytics data.
+
+ASC setup guidance:
+
+- Ask: "Soll ASC CLI fuer App Store Connect Analytics-Daten verbunden werden?"
+- Recommend the least-privilege App Store Connect API access that can read analytics reports: prefer a Sales/Sales and Reports style role for generated analytics reports; Finance can work but is broader; Admin should only be used temporarily when a new analytics report type must be requested for the first time.
+- Prefer an individual API key for a user limited to the target app when possible; team API keys can cover all apps and are broader.
+- Tell the user where to create the key: App Store Connect -> Users and Access -> Integrations -> App Store Connect API for team keys, or profile menu -> Edit Profile -> Individual API Key for individual keys.
+- Store only env vars/secrets: `ASC_KEY_ID`, `ASC_ISSUER_ID`, and `ASC_PRIVATE_KEY` or `ASC_PRIVATE_KEY_PATH`; never commit the `.p8` private key.
+- Prefer `asc auth login` when the local `asc` CLI supports keychain storage; otherwise use runtime env injection.
+
+RevenueCat setup guidance:
+
+- Ask: "Soll RevenueCat fuer Monetization-/Subscription-Daten verbunden werden?"
+- For SDK instrumentation, use the public app-specific SDK key only in the app.
+- For server-side growth summaries, request a RevenueCat secret API key stored server-side only. Prefer a v2 secret key with read-only permissions for charts/metrics and required project configuration resources such as apps, products, offerings, packages, and entitlements; add customer/subscriber read only if the selected summary needs it.
+- Tell the user where to create it: RevenueCat Dashboard -> Project Settings -> API Keys -> + New secret API key.
+- Store it as `REVENUECAT_API_KEY` in OpenClaw secret storage or runtime env; never put it in client code, config JSON, issues, or PR bodies.
 
 Mobile-focused examples:
 
@@ -280,12 +314,19 @@ Use the legacy bootstrap-and-copy runtime only when the standalone CLI is unavai
 - `GITHUB_TOKEN`
   - strongly recommended with readable repo/code access for code-aware analysis
   - required with write scopes only when GitHub issue or pull-request delivery is enabled
+  - prefer GitHub CLI auth; if a token is needed for analysis, use fine-grained read-only `Contents: Read` and `Metadata: Read`
   - issue mode: add `Issues: Read/Write` only when issue creation is enabled
   - pull-request mode: add `Pull requests: Read/Write` and `Contents: Read/Write` only when draft PR creation is enabled
+- `ASC_KEY_ID`, `ASC_ISSUER_ID`, `ASC_PRIVATE_KEY` or `ASC_PRIVATE_KEY_PATH`
+  - optional; ask before setup
+  - App Store Connect Analytics data only
+  - prefer Sales/Sales and Reports style access; Admin only temporarily for first-time report type requests
 - `ANALYTICSCLI_ACCESS_TOKEN`
   - recommended for CLI/agent auth when no local CLI login exists
 - `REVENUECAT_API_KEY`
-  - recommended for RevenueCat command/API mode
+  - optional; ask before setup
+  - use a server-side secret API key for RevenueCat command/API mode
+  - prefer v2 read permissions for charts/metrics and required project configuration resources
 - `SENTRY_AUTH_TOKEN`
   - recommended for Sentry command/API mode
 - optional connector-specific `secretEnv` per `sources.extra[]`

@@ -6,9 +6,10 @@ Use this checklist before running autopilot mode.
 
 | Env var | Purpose | Required | Minimum scope |
 | --- | --- | --- | --- |
-| `GITHUB_TOKEN` | Repo/code access for analysis; optional GitHub issue/PR creation | Strongly recommended for code-aware analysis; required only for GitHub issue/PR creation | Analysis only: `Contents: Read`. Issue creation: add `Issues: Read/Write`. PR creation: add `Pull requests: Read/Write` and `Contents: Read/Write` |
+| `GITHUB_TOKEN` | Repo/code access for analysis; optional GitHub issue/PR creation | Strongly recommended for code-aware analysis; required only for GitHub issue/PR creation | Prefer GitHub CLI auth when already available. Token fallback: fine-grained read-only `Contents: Read`, `Metadata: Read`; use all repos only for cross-repo analysis. Issue creation: add `Issues: Read/Write`. PR creation: add `Pull requests: Read/Write` and `Contents: Read/Write` |
 | `ANALYTICSCLI_ACCESS_TOKEN` | AnalyticsCLI command auth when no local login exists | Recommended | Read-only analytics access across the account |
-| `REVENUECAT_API_KEY` | RevenueCat command/API refresh | Recommended | Read-only where possible |
+| `ASC_KEY_ID` / `ASC_ISSUER_ID` / `ASC_PRIVATE_KEY` | Optional App Store Connect Analytics reports via `asc` CLI | Optional, ask before setup | Analytics data only. Prefer Sales/Sales and Reports style access for generated analytics reports; use Admin only temporarily if a report type must be requested first |
+| `REVENUECAT_API_KEY` | Optional RevenueCat monetization/subscription refresh | Optional, ask before setup | Secret API key stored server-side only. Prefer v2 read permissions for charts/metrics and required project configuration; add customer/subscriber read only when needed |
 | `SENTRY_AUTH_TOKEN` | Sentry command/API refresh | Recommended | Read-only issue/event scopes |
 
 ## Extra Connectors
@@ -21,6 +22,7 @@ Examples:
 - `ASC_KEY_ID`
 - `ASC_ISSUER_ID`
 - `ASC_PRIVATE_KEY`
+- `ASC_PRIVATE_KEY_PATH`
 - `PLAY_CONSOLE_SERVICE_ACCOUNT_JSON`
 
 ## Red Lines

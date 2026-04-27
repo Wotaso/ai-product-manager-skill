@@ -48,11 +48,12 @@ openclaw start --config openclaw.config.json
 ```
 
 Setup should guide the developer through each missing piece. When something is blocked, the agent should explain what was detected, why the missing value matters, where to get it, and the minimum permission needed instead of returning a generic failure.
+Before requesting optional credentials, ask which connections the user wants to set up: AnalyticsCLI, GitHub code access, ASC CLI for App Store Connect Analytics data, RevenueCat, Sentry/GlitchTip, Feedback/App Reviews, or skip.
 
 ## What It Does
 
 - Reads analytics by default and can add RevenueCat, Sentry/GlitchTip, feedback, store/release connectors, Slack, and generic webhooks.
-- For iOS/macOS apps, setup should point developers to the `asc` CLI and App Store Connect skill as optional monthly store-side data sources.
+- For iOS/macOS apps, setup should ask whether to connect the `asc` CLI and App Store Connect skill for App Store Connect Analytics data only.
 - Uses `analyticscli feedback summary --format json` as the built-in feedback source instead of a separate duplicate feedback definition.
 - Correlates product signals with repo context; connect GitHub with readable code access whenever possible because it makes analytics findings much more actionable.
 - Generates local issue drafts by default.

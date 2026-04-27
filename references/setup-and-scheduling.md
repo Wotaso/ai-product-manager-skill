@@ -42,12 +42,24 @@ The setup flow should be developer-friendly:
 - ask for the minimum missing secret or permission, not a broad token
 - show a status checklist after setup: configured, optional, blocked, and next command
 - hand off weak or missing app instrumentation to the `analyticscli-ts-sdk` skill with concrete SDK setup steps
+- ask exactly which optional connections the user wants to set up before requesting credentials: AnalyticsCLI, GitHub code access, ASC CLI for App Store Connect Analytics data, RevenueCat, Sentry/GlitchTip, Feedback/App Reviews, or skip
 
-## 3) Choose GitHub Delivery Mode
+## 3) Choose GitHub Code Access And Delivery Mode
 
 Connect GitHub with readable repo/code access whenever possible.
 This is very important for turning analytics signals into concrete file/module hypotheses.
 Issue and pull-request write permissions are optional; request them only when the selected delivery mode should create GitHub artifacts.
+
+Prefer GitHub CLI:
+
+```bash
+gh auth status
+gh auth login
+gh repo view --json nameWithOwner,defaultBranchRef
+```
+
+For analysis-only token fallback, ask for a fine-grained read-only token with `Contents: Read` and `Metadata: Read`.
+Ask for all repositories only when the user wants cross-repo code analysis.
 
 Set in config:
 
@@ -78,8 +90,21 @@ Recommended mobile extras:
 - `app-store-reviews`
 - `play-console`
 
-For Apple-platform apps, recommend the `asc` CLI plus the App Store Connect agent skill as an optional monthly data source.
-It can enrich growth reviews with App Store Connect context such as reviews, ratings, releases, build/TestFlight state, availability, pricing, and subscription metadata when those commands/exports are available.
+For Apple-platform apps, ask whether to connect the `asc` CLI plus the App Store Connect agent skill for App Store Connect Analytics data only.
+Use it for monthly analytics reports, not release/TestFlight/pricing/admin workflows.
+Recommended least privilege: Sales/Sales and Reports style access for generated analytics reports; Admin only temporarily if a new report type must be requested first.
+
+ASC key locations:
+
+- Team key: App Store Connect -> Users and Access -> Integrations -> App Store Connect API
+- Individual key: profile menu -> Edit Profile -> Individual API Key
+
+RevenueCat setup:
+
+- Ask whether to connect RevenueCat for monetization/subscription data.
+- For SDK instrumentation use only the public app-specific SDK key in app code.
+- For server-side summaries use a secret API key from RevenueCat -> Project Settings -> API Keys -> + New secret API key.
+- Prefer v2 read permissions for charts/metrics and required project configuration resources; store as `REVENUECAT_API_KEY`.
 
 ## 5) Store Secrets
 
