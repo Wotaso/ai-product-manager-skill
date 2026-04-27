@@ -51,7 +51,7 @@ openclaw start --config openclaw.config.json
 
 - Reads analytics by default and can add RevenueCat, Sentry/GlitchTip, feedback, store/release connectors, Slack, and generic webhooks.
 - Uses `analyticscli feedback summary --format json` as the built-in feedback source instead of a separate duplicate feedback definition.
-- Correlates product signals with repo context.
+- Correlates product signals with repo context; connect GitHub with readable code access whenever possible because it makes analytics findings much more actionable.
 - Generates local issue drafts by default.
 - Writes an OpenClaw chat outbox by default, and creates GitHub issues or draft pull requests only when GitHub artifact creation is explicitly enabled in config.
 - Leaves all conversational analysis and implementation work to OpenClaw itself.

@@ -37,6 +37,10 @@ The config is non-secret and commit-safe:
 
 ## 3) Choose GitHub Delivery Mode
 
+Connect GitHub with readable repo/code access whenever possible.
+This is very important for turning analytics signals into concrete file/module hypotheses.
+Issue and pull-request write permissions are optional; request them only when the selected delivery mode should create GitHub artifacts.
+
 Set in config:
 
 - `actions.mode = "issue"`
@@ -88,9 +92,9 @@ Checks include:
 
 - `analyticscli` package install/update and binary availability
 - `analyticscli-cli` skill presence
-- GitHub repo access
+- readable GitHub repo access when available for code-aware analysis
 - connector file/command readiness
-- required secrets
+- required secrets for enabled sources and delivery modes
 - live smoke tests where possible
 
 ## 7) Run

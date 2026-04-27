@@ -6,7 +6,7 @@ Use this checklist before running autopilot mode.
 
 | Env var | Purpose | Required | Minimum scope |
 | --- | --- | --- | --- |
-| `GITHUB_TOKEN` | Repo analysis target + GitHub issue/PR creation | Yes | Issue mode: `Issues: Read/Write`, `Contents: Read`. PR mode: `Pull requests: Read/Write`, `Contents: Read/Write` |
+| `GITHUB_TOKEN` | Repo/code access for analysis; optional GitHub issue/PR creation | Strongly recommended for code-aware analysis; required only for GitHub issue/PR creation | Analysis only: `Contents: Read`. Issue creation: add `Issues: Read/Write`. PR creation: add `Pull requests: Read/Write` and `Contents: Read/Write` |
 | `ANALYTICSCLI_ACCESS_TOKEN` | AnalyticsCLI command auth when no local login exists | Recommended | Read-only analytics access across the account |
 | `REVENUECAT_API_KEY` | RevenueCat command/API refresh | Recommended | Read-only where possible |
 | `SENTRY_AUTH_TOKEN` | Sentry command/API refresh | Recommended | Read-only issue/event scopes |
