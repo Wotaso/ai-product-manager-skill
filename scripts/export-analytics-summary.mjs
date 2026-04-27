@@ -111,12 +111,18 @@ function buildBaseArgs(input) {
 }
 async function runOptionalAnalyticsQuery(label, args) {
     try {
-        return await runJsonCommand('analyticscli', args);
+        return {
+            payload: await runJsonCommand('analyticscli', args),
+            warning: null,
+        };
     }
     catch (error) {
         const exitCode = error && typeof error === 'object' && 'exitCode' in error ? error.exitCode : null;
         if (exitCode === 2) {
-            return null;
+            return {
+                payload: null,
+                warning: `${label}: ${error instanceof Error ? error.message : String(error)}`,
+            };
         }
         throw new Error(`${label} failed: ${error instanceof Error ? error.message : String(error)}`);
     }
@@ -149,10 +155,14 @@ async function main() {
     const summary = buildAnalyticsSummary({
         projectId: args.project,
         last: args.last,
-        onboardingJourney,
-        retention,
+        onboardingJourney: onboardingJourney.payload,
+        retention: retention.payload,
         maxSignals: args.maxSignals,
     });
+    const queryWarnings = [onboardingJourney.warning, retention.warning].filter(Boolean);
+    if (queryWarnings.length > 0) {
+        summary.meta.queryWarnings = queryWarnings;
+    }
     await writeJsonOutput(args.out, summary);
 }
 main().catch((error) => {

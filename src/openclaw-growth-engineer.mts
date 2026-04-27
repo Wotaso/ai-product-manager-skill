@@ -341,6 +341,62 @@ function normalizeSignals(payload, source, service = source) {
   return result;
 }
 
+function getRecognizedSignalContainers(payload, service = 'custom') {
+  if (!payload || typeof payload !== 'object') {
+    return [];
+  }
+  const containers = [];
+  const serviceKind = classifyServiceKind(service);
+  if (Array.isArray(payload.signals)) {
+    containers.push(`signals[${payload.signals.length}]`);
+  }
+  if (serviceKind === 'crash' && Array.isArray(payload.issues)) {
+    containers.push(`issues[${payload.issues.length}]`);
+  }
+  if (serviceKind === 'feedback') {
+    if (Array.isArray(payload.items)) {
+      containers.push(`items[${payload.items.length}]`);
+    }
+    if (Array.isArray(payload.feedback)) {
+      containers.push(`feedback[${payload.feedback.length}]`);
+    }
+  }
+  return containers;
+}
+
+function getPayloadWarnings(payload) {
+  const warnings = payload?.meta?.queryWarnings;
+  return Array.isArray(warnings) ? warnings.map((warning) => String(warning)).filter(Boolean) : [];
+}
+
+function summarizeNoSignalsSource({ payload, source, service }) {
+  if (!payload || typeof payload !== 'object') {
+    return `${source}: no JSON object payload`;
+  }
+  const containers = getRecognizedSignalContainers(payload, service);
+  const warnings = getPayloadWarnings(payload);
+  const shape = containers.length > 0
+    ? containers.join(', ')
+    : `unrecognized top-level keys: ${Object.keys(payload).slice(0, 8).join(', ') || '(none)'}`;
+  return `${source}: ${shape}${warnings.length > 0 ? `; warnings: ${warnings.join(' | ')}` : ''}`;
+}
+
+function buildNoSignalsError(sourceEntries) {
+  const summaries = sourceEntries.map(summarizeNoSignalsSource);
+  const hasRecognizedShape = sourceEntries.some((entry) => getRecognizedSignalContainers(entry.payload, entry.service).length > 0);
+  const headline = hasRecognizedShape
+    ? 'No actionable growth signals found. Source JSON shape is recognized, but all signal containers are empty.'
+    : 'No signals found. Check input JSON shape (expected: signals[], crash issues[], or feedback items[]).';
+  return [
+    headline,
+    'Sources:',
+    ...summaries.map((summary) => `- ${summary}`),
+    'Next steps:',
+    '- Select or pass an AnalyticsCLI project (`analyticscli projects select <id>` or exporter `--project <id>`).',
+    '- Verify the selected project has release analytics events in the requested window, or enable additional sources such as ASC CLI, RevenueCat, Sentry, or feedback.',
+  ].join('\n');
+}
+
 function inferFeedbackPriority(item) {
   const mentionCount = Number(item.count ?? 0);
   const lower = `${item.title ?? ''} ${item.comment ?? ''}`.toLowerCase();
@@ -1017,7 +1073,17 @@ async function main() {
   ).slice(0, args.maxIssues);
 
   if (signals.length === 0) {
-    throw new Error('No signals found. Check input JSON shape (expected: signals[] or sentry issues[]).');
+    throw new Error(buildNoSignalsError([
+      { payload: analytics, source: 'analytics', service: 'analytics' },
+      ...(revenuecat ? [{ payload: revenuecat, source: 'revenuecat', service: 'revenuecat' }] : []),
+      ...(sentry ? [{ payload: sentry, source: 'sentry', service: 'sentry' }] : []),
+      ...(feedback ? [{ payload: feedback, source: 'feedback', service: 'feedback' }] : []),
+      ...extraSources.map((source) => ({
+        payload: source.payload,
+        source: source.key,
+        service: source.service,
+      })),
+    ]));
   }
 
   const files = await collectRepoFiles(repoRoot);
