@@ -9,6 +9,22 @@ npx -y clawhub install ai-product-manager
 bash skills/openclaw-growth-engineer/scripts/bootstrap-openclaw-workspace.sh
 ```
 
+The runtime must also ensure the AnalyticsCLI npm package is present. The package name is
+`@analyticscli/cli`; the binary name is `analyticscli`.
+
+```bash
+npm install -g @analyticscli/cli@preview
+```
+
+If global npm installs fail on a VPS, use:
+
+```bash
+bash skills/openclaw-growth-engineer/scripts/install-analyticscli-cli.sh
+```
+
+`openclaw setup`, `openclaw start`, and the copied preflight/start runtime should run this
+install/update automatically before using `analyticscli`.
+
 ## 2) Generate Config
 
 ```bash
@@ -70,7 +86,7 @@ node scripts/openclaw-growth-preflight.mjs --config data/openclaw-growth-enginee
 
 Checks include:
 
-- `analyticscli`
+- `analyticscli` package install/update and binary availability
 - `analyticscli-cli` skill presence
 - GitHub repo access
 - connector file/command readiness

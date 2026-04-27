@@ -6,6 +6,9 @@ import { spawn } from 'node:child_process';
 import { classifyServiceKind, getActionMode, getAllSourceEntries, getDefaultSourceCommand, getGitHubActionNoun, getGitHubConnectionSummary, getGitHubRequirementText, shouldAutoCreateGitHubArtifact, } from './openclaw-growth-shared.mjs';
 const DEFAULT_CONFIG_PATH = 'data/openclaw-growth-engineer/config.json';
 const DEFAULT_CONNECTION_TIMEOUT_MS = 15_000;
+const ANALYTICSCLI_PACKAGE_SPEC = process.env.ANALYTICSCLI_CLI_PACKAGE || '@analyticscli/cli@preview';
+const ANALYTICSCLI_NPM_PREFIX = process.env.ANALYTICSCLI_NPM_PREFIX ||
+    (process.env.HOME ? path.join(process.env.HOME, '.local') : path.join(process.cwd(), '.analyticscli-npm'));
 function printHelpAndExit(exitCode, reason = null) {
     if (reason) {
         process.stderr.write(`${reason}\n\n`);
@@ -116,6 +119,72 @@ function runShell(command) {
 async function commandExists(commandName) {
     const result = await runShell(`command -v ${shellQuote(commandName)} >/dev/null 2>&1`);
     return result.ok;
+}
+async function resolveCommandPath(commandName) {
+    const result = await runShell(`command -v ${shellQuote(commandName)}`);
+    return result.ok ? result.stdout.trim() : null;
+}
+function prependToPath(binDir) {
+    process.env.PATH = `${binDir}${path.delimiter}${process.env.PATH || ''}`;
+}
+function isPermissionFailure(output) {
+    return /EACCES|permission denied|access denied|operation not permitted/i.test(String(output || ''));
+}
+async function ensureAnalyticsCliInstalled() {
+    const beforePath = await resolveCommandPath('analyticscli');
+    const npmExists = await commandExists('npm');
+    if (!npmExists) {
+        return beforePath
+            ? {
+                ok: true,
+                detail: `analyticscli binary found at ${beforePath}; npm unavailable, so package update was skipped`,
+            }
+            : {
+                ok: false,
+                detail: `analyticscli binary missing and npm is unavailable; install ${ANALYTICSCLI_PACKAGE_SPEC}`,
+            };
+    }
+    const globalInstall = await runShell(`npm install -g ${shellQuote(ANALYTICSCLI_PACKAGE_SPEC)}`);
+    if (!globalInstall.ok) {
+        const installOutput = `${globalInstall.stderr}\n${globalInstall.stdout}`;
+        if (isPermissionFailure(installOutput)) {
+            await fs.mkdir(ANALYTICSCLI_NPM_PREFIX, { recursive: true });
+            const localInstall = await runShell(`npm install -g --prefix ${shellQuote(ANALYTICSCLI_NPM_PREFIX)} ${shellQuote(ANALYTICSCLI_PACKAGE_SPEC)}`);
+            if (!localInstall.ok) {
+                return beforePath
+                    ? {
+                        ok: true,
+                        detail: `analyticscli binary found at ${beforePath}; update failed globally and in user-local prefix (${truncate(localInstall.stderr || localInstall.stdout)})`,
+                    }
+                    : {
+                        ok: false,
+                        detail: `npm install failed globally and in user-local prefix ${ANALYTICSCLI_NPM_PREFIX}: ${truncate(localInstall.stderr || localInstall.stdout)}`,
+                    };
+            }
+            prependToPath(path.join(ANALYTICSCLI_NPM_PREFIX, 'bin'));
+        }
+        else {
+            return beforePath
+                ? {
+                    ok: true,
+                    detail: `analyticscli binary found at ${beforePath}; package update failed (${truncate(installOutput)})`,
+                }
+                : {
+                    ok: false,
+                    detail: `npm install -g ${ANALYTICSCLI_PACKAGE_SPEC} failed: ${truncate(installOutput)}`,
+                };
+        }
+    }
+    const afterPath = await resolveCommandPath('analyticscli');
+    return afterPath
+        ? {
+            ok: true,
+            detail: `analyticscli package ensured via ${ANALYTICSCLI_PACKAGE_SPEC}; binary found at ${afterPath}`,
+        }
+        : {
+            ok: false,
+            detail: `Installed ${ANALYTICSCLI_PACKAGE_SPEC}, but analyticscli is still not on PATH`,
+        };
 }
 function parseCommandHead(command) {
     if (!command || typeof command !== 'string')
@@ -520,8 +589,8 @@ async function main() {
         const requiresGitHubDelivery = shouldAutoCreateGitHubArtifact(config);
         const analyticsEnabled = sourceEnabled(config, 'analytics');
         addCheck(checks, 'source:analytics:required', analyticsEnabled, analyticsEnabled ? 'enabled' : 'analytics source is required and cannot be disabled');
-        const analyticscliExists = await commandExists('analyticscli');
-        addCheck(checks, 'dependency:analyticscli', analyticscliExists, analyticscliExists ? 'analyticscli binary found' : 'analyticscli binary missing');
+        const analyticscliEnsure = await ensureAnalyticsCliInstalled();
+        addCheck(checks, 'dependency:analyticscli', analyticscliEnsure.ok, analyticscliEnsure.detail);
         const githubRepo = String(config.project?.githubRepo || '').trim();
         addCheck(checks, 'project:github-repo', Boolean(githubRepo) || !requiresGitHubDelivery, githubRepo
             ? `configured (${githubRepo})`

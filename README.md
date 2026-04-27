@@ -17,6 +17,7 @@ openclaw setup --config openclaw.config.json
 This should:
 
 - initialize `openclaw.config.json`
+- install/update `@analyticscli/cli@preview` so the `analyticscli` binary exists
 - reuse the existing AnalyticsCLI setup flow
 - install/update the shared skills like `analyticscli-cli` and `analyticscli-ts-sdk`
 - install the canonical OpenClaw skill path through the shared installer instead of redefining it locally
@@ -25,6 +26,19 @@ This should:
 
 ```bash
 openclaw preflight --config openclaw.config.json --test-connections
+```
+
+The preflight/start runtime also repairs a missing `analyticscli` binary by running:
+
+```bash
+npm install -g @analyticscli/cli@preview
+```
+
+If global npm installs are blocked, it falls back to a user-local npm prefix at `~/.local`.
+For manual repair from a copied skill runtime, run:
+
+```bash
+bash skills/openclaw-growth-engineer/scripts/install-analyticscli-cli.sh
 ```
 
 3. Start the first pass:

@@ -3,7 +3,7 @@ name: openclaw-growth-engineer
 description: OpenClaw-first growth autopilot for mobile apps. Correlate analytics, crashes, billing, feedback, store signals, and repo context into proposal drafts that can flow into OpenClaw chat, GitHub issues, or draft pull requests.
 license: MIT
 homepage: https://github.com/wotaso/analyticscli-skills
-metadata: {"author":"wotaso","version":"1.0.6","analyticscli-target":"@analyticscli/cli","analyticscli-supported-range":">=0.1.2-preview.0 <0.2.0","openclaw":{"emoji":"🚀","homepage":"https://github.com/wotaso/analyticscli-skills","requires":{"bins":["node","analyticscli"]},"install":[{"id":"analyticscli-cli","kind":"node","package":"@analyticscli/cli@preview","bins":["analyticscli"],"label":"Install AnalyticsCLI CLI (npm package @analyticscli/cli@preview)"}]}}
+metadata: {"author":"wotaso","version":"1.0.7","analyticscli-target":"@analyticscli/cli","analyticscli-supported-range":">=0.1.2-preview.0 <0.2.0","openclaw":{"emoji":"🚀","homepage":"https://github.com/wotaso/analyticscli-skills","requires":{"bins":["node","analyticscli"]},"install":[{"id":"analyticscli-cli","kind":"node","package":"@analyticscli/cli@preview","bins":["analyticscli"],"label":"Install/update AnalyticsCLI CLI (npm package @analyticscli/cli@preview)"}]}}
 ---
 
 # OpenClaw Growth Engineer
@@ -46,6 +46,35 @@ Before autopilot runs, these are non-negotiable:
 
 GitHub is optional unless GitHub delivery is enabled.
 The repo is still part of the analysis surface for file/module mapping, but `project.githubRepo` and `GITHUB_TOKEN` become hard requirements only when the CLI should auto-create GitHub issues or pull requests.
+
+## AnalyticsCLI CLI Install Protocol
+
+Before any setup, preflight, start, or run path tries to execute `analyticscli`, make sure the npm package is installed and current.
+
+The package name is `@analyticscli/cli`; the installed binary name is `analyticscli`.
+Do not search npm for `analyticscli` or `analyticsscli`.
+
+Use this exact install/update command:
+
+```bash
+npm install -g @analyticscli/cli@preview
+```
+
+Then verify:
+
+```bash
+command -v analyticscli
+analyticscli --help
+```
+
+If global npm installs are blocked on a VPS, use the bundled helper from the installed skill root:
+
+```bash
+bash skills/openclaw-growth-engineer/scripts/install-analyticscli-cli.sh
+```
+
+The helper falls back to a user-local npm prefix at `~/.local` when global install fails with permissions errors, prepends `~/.local/bin` for the current run, and prints a PATH hint if the shell needs it.
+Only ask the user for help if both direct npm install and the bundled helper fail with a concrete permission, missing `npm`, or network error.
 
 ## Delivery Modes
 
@@ -119,21 +148,22 @@ Mobile-focused examples:
 
 When the user says "start", "run", or "kick off" the skill:
 
-1. Prefer the CLI entrypoint:
+1. First make sure `analyticscli` exists and is up to date. If not, install/update it with `npm install -g @analyticscli/cli@preview` or run `bash skills/openclaw-growth-engineer/scripts/install-analyticscli-cli.sh`.
+2. Prefer the CLI entrypoint:
    - `openclaw setup --config openclaw.config.json`
    - this should initialize config and install the shared AnalyticsCLI skills via the canonical AnalyticsCLI setup flow
-2. Then run:
+3. Then run:
    - `openclaw start --config openclaw.config.json`
-3. In this monorepo, use the workspace dev entrypoint when `openclaw` is not installed globally:
+4. In this monorepo, use the workspace dev entrypoint when `openclaw` is not installed globally:
    - `pnpm --filter @analyticscli/openclaw-cli dev -- start`
-4. Run portable checks first when setup is incomplete:
+5. Run portable checks first when setup is incomplete:
    - `command -v analyticscli`
    - `analyticscli projects list`
    - detect `project.githubRepo` from git remote when possible
    - verify `GITHUB_TOKEN` only if GitHub delivery is enabled
    - if the user already pasted an AnalyticsCLI token candidate, use it immediately for the check/start attempt instead of asking a follow-up token question first
-5. If preflight fails, return only a concrete blocker checklist
-6. If preflight passes, continue with `openclaw run --config openclaw.config.json`
+6. If preflight fails, return only a concrete blocker checklist
+7. If preflight passes, continue with `openclaw run --config openclaw.config.json`
 
 When the user asks for analysis only:
 - run the CLI
