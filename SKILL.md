@@ -3,7 +3,7 @@ name: openclaw-growth-engineer
 description: OpenClaw-first growth autopilot for mobile apps. Correlate analytics, crashes, billing, feedback, store signals, and repo context into proposal drafts that can flow into OpenClaw chat, GitHub issues, or draft pull requests.
 license: MIT
 homepage: https://github.com/wotaso/analyticscli-skills
-metadata: {"author":"wotaso","version":"1.0.20","analyticscli-target":"@analyticscli/cli","analyticscli-supported-range":">=0.1.2-preview.0 <0.2.0","openclaw":{"emoji":"🚀","homepage":"https://github.com/wotaso/analyticscli-skills","requires":{"bins":["node","analyticscli"]},"install":[{"id":"analyticscli-cli","kind":"node","package":"@analyticscli/cli@preview","bins":["analyticscli"],"label":"Install/update AnalyticsCLI CLI (npm package @analyticscli/cli@preview)"}]}}
+metadata: {"author":"wotaso","version":"1.0.21","analyticscli-target":"@analyticscli/cli","analyticscli-supported-range":">=0.1.2-preview.0 <0.2.0","openclaw":{"emoji":"🚀","homepage":"https://github.com/wotaso/analyticscli-skills","requires":{"bins":["node","analyticscli"]},"install":[{"id":"analyticscli-cli","kind":"node","package":"@analyticscli/cli@preview","bins":["analyticscli"],"label":"Install/update AnalyticsCLI CLI (npm package @analyticscli/cli@preview)"}]}}
 ---
 
 # OpenClaw Growth Engineer
@@ -70,6 +70,7 @@ Welche der folgenden Connections moechtest du aufsetzen? Mehrfachauswahl ist moe
 
 Then configure only the selected connections. Do not ask for all tokens at once.
 For every selected connection, explain the minimum role/scope and exactly where the user finds the key or login flow.
+If the user already says which connections they want, treat those as selected and start setup immediately. For example, "I want to connect ASC + codebase from GitHub" means configure ASC analytics data and GitHub code access; do not respond by asking for a repo path first, and do not claim ASC is connected merely because AnalyticsCLI works.
 
 ## Mandatory Baseline
 
@@ -85,6 +86,16 @@ Treat readable GitHub repo access as very important because analytics signals be
 Without repo context, findings stay generic and file/module hypotheses are lower confidence.
 
 When the user says they want to connect GitHub or the codebase, do not ask them to manually send a repo path first.
+Reference and use the dedicated ClawHub GitHub skill when available: `steipete/github` (`https://clawhub.ai/steipete/github`).
+It is a `gh` CLI helper skill for issues, PRs, runs, and advanced `gh api` queries, so it should own GitHub command patterns while this skill owns product/growth analysis.
+Install or verify it before deeper GitHub setup when OpenClaw can manage skills:
+
+```bash
+openclaw skills install steipete/github
+# or
+npx clawhub@latest install github
+```
+
 Start the GitHub CLI setup flow yourself:
 
 1. Run `git rev-parse --show-toplevel` to detect the local repo root.
@@ -229,6 +240,13 @@ Additional connectors:
 For iOS/macOS products, explicitly ask whether the user wants to connect the `asc` CLI and the related App Store Connect agent skill for App Store Connect Analytics data only.
 Frame ASC as additive monthly analytics signal, not a hard blocker: AnalyticsCLI remains the baseline, while ASC Analytics reports can add App Store discovery, downloads, usage, purchase, and subscription context.
 Do not request ASC permissions for release management, TestFlight management, pricing changes, user management, or other write/admin workflows when the user only selected analytics data.
+Reference the ASC skill pack as the canonical companion skills for `asc`: `rorkai/app-store-connect-cli-skills` (`https://github.com/rorkai/app-store-connect-cli-skills`).
+Use it for `asc` command syntax, auth, pagination, ID resolution, and App Store Connect workflows; for analytics-only setup prefer the least invasive skills such as `asc-cli-usage` and `asc-id-resolver`, not release/submission/signing skills.
+Install or refresh it when the user selects ASC:
+
+```bash
+npx skills add rorkai/app-store-connect-cli-skills
+```
 
 ASC setup guidance:
 
