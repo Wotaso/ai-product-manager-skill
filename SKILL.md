@@ -3,7 +3,7 @@ name: openclaw-growth-engineer
 description: OpenClaw-first growth autopilot for mobile apps. Correlate analytics, crashes, billing, feedback, store signals, and repo context into proposal drafts that can flow into OpenClaw chat, GitHub issues, or draft pull requests.
 license: MIT
 homepage: https://github.com/wotaso/analyticscli-skills
-metadata: {"author":"wotaso","version":"1.0.22","analyticscli-target":"@analyticscli/cli","analyticscli-supported-range":">=0.1.2-preview.0 <0.2.0","openclaw":{"emoji":"🚀","homepage":"https://github.com/wotaso/analyticscli-skills","requires":{"bins":["node","analyticscli"]},"install":[{"id":"analyticscli-cli","kind":"node","package":"@analyticscli/cli@preview","bins":["analyticscli"],"label":"Install/update AnalyticsCLI CLI (npm package @analyticscli/cli@preview)"}]}}
+metadata: {"author":"wotaso","version":"1.0.23","analyticscli-target":"@analyticscli/cli","analyticscli-supported-range":">=0.1.2-preview.0 <0.2.0","openclaw":{"emoji":"🚀","homepage":"https://github.com/wotaso/analyticscli-skills","requires":{"bins":["node","analyticscli"]},"install":[{"id":"analyticscli-cli","kind":"node","package":"@analyticscli/cli@preview","bins":["analyticscli"],"label":"Install/update AnalyticsCLI CLI (npm package @analyticscli/cli@preview)"}]}}
 ---
 
 # OpenClaw Growth Engineer
@@ -61,7 +61,7 @@ During setup, ask the user this concrete selection question before requesting op
 Welche der folgenden Connections moechtest du aufsetzen? Mehrfachauswahl ist moeglich:
 1. AnalyticsCLI analytics baseline
 2. GitHub code access fuer Codeanalyse
-3. ASC CLI fuer App Store Connect Analytics-Daten
+3. ASC CLI fuer App Store Connect
 4. RevenueCat fuer Monetization-/Subscription-Daten
 5. Sentry/GlitchTip fuer Crash-/Error-Daten
 6. Feedback/App Reviews
@@ -70,7 +70,7 @@ Welche der folgenden Connections moechtest du aufsetzen? Mehrfachauswahl ist moe
 
 Then configure only the selected connections. Do not ask for all tokens at once.
 For every selected connection, explain the minimum role/scope and exactly where the user finds the key or login flow.
-If the user already says which connections they want, treat those as selected and start setup immediately. For example, "I want to connect ASC + codebase from GitHub" means configure ASC analytics data and GitHub code access; do not respond by asking for a repo path first, and do not claim ASC is connected merely because AnalyticsCLI works.
+If the user already says which connections they want, treat those as selected and start setup immediately. For example, "I want to connect ASC + codebase from GitHub" means configure App Store Connect (ASC) access and GitHub code access; do not respond by asking for a repo path first, and do not claim ASC is connected merely because AnalyticsCLI works.
 
 Connection setup requests are not satisfied by a successful product-manager run.
 If the user asks to set up `asc`, App Store Connect, GitHub, or codebase access, always answer with the concrete setup status and the mini step-by-step instructions for the requested connectors.
@@ -79,14 +79,14 @@ Do not respond with only "run succeeds", "No data changes", or "everything is he
 Use this response shape for "setup asc and gh" or similar requests:
 
 ```text
-ASC / App Store Connect is separate from AnalyticsCLI. AnalyticsCLI working does not mean ASC is connected.
+ASC means App Store Connect. It does not mean analytics. ASC is separate from AnalyticsCLI, and AnalyticsCLI working does not mean App Store Connect is connected.
 
 ASC setup:
 1. Install/refresh the ASC skill pack: npx skills add rorkai/app-store-connect-cli-skills
-2. Create an App Store Connect API key in App Store Connect -> Users and Access -> Integrations -> App Store Connect API. For analytics-only, use the least role that can read reports/analytics for the target app; prefer Sales/Sales and Reports style access, use Finance only if needed, avoid Admin unless a report must be enabled once.
+2. Create an App Store Connect API key in App Store Connect -> Users and Access -> Integrations -> App Store Connect API. For read-only App Store Connect reporting, use the least role that can read the required reports for the target app; prefer Sales/Sales and Reports style access, use Finance only if needed, avoid Admin unless a report must be enabled once.
 3. Save the values as secrets/env only: ASC_KEY_ID, ASC_ISSUER_ID, ASC_PRIVATE_KEY_PATH or ASC_PRIVATE_KEY. Never commit the .p8 key.
 4. Add/verify the app id as ASC_APP_ID or pass --app <app_id>.
-5. Smoke test with asc auth/status or a read-only asc analytics/report command, then wire the exported JSON as an extra source.
+5. Smoke test with asc auth/status or a read-only asc report command, then wire the exported JSON as an extra source.
 
 GitHub setup:
 1. Install/verify the GitHub skill: openclaw skills install steipete/github or npx clawhub@latest install github
@@ -128,6 +128,20 @@ Start the GitHub CLI setup flow yourself:
 4. If `gh` is not authenticated, start `gh auth login` and tell the user to complete the browser/device flow.
 5. After auth succeeds, use local repo context for read-only code analysis immediately.
 6. Ask for issue or pull-request write permissions only if GitHub delivery is enabled.
+
+If GitHub auth is missing, do not stop at "GitHub is blocked" or "no GitHub auth configured".
+Either start the login flow directly with `gh auth login`, or, if the runtime cannot run interactive auth, print the exact next steps:
+
+```text
+GitHub is not connected yet.
+1. Run: gh auth login
+2. Choose GitHub.com.
+3. Prefer HTTPS unless the repo already uses SSH.
+4. For code analysis only, read-only repo access is enough.
+5. If issue creation is desired, add Issues read/write.
+6. If draft PR creation is desired, add Pull requests read/write and Contents read/write.
+7. Verify with: gh auth status
+```
 
 Use the least privilege GitHub access that matches the requested workflow:
 
@@ -261,15 +275,15 @@ Additional connectors:
 - crash-style tools may use `issues[]`
 - feedback-style tools may use `items[]`
 
-For iOS/macOS products, explicitly ask whether the user wants to connect the `asc` CLI and the related App Store Connect agent skill for App Store Connect Analytics data only.
+For iOS/macOS products, explicitly ask whether the user wants to connect the `asc` CLI and the related App Store Connect agent skill. ASC means App Store Connect, not analytics.
 Never abbreviate this as just "analytics" in status messages, because it is easy to confuse with AnalyticsCLI.
-Say "ASC / App Store Connect analytics data" when referring to `asc`, and "AnalyticsCLI baseline" when referring to the AnalyticsCLI project.
+Say "ASC / App Store Connect" when referring to `asc`, and "AnalyticsCLI baseline" when referring to the AnalyticsCLI project.
 An AnalyticsCLI auth check, selected AnalyticsCLI project, or successful PM run does not prove that ASC is connected.
 Only say ASC is connected after `asc` auth is configured, the App Store Connect app id is known, and a read-only ASC command/export has succeeded.
-Frame ASC as additive monthly analytics signal, not a hard blocker: AnalyticsCLI remains the baseline, while ASC Analytics reports can add App Store discovery, downloads, usage, purchase, and subscription context.
-Do not request ASC permissions for release management, TestFlight management, pricing changes, user management, or other write/admin workflows when the user only selected analytics data.
+Frame ASC as an App Store Connect connector, not as a synonym for analytics. AnalyticsCLI remains the product analytics baseline; App Store Connect reports can optionally add discovery, downloads, usage, purchase, subscription, ratings, reviews, release, build, and TestFlight context.
+Do not request ASC permissions for release management, TestFlight management, pricing changes, user management, or other write/admin workflows when the user only selected read-only App Store Connect reporting.
 Reference the ASC skill pack as the canonical companion skills for `asc`: `rorkai/app-store-connect-cli-skills` (`https://github.com/rorkai/app-store-connect-cli-skills`).
-Use it for `asc` command syntax, auth, pagination, ID resolution, and App Store Connect workflows; for analytics-only setup prefer the least invasive skills such as `asc-cli-usage` and `asc-id-resolver`, not release/submission/signing skills.
+Use it for `asc` command syntax, auth, pagination, ID resolution, and App Store Connect workflows; for read-only App Store Connect reporting prefer the least invasive skills such as `asc-cli-usage` and `asc-id-resolver`, not release/submission/signing skills.
 Install or refresh it when the user selects ASC:
 
 ```bash
@@ -278,8 +292,8 @@ npx skills add rorkai/app-store-connect-cli-skills
 
 ASC setup guidance:
 
-- Ask: "Soll ASC CLI fuer App Store Connect Analytics-Daten verbunden werden?"
-- Recommend the least-privilege App Store Connect API access that can read analytics reports: prefer a Sales/Sales and Reports style role for generated analytics reports; Finance can work but is broader; Admin should only be used temporarily when a new analytics report type must be requested for the first time.
+- Ask: "Soll ASC CLI fuer App Store Connect verbunden werden?"
+- Recommend the least-privilege App Store Connect API access that can read the required App Store Connect reports: prefer a Sales/Sales and Reports style role for generated reports; Finance can work but is broader; Admin should only be used temporarily when a new report type must be requested for the first time.
 - Prefer an individual API key for a user limited to the target app when possible; team API keys can cover all apps and are broader.
 - Tell the user where to create the key: App Store Connect -> Users and Access -> Integrations -> App Store Connect API for team keys, or profile menu -> Edit Profile -> Individual API Key for individual keys.
 - Store only env vars/secrets: `ASC_KEY_ID`, `ASC_ISSUER_ID`, and `ASC_PRIVATE_KEY` or `ASC_PRIVATE_KEY_PATH`; never commit the `.p8` private key.
@@ -385,7 +399,7 @@ Use the legacy bootstrap-and-copy runtime only when the standalone CLI is unavai
   - pull-request mode: add `Pull requests: Read/Write` and `Contents: Read/Write` only when draft PR creation is enabled
 - `ASC_KEY_ID`, `ASC_ISSUER_ID`, `ASC_PRIVATE_KEY` or `ASC_PRIVATE_KEY_PATH`
   - optional; ask before setup
-  - App Store Connect Analytics data only
+  - App Store Connect read-only reporting data only
   - prefer Sales/Sales and Reports style access; Admin only temporarily for first-time report type requests
 - `ANALYTICSCLI_ACCESS_TOKEN`
   - recommended for CLI/agent auth when no local CLI login exists
