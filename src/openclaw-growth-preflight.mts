@@ -503,10 +503,10 @@ async function testRevenueCatConnection(revenuecatToken, timeoutMs) {
 
 function describeAnalyticsConnectionFailure(detail, analyticsTokenEnv, hasAnalyticsToken) {
   if (!hasAnalyticsToken) {
-    return `Nearly done: I only need \`${analyticsTokenEnv}\` from you to continue setup. Create or copy an AnalyticsCLI token in dash.analyticscli.com -> API Keys, then run \`analyticscli --api-url https://api.analyticscli.com login --readonly-token <token>\` (current preview CLI) or set \`${analyticsTokenEnv}\`. Raw error: ${detail}`;
+    return `Nearly done: I only need \`${analyticsTokenEnv}\` from you to continue setup. Create or copy an AnalyticsCLI token in dash.analyticscli.com -> API Keys, then run \`analyticscli login --readonly-token <token>\` (current preview CLI) or set \`${analyticsTokenEnv}\`. Use \`--api-url <url>\` or \`ANALYTICSCLI_API_URL\` only for staging/local. Raw error: ${detail}`;
   }
 
-  return `AnalyticsCLI connection failed with \`${analyticsTokenEnv}\` set. Verify the token, selected project, and \`ANALYTICSCLI_API_URL=https://api.analyticscli.com\`. Raw error: ${detail}`;
+  return `AnalyticsCLI connection failed with \`${analyticsTokenEnv}\` set. Verify the token and selected project. If you are testing staging/local, also verify \`ANALYTICSCLI_API_URL\` or \`--api-url\`. Raw error: ${detail}`;
 }
 
 async function testSentryConnection(sentryToken, timeoutMs) {
