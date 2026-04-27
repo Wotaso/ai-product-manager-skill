@@ -35,6 +35,14 @@ The config is non-secret and commit-safe:
 
 - `data/openclaw-growth-engineer/config.json`
 
+The setup flow should be developer-friendly:
+
+- auto-detect repo root, package manager, git remote, and available AnalyticsCLI auth when possible
+- explain why each requested connection is needed before asking for it
+- ask for the minimum missing secret or permission, not a broad token
+- show a status checklist after setup: configured, optional, blocked, and next command
+- hand off weak or missing app instrumentation to the `analyticscli-ts-sdk` skill with concrete SDK setup steps
+
 ## 3) Choose GitHub Delivery Mode
 
 Connect GitHub with readable repo/code access whenever possible.

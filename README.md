@@ -47,6 +47,8 @@ bash skills/openclaw-growth-engineer/scripts/install-analyticscli-cli.sh
 openclaw start --config openclaw.config.json
 ```
 
+Setup should guide the developer through each missing piece. When something is blocked, the agent should explain what was detected, why the missing value matters, where to get it, and the minimum permission needed instead of returning a generic failure.
+
 ## What It Does
 
 - Reads analytics by default and can add RevenueCat, Sentry/GlitchTip, feedback, store/release connectors, Slack, and generic webhooks.
