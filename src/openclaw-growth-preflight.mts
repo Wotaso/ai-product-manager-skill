@@ -456,11 +456,7 @@ async function testAnalyticsConnection(analyticsToken) {
 }
 
 async function resolveAnalyticsCliRootTokenFlag() {
-  const help = await runShell('analyticscli --help');
-  if (help.ok && /--access-token\b/.test(help.stdout)) {
-    return '--access-token';
-  }
-  return '--token';
+  return '--readonly-token';
 }
 
 async function testRevenueCatConnection(revenuecatToken, timeoutMs) {
