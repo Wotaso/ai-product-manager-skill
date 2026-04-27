@@ -16,24 +16,34 @@ For future shells, make sure this directory is on PATH:
 
 For the current shell/session, run:
   export PATH="${bin_dir}:\$PATH"
+
+Or reload your shell profile:
+  source "${home_dir}/.bashrc" 2>/dev/null || source "${home_dir}/.profile"
 EOF
 }
 
 ensure_profile_path() {
   local bin_dir="$1"
   local line="export PATH=\"${bin_dir}:\$PATH\""
+  local wrote_any=false
 
   if [[ "${ANALYTICSCLI_SKIP_PROFILE_UPDATE:-}" == "true" ]]; then
     return 0
   fi
 
   for profile in "${home_dir}/.profile" "${home_dir}/.bashrc" "${home_dir}/.zshrc"; do
-    if [[ -f "${profile}" ]]; then
-      if ! grep -Fq "${line}" "${profile}"; then
-        printf '\n# AnalyticsCLI CLI user-local npm bin\n%s\n' "${line}" >>"${profile}"
-      fi
+    if [[ ! -f "${profile}" ]]; then
+      : >"${profile}"
+    fi
+    if ! grep -Fq "${line}" "${profile}"; then
+      printf '\n# AnalyticsCLI CLI user-local npm bin\n%s\n' "${line}" >>"${profile}"
+      wrote_any=true
     fi
   done
+
+  if [[ "${wrote_any}" == "true" ]]; then
+    echo "Added ${bin_dir} to shell profile files. Already-open terminals still need: export PATH=\"${bin_dir}:\$PATH\"" >&2
+  fi
 }
 
 if ! command -v npm >/dev/null 2>&1; then
