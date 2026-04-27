@@ -3,7 +3,7 @@ name: openclaw-growth-engineer
 description: OpenClaw-first growth autopilot for mobile apps. Correlate analytics, crashes, billing, feedback, store signals, and repo context into proposal drafts that can flow into OpenClaw chat, GitHub issues, or draft pull requests.
 license: MIT
 homepage: https://github.com/wotaso/analyticscli-skills
-metadata: {"author":"wotaso","version":"1.0.9","analyticscli-target":"@analyticscli/cli","analyticscli-supported-range":">=0.1.2-preview.0 <0.2.0","openclaw":{"emoji":"🚀","homepage":"https://github.com/wotaso/analyticscli-skills","requires":{"bins":["node","analyticscli"]},"install":[{"id":"analyticscli-cli","kind":"node","package":"@analyticscli/cli@preview","bins":["analyticscli"],"label":"Install/update AnalyticsCLI CLI (npm package @analyticscli/cli@preview)"}]}}
+metadata: {"author":"wotaso","version":"1.0.10","analyticscli-target":"@analyticscli/cli","analyticscli-supported-range":">=0.1.2-preview.0 <0.2.0","openclaw":{"emoji":"🚀","homepage":"https://github.com/wotaso/analyticscli-skills","requires":{"bins":["node","analyticscli"]},"install":[{"id":"analyticscli-cli","kind":"node","package":"@analyticscli/cli@preview","bins":["analyticscli"],"label":"Install/update AnalyticsCLI CLI (npm package @analyticscli/cli@preview)"}]}}
 ---
 
 # OpenClaw Growth Engineer
@@ -80,27 +80,25 @@ Child processes cannot mutate the PATH of an already-open parent terminal.
    ```
 
 If `analyticscli: command not found` still happens, do not claim setup is complete.
-Find the user-local binary and fix PATH for current and future shells:
+Find the user-local binary and fix PATH for future shells yourself; do not bounce this step back to the user:
 
 ```bash
-export PATH="$HOME/.local/bin:$PATH"
-command -v analyticscli || ls -l "$HOME/.local/bin/analyticscli"
+export PATH="$HOME/.local/bin:$HOME/.local/analyticscli-npm/bin:$PATH"
+command -v analyticscli || ls -l "$HOME/.local/bin/analyticscli" "$HOME/.local/analyticscli-npm/bin/analyticscli"
 ```
 
-If the binary exists under `$HOME/.local/bin`, tell the user the current already-open terminal needs:
+If the binary exists under `$HOME/.local/bin` or `$HOME/.local/analyticscli-npm/bin`, make future shells pick it up. Update all common shell startup files idempotently, then verify from a fresh shell:
 
 ```bash
-export PATH="$HOME/.local/bin:$PATH"
+for f in "$HOME/.profile" "$HOME/.bashrc" "$HOME/.bash_profile" "$HOME/.zshrc" "$HOME/.zprofile"; do
+  touch "$f"
+  grep -Fq 'export PATH="$HOME/.local/bin:$HOME/.local/analyticscli-npm/bin:$PATH"' "$f" ||
+    printf '\n# AnalyticsCLI CLI user-local npm bin\nexport PATH="$HOME/.local/bin:$HOME/.local/analyticscli-npm/bin:$PATH"\n' >> "$f"
+done
+bash -lc 'source "$HOME/.bashrc" 2>/dev/null || true; source "$HOME/.profile" 2>/dev/null || true; command -v analyticscli && analyticscli --help >/dev/null'
 ```
 
-Then make future login shells pick it up:
-
-```bash
-printf '\n# AnalyticsCLI CLI user-local npm bin\nexport PATH="$HOME/.local/bin:$PATH"\n' >> "$HOME/.bashrc"
-printf '\n# AnalyticsCLI CLI user-local npm bin\nexport PATH="$HOME/.local/bin:$PATH"\n' >> "$HOME/.profile"
-```
-
-Do not say "analyticscli is fixed for your terminal" unless this exact command succeeds in that same terminal context:
+Child processes cannot mutate an already-open parent terminal. Say that only as residual context after you have already updated profile files and verified a fresh shell. Do not say "analyticscli is fixed" unless this exact command succeeds in the same command context you control:
 
 ```bash
 command -v analyticscli && analyticscli --help >/dev/null
@@ -134,6 +132,7 @@ bash skills/openclaw-growth-engineer/scripts/install-analyticscli-cli.sh
 ```
 
 The helper falls back to a user-local npm prefix at `~/.local` when global install fails with permissions errors, prepends `~/.local/bin` for the current run, and prints a PATH hint if the shell needs it.
+It must also update common shell profile files and verify that a fresh shell can resolve `analyticscli`.
 Only ask the user for help if both direct npm install and the bundled helper fail with a concrete permission, missing `npm`, or network error.
 
 ## Delivery Modes

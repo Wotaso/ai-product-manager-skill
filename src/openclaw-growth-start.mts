@@ -172,6 +172,119 @@ function prependToPath(binDir) {
   process.env.PATH = `${binDir}${path.delimiter}${process.env.PATH || ''}`;
 }
 
+function getPathProfileEntries(binDir) {
+  const entries = [binDir];
+  if (process.env.HOME && path.resolve(binDir) === path.resolve(process.env.HOME, '.local', 'bin')) {
+    entries.push(path.join(process.env.HOME, '.local', 'analyticscli-npm', 'bin'));
+  }
+  return entries;
+}
+
+function renderProfilePathEntries(binDir) {
+  const home = process.env.HOME ? path.resolve(process.env.HOME) : null;
+  return getPathProfileEntries(binDir)
+    .map((entry) => {
+      const resolved = path.resolve(entry);
+      if (home && (resolved === home || resolved.startsWith(`${home}${path.sep}`))) {
+        return `$HOME/${path.relative(home, resolved)}`;
+      }
+      return entry;
+    })
+    .join(':');
+}
+
+async function ensureProfilePath(binDir) {
+  if (process.env.ANALYTICSCLI_SKIP_PROFILE_UPDATE === 'true' || !process.env.HOME) {
+    return false;
+  }
+
+  const line = `export PATH="${renderProfilePathEntries(binDir)}:$PATH"`;
+  const profiles = ['.profile', '.bashrc', '.bash_profile', '.zshrc', '.zprofile'].map((name) =>
+    path.join(process.env.HOME!, name),
+  );
+  let wrote = false;
+
+  for (const profile of profiles) {
+    let current = '';
+    try {
+      current = await fs.readFile(profile, 'utf8');
+    } catch {
+      await fs.mkdir(path.dirname(profile), { recursive: true });
+    }
+
+    if (!current.includes(line)) {
+      await fs.appendFile(profile, `\n# AnalyticsCLI CLI user-local npm bin\n${line}\n`, 'utf8');
+      wrote = true;
+    }
+  }
+
+  return wrote;
+}
+
+async function verifyFreshShellProfile() {
+  if (!process.env.HOME) {
+    return false;
+  }
+
+  const cleanPath = '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin';
+  const probes = [
+    {
+      shell: '/bin/bash',
+      command:
+        'for f in "$HOME/.bash_profile" "$HOME/.bashrc" "$HOME/.profile"; do [[ -f "$f" ]] && source "$f" >/dev/null 2>&1 || true; done; command -v analyticscli >/dev/null 2>&1 && analyticscli --help >/dev/null 2>&1',
+    },
+    {
+      shell: '/usr/bin/bash',
+      command:
+        'for f in "$HOME/.bash_profile" "$HOME/.bashrc" "$HOME/.profile"; do [[ -f "$f" ]] && source "$f" >/dev/null 2>&1 || true; done; command -v analyticscli >/dev/null 2>&1 && analyticscli --help >/dev/null 2>&1',
+    },
+    {
+      shell: '/bin/zsh',
+      command:
+        'for f in "$HOME/.zprofile" "$HOME/.zshrc" "$HOME/.profile"; do [[ -f "$f" ]] && source "$f" >/dev/null 2>&1 || true; done; command -v analyticscli >/dev/null 2>&1 && analyticscli --help >/dev/null 2>&1',
+    },
+    {
+      shell: '/usr/bin/zsh',
+      command:
+        'for f in "$HOME/.zprofile" "$HOME/.zshrc" "$HOME/.profile"; do [[ -f "$f" ]] && source "$f" >/dev/null 2>&1 || true; done; command -v analyticscli >/dev/null 2>&1 && analyticscli --help >/dev/null 2>&1',
+    },
+    {
+      shell: '/bin/sh',
+      command:
+        '[ -f "$HOME/.profile" ] && . "$HOME/.profile" >/dev/null 2>&1 || true; command -v analyticscli >/dev/null 2>&1 && analyticscli --help >/dev/null 2>&1',
+    },
+    {
+      shell: '/usr/bin/sh',
+      command:
+        '[ -f "$HOME/.profile" ] && . "$HOME/.profile" >/dev/null 2>&1 || true; command -v analyticscli >/dev/null 2>&1 && analyticscli --help >/dev/null 2>&1',
+    },
+  ];
+
+  for (const probe of probes) {
+    if (!(await fileExists(probe.shell))) {
+      continue;
+    }
+    const result = await runShellCommand(
+      `env HOME=${quote(process.env.HOME)} PATH=${quote(cleanPath)} ${quote(probe.shell)} -lc ${quote(probe.command)}`,
+      30_000,
+    );
+    if (result.ok) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function isUserLocalBin(binDir) {
+  if (!process.env.HOME) {
+    return false;
+  }
+  const home = path.resolve(process.env.HOME);
+  const resolved = path.resolve(binDir);
+  return resolved === home || resolved.startsWith(`${home}${path.sep}`);
+}
+
 function isPermissionFailure(output) {
   return /EACCES|permission denied|access denied|operation not permitted/i.test(String(output || ''));
 }
@@ -212,7 +325,9 @@ async function ensureAnalyticsCliInstalled() {
               detail: `npm install failed globally and in user-local prefix ${ANALYTICSCLI_NPM_PREFIX}: ${truncate(localInstall.stderr || localInstall.stdout)}`,
             };
       }
-      prependToPath(path.join(ANALYTICSCLI_NPM_PREFIX, 'bin'));
+      const localBinDir = path.join(ANALYTICSCLI_NPM_PREFIX, 'bin');
+      prependToPath(localBinDir);
+      await ensureProfilePath(localBinDir);
     } else {
       return beforePath
         ? {
@@ -227,6 +342,31 @@ async function ensureAnalyticsCliInstalled() {
   }
 
   const afterPath = await resolveCommandPath('analyticscli');
+  if (afterPath) {
+    const helpCheck = await runShellCommand('analyticscli --help >/dev/null 2>&1', 30_000);
+    if (!helpCheck.ok) {
+      return {
+        ok: false,
+        detail: `analyticscli binary found at ${afterPath}, but --help failed: ${truncate(helpCheck.stderr || helpCheck.stdout)}`,
+      };
+    }
+
+    const binDir = path.dirname(afterPath);
+    if (isUserLocalBin(binDir)) {
+      await ensureProfilePath(binDir);
+      if (!(await verifyFreshShellProfile())) {
+        return {
+          ok: false,
+          detail: `analyticscli works at ${afterPath}, but a fresh shell still cannot resolve it after profile update; add ${renderProfilePathEntries(binDir)} to PATH`,
+        };
+      }
+      return {
+        ok: true,
+        detail: `analyticscli package ensured via ${ANALYTICSCLI_PACKAGE_SPEC}; binary found at ${afterPath}; shell profiles updated and fresh shell verification passed`,
+      };
+    }
+  }
+
   return afterPath
     ? {
         ok: true,

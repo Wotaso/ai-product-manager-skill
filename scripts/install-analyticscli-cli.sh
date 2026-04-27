@@ -5,17 +5,45 @@ package="${ANALYTICSCLI_CLI_PACKAGE:-@analyticscli/cli@preview}"
 home_dir="${HOME:-$(pwd)}"
 user_prefix="${ANALYTICSCLI_NPM_PREFIX:-${home_dir}/.local}"
 
+path_entries_for() {
+  local bin_dir="$1"
+  local entries=()
+
+  entries+=("${bin_dir}")
+  if [[ "${bin_dir}" == "${home_dir}/.local/bin" ]]; then
+    entries+=("${home_dir}/.local/analyticscli-npm/bin")
+  fi
+
+  local entry
+  local rendered=()
+  for entry in "${entries[@]}"; do
+    if [[ "${entry}" == "${home_dir}/"* ]]; then
+      rendered+=("\$HOME/${entry#"${home_dir}/"}")
+    else
+      rendered+=("${entry}")
+    fi
+  done
+
+  local joined="${rendered[0]}"
+  for entry in "${rendered[@]:1}"; do
+    joined="${joined}:${entry}"
+  done
+  printf '%s' "${joined}"
+}
+
 print_path_hint() {
   local bin_dir="$1"
+  local path_entries
+  path_entries="$(path_entries_for "${bin_dir}")"
   cat <<EOF
 analyticscli was installed into:
   ${bin_dir}
 
 For future shells, make sure this directory is on PATH:
-  export PATH="${bin_dir}:\$PATH"
+  export PATH="${path_entries}:\$PATH"
 
 For the current shell/session, run:
-  export PATH="${bin_dir}:\$PATH"
+  export PATH="${path_entries}:\$PATH"
 
 Or reload your shell profile:
   source "${home_dir}/.bashrc" 2>/dev/null || source "${home_dir}/.profile"
@@ -24,14 +52,16 @@ EOF
 
 ensure_profile_path() {
   local bin_dir="$1"
-  local line="export PATH=\"${bin_dir}:\$PATH\""
+  local path_entries
+  path_entries="$(path_entries_for "${bin_dir}")"
+  local line="export PATH=\"${path_entries}:\$PATH\""
   local wrote_any=false
 
   if [[ "${ANALYTICSCLI_SKIP_PROFILE_UPDATE:-}" == "true" ]]; then
     return 0
   fi
 
-  for profile in "${home_dir}/.profile" "${home_dir}/.bashrc" "${home_dir}/.zshrc"; do
+  for profile in "${home_dir}/.profile" "${home_dir}/.bashrc" "${home_dir}/.bash_profile" "${home_dir}/.zshrc" "${home_dir}/.zprofile"; do
     if [[ ! -f "${profile}" ]]; then
       : >"${profile}"
     fi
@@ -42,8 +72,41 @@ ensure_profile_path() {
   done
 
   if [[ "${wrote_any}" == "true" ]]; then
-    echo "Added ${bin_dir} to shell profile files. Already-open terminals still need: export PATH=\"${bin_dir}:\$PATH\"" >&2
+    echo "Added ${path_entries} to shell profile files. Already-open terminals still need: export PATH=\"${path_entries}:\$PATH\"" >&2
   fi
+}
+
+verify_fresh_shell() {
+  local shell_path="$1"
+  local source_script="$2"
+  local clean_path="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
+  if [[ ! -x "${shell_path}" ]]; then
+    return 1
+  fi
+
+  env HOME="${home_dir}" PATH="${clean_path}" "${shell_path}" -lc "${source_script}" >/dev/null 2>&1
+}
+
+verify_profile_path() {
+  local bin_dir="$1"
+  local bash_probe='for f in "$HOME/.bash_profile" "$HOME/.bashrc" "$HOME/.profile"; do [[ -f "$f" ]] && source "$f" >/dev/null 2>&1 || true; done; command -v analyticscli >/dev/null 2>&1 && analyticscli --help >/dev/null 2>&1'
+  local zsh_probe='for f in "$HOME/.zprofile" "$HOME/.zshrc" "$HOME/.profile"; do [[ -f "$f" ]] && source "$f" >/dev/null 2>&1 || true; done; command -v analyticscli >/dev/null 2>&1 && analyticscli --help >/dev/null 2>&1'
+  local sh_probe='[ -f "$HOME/.profile" ] && . "$HOME/.profile" >/dev/null 2>&1 || true; command -v analyticscli >/dev/null 2>&1 && analyticscli --help >/dev/null 2>&1'
+
+  if verify_fresh_shell /bin/bash "${bash_probe}" || \
+    verify_fresh_shell /usr/bin/bash "${bash_probe}" || \
+    verify_fresh_shell /bin/zsh "${zsh_probe}" || \
+    verify_fresh_shell /usr/bin/zsh "${zsh_probe}" || \
+    verify_fresh_shell /bin/sh "${sh_probe}" || \
+    verify_fresh_shell /usr/bin/sh "${sh_probe}"; then
+    echo "Fresh shell verification passed for analyticscli via ${bin_dir}" >&2
+    return 0
+  fi
+
+  echo "analyticscli works in this installer process, but fresh shell verification failed after updating profile files." >&2
+  print_path_hint "${bin_dir}" >&2
+  return 1
 }
 
 if ! command -v npm >/dev/null 2>&1; then
@@ -91,6 +154,7 @@ analyticscli --help >/dev/null
 case "$(command -v analyticscli)" in
   "${user_prefix}/bin/"*)
     ensure_profile_path "${user_prefix}/bin"
+    verify_profile_path "${user_prefix}/bin"
     print_path_hint "${user_prefix}/bin"
     ;;
 esac
