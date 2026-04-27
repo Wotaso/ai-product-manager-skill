@@ -19,6 +19,23 @@ For the current shell/session, run:
 EOF
 }
 
+ensure_profile_path() {
+  local bin_dir="$1"
+  local line="export PATH=\"${bin_dir}:\$PATH\""
+
+  if [[ "${ANALYTICSCLI_SKIP_PROFILE_UPDATE:-}" == "true" ]]; then
+    return 0
+  fi
+
+  for profile in "${home_dir}/.profile" "${home_dir}/.bashrc" "${home_dir}/.zshrc"; do
+    if [[ -f "${profile}" ]]; then
+      if ! grep -Fq "${line}" "${profile}"; then
+        printf '\n# AnalyticsCLI CLI user-local npm bin\n%s\n' "${line}" >>"${profile}"
+      fi
+    fi
+  done
+}
+
 if ! command -v npm >/dev/null 2>&1; then
   if command -v analyticscli >/dev/null 2>&1; then
     echo "analyticscli already available: $(command -v analyticscli)"
@@ -42,6 +59,7 @@ if [[ ${global_exit} -ne 0 ]]; then
     mkdir -p "${user_prefix}"
     npm install -g --prefix "${user_prefix}" "${package}"
     export PATH="${user_prefix}/bin:${PATH}"
+    ensure_profile_path "${user_prefix}/bin"
   else
     printf '%s\n' "${global_output}" >&2
     exit "${global_exit}"
@@ -62,6 +80,7 @@ echo "analyticscli available: $(command -v analyticscli)"
 analyticscli --help >/dev/null
 case "$(command -v analyticscli)" in
   "${user_prefix}/bin/"*)
+    ensure_profile_path "${user_prefix}/bin"
     print_path_hint "${user_prefix}/bin"
     ;;
 esac

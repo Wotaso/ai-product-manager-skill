@@ -3,7 +3,7 @@ name: openclaw-growth-engineer
 description: OpenClaw-first growth autopilot for mobile apps. Correlate analytics, crashes, billing, feedback, store signals, and repo context into proposal drafts that can flow into OpenClaw chat, GitHub issues, or draft pull requests.
 license: MIT
 homepage: https://github.com/wotaso/analyticscli-skills
-metadata: {"author":"wotaso","version":"1.0.7","analyticscli-target":"@analyticscli/cli","analyticscli-supported-range":">=0.1.2-preview.0 <0.2.0","openclaw":{"emoji":"🚀","homepage":"https://github.com/wotaso/analyticscli-skills","requires":{"bins":["node","analyticscli"]},"install":[{"id":"analyticscli-cli","kind":"node","package":"@analyticscli/cli@preview","bins":["analyticscli"],"label":"Install/update AnalyticsCLI CLI (npm package @analyticscli/cli@preview)"}]}}
+metadata: {"author":"wotaso","version":"1.0.8","analyticscli-target":"@analyticscli/cli","analyticscli-supported-range":">=0.1.2-preview.0 <0.2.0","openclaw":{"emoji":"🚀","homepage":"https://github.com/wotaso/analyticscli-skills","requires":{"bins":["node","analyticscli"]},"install":[{"id":"analyticscli-cli","kind":"node","package":"@analyticscli/cli@preview","bins":["analyticscli"],"label":"Install/update AnalyticsCLI CLI (npm package @analyticscli/cli@preview)"}]}}
 ---
 
 # OpenClaw Growth Engineer
@@ -47,9 +47,53 @@ Before autopilot runs, these are non-negotiable:
 GitHub is optional unless GitHub delivery is enabled.
 The repo is still part of the analysis surface for file/module mapping, but `project.githubRepo` and `GITHUB_TOKEN` become hard requirements only when the CLI should auto-create GitHub issues or pull requests.
 
+## Dependency Refresh Protocol
+
+Run this protocol at the start of every setup/start/run request, and whenever the user asks to fetch, update, upgrade, or reinstall this skill.
+Do not stop after saying the skill was fetched from ClawHub.
+The job is not done until the npm binary and companion skills are updated and verified.
+
+1. Refresh this ClawHub skill:
+   ```bash
+   npx -y clawhub install ai-product-manager
+   ```
+2. Refresh the AnalyticsCLI agent skill:
+   ```bash
+   npx -y skills add wotaso/analyticscli-skills --skill analyticscli-cli
+   ```
+   If the `skills` command is unavailable or this is an OpenClaw-only environment, continue with the npm package install instead of blocking.
+3. Install or update the npm package that provides the `analyticscli` binary:
+   ```bash
+   npm install -g @analyticscli/cli@preview
+   ```
+4. If global npm install fails with a permissions error, use the bundled helper from the installed skill root:
+   ```bash
+   bash skills/openclaw-growth-engineer/scripts/install-analyticscli-cli.sh
+   ```
+5. Verify and report the exact binary path:
+   ```bash
+   command -v analyticscli
+   analyticscli --help
+   ```
+
+If `analyticscli: command not found` still happens, do not claim setup is complete.
+Find the user-local binary and fix PATH for current and future shells:
+
+```bash
+export PATH="$HOME/.local/bin:$PATH"
+command -v analyticscli || ls -l "$HOME/.local/bin/analyticscli"
+```
+
+If the binary exists under `$HOME/.local/bin`, tell the user the current already-open terminal needs:
+
+```bash
+export PATH="$HOME/.local/bin:$PATH"
+```
+
 ## AnalyticsCLI CLI Install Protocol
 
 Before any setup, preflight, start, or run path tries to execute `analyticscli`, make sure the npm package is installed and current.
+If the user reports `analyticscli: command not found`, run the Dependency Refresh Protocol before any other action.
 
 The package name is `@analyticscli/cli`; the installed binary name is `analyticscli`.
 Do not search npm for `analyticscli` or `analyticsscli`.
@@ -148,7 +192,7 @@ Mobile-focused examples:
 
 When the user says "start", "run", or "kick off" the skill:
 
-1. First make sure `analyticscli` exists and is up to date. If not, install/update it with `npm install -g @analyticscli/cli@preview` or run `bash skills/openclaw-growth-engineer/scripts/install-analyticscli-cli.sh`.
+1. Run the Dependency Refresh Protocol first. It must update this skill, the `analyticscli-cli` skill when available, and the `@analyticscli/cli@preview` npm package, then verify `command -v analyticscli`.
 2. Prefer the CLI entrypoint:
    - `openclaw setup --config openclaw.config.json`
    - this should initialize config and install the shared AnalyticsCLI skills via the canonical AnalyticsCLI setup flow
