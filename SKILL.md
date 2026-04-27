@@ -3,7 +3,7 @@ name: openclaw-growth-engineer
 description: OpenClaw-first growth autopilot for mobile apps. Correlate analytics, crashes, billing, feedback, store signals, and repo context into proposal drafts that can flow into OpenClaw chat, GitHub issues, or draft pull requests.
 license: MIT
 homepage: https://github.com/wotaso/analyticscli-skills
-metadata: {"author":"wotaso","version":"1.0.21","analyticscli-target":"@analyticscli/cli","analyticscli-supported-range":">=0.1.2-preview.0 <0.2.0","openclaw":{"emoji":"🚀","homepage":"https://github.com/wotaso/analyticscli-skills","requires":{"bins":["node","analyticscli"]},"install":[{"id":"analyticscli-cli","kind":"node","package":"@analyticscli/cli@preview","bins":["analyticscli"],"label":"Install/update AnalyticsCLI CLI (npm package @analyticscli/cli@preview)"}]}}
+metadata: {"author":"wotaso","version":"1.0.22","analyticscli-target":"@analyticscli/cli","analyticscli-supported-range":">=0.1.2-preview.0 <0.2.0","openclaw":{"emoji":"🚀","homepage":"https://github.com/wotaso/analyticscli-skills","requires":{"bins":["node","analyticscli"]},"install":[{"id":"analyticscli-cli","kind":"node","package":"@analyticscli/cli@preview","bins":["analyticscli"],"label":"Install/update AnalyticsCLI CLI (npm package @analyticscli/cli@preview)"}]}}
 ---
 
 # OpenClaw Growth Engineer
@@ -71,6 +71,30 @@ Welche der folgenden Connections moechtest du aufsetzen? Mehrfachauswahl ist moe
 Then configure only the selected connections. Do not ask for all tokens at once.
 For every selected connection, explain the minimum role/scope and exactly where the user finds the key or login flow.
 If the user already says which connections they want, treat those as selected and start setup immediately. For example, "I want to connect ASC + codebase from GitHub" means configure ASC analytics data and GitHub code access; do not respond by asking for a repo path first, and do not claim ASC is connected merely because AnalyticsCLI works.
+
+Connection setup requests are not satisfied by a successful product-manager run.
+If the user asks to set up `asc`, App Store Connect, GitHub, or codebase access, always answer with the concrete setup status and the mini step-by-step instructions for the requested connectors.
+Do not respond with only "run succeeds", "No data changes", or "everything is healthy".
+
+Use this response shape for "setup asc and gh" or similar requests:
+
+```text
+ASC / App Store Connect is separate from AnalyticsCLI. AnalyticsCLI working does not mean ASC is connected.
+
+ASC setup:
+1. Install/refresh the ASC skill pack: npx skills add rorkai/app-store-connect-cli-skills
+2. Create an App Store Connect API key in App Store Connect -> Users and Access -> Integrations -> App Store Connect API. For analytics-only, use the least role that can read reports/analytics for the target app; prefer Sales/Sales and Reports style access, use Finance only if needed, avoid Admin unless a report must be enabled once.
+3. Save the values as secrets/env only: ASC_KEY_ID, ASC_ISSUER_ID, ASC_PRIVATE_KEY_PATH or ASC_PRIVATE_KEY. Never commit the .p8 key.
+4. Add/verify the app id as ASC_APP_ID or pass --app <app_id>.
+5. Smoke test with asc auth/status or a read-only asc analytics/report command, then wire the exported JSON as an extra source.
+
+GitHub setup:
+1. Install/verify the GitHub skill: openclaw skills install steipete/github or npx clawhub@latest install github
+2. Detect repo locally: git rev-parse --show-toplevel and git remote get-url origin
+3. Check auth: gh auth status; if missing, run gh auth login.
+4. For code analysis only, read-only repo access is enough. If a token is needed, use a fine-grained token with Contents: Read and Metadata: Read for the selected repos.
+5. Only add Issues write or Pull requests/Contents write if the user wants OpenClaw to create issues or draft PRs.
+```
 
 ## Mandatory Baseline
 
@@ -238,6 +262,10 @@ Additional connectors:
 - feedback-style tools may use `items[]`
 
 For iOS/macOS products, explicitly ask whether the user wants to connect the `asc` CLI and the related App Store Connect agent skill for App Store Connect Analytics data only.
+Never abbreviate this as just "analytics" in status messages, because it is easy to confuse with AnalyticsCLI.
+Say "ASC / App Store Connect analytics data" when referring to `asc`, and "AnalyticsCLI baseline" when referring to the AnalyticsCLI project.
+An AnalyticsCLI auth check, selected AnalyticsCLI project, or successful PM run does not prove that ASC is connected.
+Only say ASC is connected after `asc` auth is configured, the App Store Connect app id is known, and a read-only ASC command/export has succeeded.
 Frame ASC as additive monthly analytics signal, not a hard blocker: AnalyticsCLI remains the baseline, while ASC Analytics reports can add App Store discovery, downloads, usage, purchase, and subscription context.
 Do not request ASC permissions for release management, TestFlight management, pricing changes, user management, or other write/admin workflows when the user only selected analytics data.
 Reference the ASC skill pack as the canonical companion skills for `asc`: `rorkai/app-store-connect-cli-skills` (`https://github.com/rorkai/app-store-connect-cli-skills`).
@@ -255,6 +283,8 @@ ASC setup guidance:
 - Prefer an individual API key for a user limited to the target app when possible; team API keys can cover all apps and are broader.
 - Tell the user where to create the key: App Store Connect -> Users and Access -> Integrations -> App Store Connect API for team keys, or profile menu -> Edit Profile -> Individual API Key for individual keys.
 - Store only env vars/secrets: `ASC_KEY_ID`, `ASC_ISSUER_ID`, and `ASC_PRIVATE_KEY` or `ASC_PRIVATE_KEY_PATH`; never commit the `.p8` private key.
+- Also ask for or auto-detect the App Store Connect app id and store it as `ASC_APP_ID` or in the project-local OpenClaw secret/config layer.
+- After the key and app id are present, run one read-only `asc` smoke test before marking ASC connected.
 - Prefer `asc auth login` when the local `asc` CLI supports keychain storage; otherwise use runtime env injection.
 
 RevenueCat setup guidance:
