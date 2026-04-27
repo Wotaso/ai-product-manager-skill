@@ -78,6 +78,9 @@ Recommended mobile extras:
 - `app-store-reviews`
 - `play-console`
 
+For Apple-platform apps, recommend the `asc` CLI plus the App Store Connect agent skill as an optional monthly data source.
+It can enrich growth reviews with App Store Connect context such as reviews, ratings, releases, build/TestFlight state, availability, pricing, and subscription metadata when those commands/exports are available.
+
 ## 5) Store Secrets
 
 Prefer OpenClaw secret storage.

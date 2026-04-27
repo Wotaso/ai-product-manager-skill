@@ -52,6 +52,7 @@ Setup should guide the developer through each missing piece. When something is b
 ## What It Does
 
 - Reads analytics by default and can add RevenueCat, Sentry/GlitchTip, feedback, store/release connectors, Slack, and generic webhooks.
+- For iOS/macOS apps, setup should point developers to the `asc` CLI and App Store Connect skill as optional monthly store-side data sources.
 - Uses `analyticscli feedback summary --format json` as the built-in feedback source instead of a separate duplicate feedback definition.
 - Correlates product signals with repo context; connect GitHub with readable code access whenever possible because it makes analytics findings much more actionable.
 - Generates local issue drafts by default.
