@@ -27,6 +27,7 @@ Usage:
 Options:
   --config <file>        Config path (default: ${DEFAULT_CONFIG_PATH})
   --project <id>         AnalyticsCLI project ID to use for generated source commands
+  --connectors <list>    Install/enable connector helpers (github,asc,revenuecat,all)
   --setup-only           Run bootstrap + preflight only (skip first run)
   --no-test-connections  Skip live API smoke checks in preflight
   --help, -h             Show help
@@ -39,6 +40,7 @@ function parseArgs(argv) {
         project: '',
         run: true,
         testConnections: true,
+        connectors: [],
     };
     for (let i = 0; i < argv.length; i += 1) {
         const token = argv[i];
@@ -52,6 +54,10 @@ function parseArgs(argv) {
         }
         else if (token === '--project') {
             args.project = String(next || '').trim();
+            i += 1;
+        }
+        else if (token === '--connectors') {
+            args.connectors = parseConnectorList(next || '');
             i += 1;
         }
         else if (token === '--setup-only') {
@@ -68,6 +74,40 @@ function parseArgs(argv) {
         }
     }
     return args;
+}
+function normalizeConnectorKey(value) {
+    const normalized = String(value || '').trim().toLowerCase().replace(/[_\s]+/g, '-');
+    if (!normalized)
+        return null;
+    if (normalized === 'all')
+        return 'all';
+    if (['github', 'gh', 'github-code', 'codebase', 'code-access'].includes(normalized))
+        return 'github';
+    if (['asc', 'asc-cli', 'app-store-connect', 'appstoreconnect', 'app-store'].includes(normalized))
+        return 'asc';
+    if (['revenuecat', 'revenue-cat', 'rc', 'revenuecat-mcp'].includes(normalized))
+        return 'revenuecat';
+    return null;
+}
+function parseConnectorList(value) {
+    if (!String(value || '').trim())
+        return [];
+    const connectors = new Set();
+    for (const entry of String(value).split(',')) {
+        const connector = normalizeConnectorKey(entry);
+        if (!connector) {
+            printHelpAndExit(1, `Unknown connector: ${entry.trim()}. Use github, asc, revenuecat, or all.`);
+        }
+        if (connector === 'all') {
+            connectors.add('github');
+            connectors.add('asc');
+            connectors.add('revenuecat');
+        }
+        else {
+            connectors.add(connector);
+        }
+    }
+    return [...connectors];
 }
 function quote(value) {
     if (/^[a-zA-Z0-9_./:-]+$/.test(String(value))) {
@@ -341,6 +381,171 @@ async function readJson(filePath) {
 async function writeJson(filePath, value) {
     await fs.mkdir(path.dirname(filePath), { recursive: true });
     await fs.writeFile(filePath, `${JSON.stringify(value, null, 2)}\n`, 'utf8');
+}
+async function appendHelperDetail(details, label, result) {
+    if (result.ok) {
+        details.push(`${label}: ok`);
+        return;
+    }
+    details.push(`${label}: ${truncate(result.stderr || result.stdout || `exit ${result.code ?? 'unknown'}`)}`);
+}
+async function installClawHubSkill(skillName, details) {
+    if (await commandExists('clawhub')) {
+        const result = await runShellCommand(`clawhub install ${quote(skillName)} || clawhub install ${quote(skillName)} --force`, 180_000);
+        await appendHelperDetail(details, `ClawHub skill ${skillName}`, result);
+        return result.ok;
+    }
+    if (await commandExists('npx')) {
+        const result = await runShellCommand(`npx -y clawhub install ${quote(skillName)} || npx -y clawhub install ${quote(skillName)} --force`, 180_000);
+        await appendHelperDetail(details, `ClawHub skill ${skillName}`, result);
+        return result.ok;
+    }
+    details.push(`ClawHub skill ${skillName}: skipped because neither clawhub nor npx is available`);
+    return false;
+}
+async function installAgentSkill(repo, details) {
+    if (!(await commandExists('npx'))) {
+        details.push(`Agent skill ${repo}: skipped because npx is unavailable`);
+        return false;
+    }
+    const result = await runShellCommand(`npx -y skills add ${quote(repo)}`, 180_000);
+    await appendHelperDetail(details, `Agent skill ${repo}`, result);
+    return result.ok;
+}
+async function installSystemBinary(commandName, details) {
+    if (await commandExists(commandName)) {
+        details.push(`${commandName} binary found at ${await resolveCommandPath(commandName)}`);
+        return true;
+    }
+    if (await commandExists('brew')) {
+        const result = await runShellCommand(`brew install ${quote(commandName)}`, 600_000);
+        await appendHelperDetail(details, `brew install ${commandName}`, result);
+    }
+    else if (await commandExists('apt-get')) {
+        const prefix = process.getuid?.() === 0 ? '' : 'sudo -n ';
+        const result = await runShellCommand(`${prefix}apt-get update && ${prefix}apt-get install -y ${quote(commandName)}`, 600_000);
+        await appendHelperDetail(details, `apt-get install ${commandName}`, result);
+    }
+    else if (await commandExists('winget')) {
+        const packageId = commandName === 'gh' ? 'GitHub.cli' : commandName;
+        const result = await runShellCommand(`winget install --id ${quote(packageId)} -e --silent`, 600_000);
+        await appendHelperDetail(details, `winget install ${packageId}`, result);
+    }
+    else {
+        details.push(`No supported non-interactive installer found for ${commandName}`);
+    }
+    const installedPath = await resolveCommandPath(commandName);
+    if (installedPath) {
+        details.push(`${commandName} binary found at ${installedPath}`);
+        return true;
+    }
+    return false;
+}
+function resolveMcpNpmCacheDir() {
+    return process.env.OPENCLAW_MCP_NPM_CACHE ||
+        (process.env.HOME ? path.join(process.env.HOME, '.cache', 'openclaw-mcp-npm') : path.join(process.cwd(), '.openclaw-mcp-npm-cache'));
+}
+function escapeTomlString(value) {
+    return String(value).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+}
+async function upsertRevenueCatCodexMcpConfig(apiKey) {
+    if (!process.env.HOME)
+        return null;
+    const configDir = path.join(process.env.HOME, '.codex');
+    const configFile = path.join(configDir, 'config.toml');
+    await fs.mkdir(configDir, { recursive: true });
+    let existing = '';
+    try {
+        existing = await fs.readFile(configFile, 'utf8');
+    }
+    catch {
+        existing = '';
+    }
+    const block = `[mcp_servers.revenuecat]
+command = "npx"
+args = ["--yes", "--cache", "${escapeTomlString(resolveMcpNpmCacheDir())}", "mcp-remote", "https://mcp.revenuecat.ai/mcp", "--header", "Authorization: Bearer \${AUTH_TOKEN}"]
+env = { AUTH_TOKEN = "${escapeTomlString(apiKey)}" }
+type = "stdio"
+startup_timeout_ms = 20000
+`;
+    const pattern = /(?:^|\n)\[mcp_servers\.revenuecat\]\n(?:.*\n)*?(?=\n\[|\s*$)/m;
+    const next = pattern.test(existing)
+        ? existing.replace(pattern, `${existing.startsWith('[mcp_servers.revenuecat]') ? '' : '\n'}${block}`)
+        : `${existing.trimEnd()}${existing.trim() ? '\n\n' : ''}${block}`;
+    await fs.writeFile(configFile, `${next.trimEnd()}\n`, 'utf8');
+    return configFile;
+}
+async function installRevenueCatConnector() {
+    const details = [];
+    if (!(await commandExists('npx'))) {
+        return { connector: 'revenuecat', ok: false, detail: 'npx is required for RevenueCat MCP transport but is unavailable' };
+    }
+    const check = await runShellCommand(`npx --yes --cache ${quote(resolveMcpNpmCacheDir())} mcp-remote`, 120_000);
+    const output = `${check.stderr}\n${check.stdout}`;
+    const available = check.ok || /Usage: .*mcp-remote|Usage: .*proxy\.ts/i.test(output);
+    if (!available) {
+        await appendHelperDetail(details, 'npx mcp-remote availability check', check);
+        return { connector: 'revenuecat', ok: false, detail: details.join('; ') };
+    }
+    details.push(`RevenueCat MCP transport mcp-remote is available via npx cache ${resolveMcpNpmCacheDir()}`);
+    const apiKey = String(process.env.REVENUECAT_API_KEY || '').trim();
+    if (apiKey) {
+        const configFile = await upsertRevenueCatCodexMcpConfig(apiKey);
+        details.push(configFile ? `RevenueCat MCP configured in ${configFile}` : 'RevenueCat MCP transport available; HOME missing so MCP config was not written');
+    }
+    else {
+        details.push('Set REVENUECAT_API_KEY, then rerun this command to write the RevenueCat MCP client config');
+    }
+    return { connector: 'revenuecat', ok: true, detail: details.join('; ') };
+}
+async function installGitHubConnector() {
+    const details = [];
+    await installClawHubSkill('github', details);
+    const ok = await installSystemBinary('gh', details);
+    return { connector: 'github', ok, detail: `${details.join('; ')}${ok ? '; next run gh auth status or gh auth login' : ''}` };
+}
+async function installAscConnector() {
+    const details = [];
+    await installAgentSkill('rorkai/app-store-connect-cli-skills', details);
+    let ok = await installSystemBinary('asc', details);
+    if (!ok && (await commandExists('curl'))) {
+        const result = await runShellCommand('curl -fsSL https://asccli.sh/install | bash', 600_000);
+        await appendHelperDetail(details, 'asc install script', result);
+        ok = Boolean(await resolveCommandPath('asc'));
+    }
+    return { connector: 'asc', ok, detail: `${details.join('; ')}${ok ? '; next run asc auth status --validate or asc auth login' : ''}` };
+}
+async function enableConnectorConfig(configPath, connectors) {
+    if (connectors.length === 0 || !(await fileExists(configPath)))
+        return;
+    const config = await readJson(configPath);
+    const extra = Array.isArray(config.sources?.extra) ? config.sources.extra : [];
+    const next = {
+        ...config,
+        sources: {
+            ...(config.sources || {}),
+            revenuecat: connectors.includes('revenuecat')
+                ? { ...(config.sources?.revenuecat || {}), enabled: true }
+                : config.sources?.revenuecat,
+            extra: extra.map((source) => connectors.includes('asc') && source?.service === 'asc-cli'
+                ? { ...source, enabled: true, mode: 'command', command: source.command || getDefaultSourceCommand('asc') }
+                : source),
+        },
+    };
+    await writeJson(configPath, next);
+}
+async function installConnectorHelpers(configPath, connectors) {
+    await enableConnectorConfig(configPath, connectors);
+    const results = [];
+    for (const connector of connectors) {
+        if (connector === 'github')
+            results.push(await installGitHubConnector());
+        if (connector === 'asc')
+            results.push(await installAscConnector());
+        if (connector === 'revenuecat')
+            results.push(await installRevenueCatConnector());
+    }
+    return results;
 }
 function parseGitHubRepoFromRemote(remoteUrl) {
     const value = String(remoteUrl || '').trim();
@@ -631,6 +836,29 @@ async function main() {
         process.exitCode = 1;
         return;
     }
+    const connectorSetup = args.connectors.length > 0 ? await installConnectorHelpers(configPath, args.connectors) : [];
+    const failedConnectors = connectorSetup.filter((entry) => !entry.ok);
+    if (failedConnectors.length > 0 && !args.run) {
+        process.stdout.write(`${JSON.stringify({
+            ok: false,
+            phase: 'connector_setup',
+            configCreated: configResult.created,
+            configPath,
+            projectConfigured,
+            connectorSetup,
+            blockers: failedConnectors.map((entry) => ({
+                check: `connector:${entry.connector}`,
+                detail: entry.detail,
+                remediation: entry.connector === 'github'
+                    ? 'Install GitHub CLI (`gh`) and run `gh auth login`, or provide a fine-grained read-only token for code access.'
+                    : entry.connector === 'asc'
+                        ? 'Install the ASC CLI and provide ASC_KEY_ID, ASC_ISSUER_ID, ASC_PRIVATE_KEY_PATH or ASC_PRIVATE_KEY, and ASC_APP_ID.'
+                        : 'Set REVENUECAT_API_KEY and rerun connector setup to write RevenueCat MCP config.',
+            })),
+        }, null, 2)}\n`);
+        process.exitCode = 1;
+        return;
+    }
     const preflightResult = await runPreflight(configPath, args.testConnections);
     const preflightPayload = preflightResult.payload;
     if (!preflightPayload) {
@@ -652,6 +880,7 @@ async function main() {
             configPath,
             projectConfigured,
             githubRepo: configResult.githubRepo,
+            connectorSetup,
             blockers,
         }, null, 2)}\n`);
         process.exitCode = 1;
@@ -664,6 +893,7 @@ async function main() {
             configCreated: configResult.created,
             configPath,
             projectConfigured,
+            connectorSetup,
             message: 'Preflight passed. First run skipped due to --setup-only.',
         }, null, 2)}\n`);
         return;

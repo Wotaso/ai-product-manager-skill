@@ -93,10 +93,11 @@ function resolveShellCommand() {
     }
     return 'sh';
 }
-function runShell(command) {
+function runShell(command, options = {}) {
     return new Promise((resolve) => {
         const child = spawn(resolveShellCommand(), ['-c', command], {
             stdio: ['ignore', 'pipe', 'pipe'],
+            cwd: options.cwd,
         });
         let stdout = '';
         let stderr = '';
@@ -535,8 +536,12 @@ async function testGitHubConnection(githubToken, githubRepo, timeoutMs, actionMo
         };
     }
 }
-async function testCommandSourceJson(command) {
-    const result = await runShell(command);
+function getProjectCommandCwd(config) {
+    const repoRoot = String(config?.project?.repoRoot || '').trim();
+    return repoRoot ? path.resolve(repoRoot) : process.cwd();
+}
+async function testCommandSourceJson(command, cwd = process.cwd()) {
+    const result = await runShell(command, { cwd });
     if (!result.ok) {
         return {
             ok: false,
@@ -566,6 +571,7 @@ async function runConnectionChecks({ checks, config, timeoutMs }) {
     const githubRepo = String(config?.project?.githubRepo || '').trim();
     const actionMode = getActionMode(config);
     const requiresGitHubDelivery = shouldAutoCreateGitHubArtifact(config);
+    const commandCwd = getProjectCommandCwd(config);
     const analyticsSource = config.sources?.analytics;
     if (sourceEnabled(config, 'analytics')) {
         const analyticsToken = process.env[analyticsTokenEnv] || process.env.ANALYTICSCLI_ACCESS_TOKEN || '';
@@ -580,7 +586,7 @@ async function runConnectionChecks({ checks, config, timeoutMs }) {
                 addCheck(checks, 'connection:analytics-command', false, 'analytics source uses command mode but no command configured');
             }
             else {
-                const commandCheck = await testCommandSourceJson(command);
+                const commandCheck = await testCommandSourceJson(command, commandCwd);
                 addCheck(checks, 'connection:analytics-command', commandCheck.ok, commandCheck.ok
                     ? 'analytics command smoke test passed'
                     : `analytics command smoke test failed (${commandCheck.detail})`);
@@ -629,7 +635,7 @@ async function runConnectionChecks({ checks, config, timeoutMs }) {
             addCheck(checks, 'connection:feedback', false, 'feedback source uses command mode but no command configured');
         }
         else {
-            const feedbackConnection = await testCommandSourceJson(command);
+            const feedbackConnection = await testCommandSourceJson(command, commandCwd);
             addCheck(checks, 'connection:feedback', feedbackConnection.ok, feedbackConnection.ok
                 ? 'Feedback command smoke test passed'
                 : `Feedback command smoke test failed (${feedbackConnection.detail})`);
@@ -659,7 +665,7 @@ async function runConnectionChecks({ checks, config, timeoutMs }) {
                 addCheck(checks, checkName, false, 'source uses command mode but no command configured');
                 continue;
             }
-            const commandCheck = await testCommandSourceJson(command);
+            const commandCheck = await testCommandSourceJson(command, commandCwd);
             addCheck(checks, checkName, commandCheck.ok, commandCheck.ok
                 ? `${extraSource.key} command smoke test passed`
                 : `${extraSource.key} command smoke test failed (${commandCheck.detail})`);
@@ -811,9 +817,9 @@ async function main() {
         if (sourceEnabled(config, 'analytics') && config.sources?.analytics?.mode === 'command') {
             const analyticsTokenEnv = getSecretName(config, 'analyticsTokenEnv', 'ANALYTICSCLI_ACCESS_TOKEN');
             const hasAnalyticsToken = Boolean(process.env[analyticsTokenEnv] || process.env.ANALYTICSCLI_ACCESS_TOKEN);
-            addCheck(checks, `secret:${analyticsTokenEnv}`, hasAnalyticsToken, hasAnalyticsToken
+            addCheck(checks, `secret:${analyticsTokenEnv}`, true, hasAnalyticsToken
                 ? 'set (optional if analyticscli uses stored login)'
-                : `nearly done: set ${analyticsTokenEnv} or run analyticscli login --readonly-token <token>`, hasAnalyticsToken ? 'pass' : 'warn');
+                : `not set; analyticscli stored login is also supported and will be verified by the connection check`);
         }
         if (args.testConnections) {
             await runConnectionChecks({

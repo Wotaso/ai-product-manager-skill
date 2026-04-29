@@ -131,10 +131,11 @@ function resolveShellCommand() {
     }
     return 'sh';
 }
-function runShellCommand(command, timeoutMs = 120_000) {
+function runShellCommand(command, timeoutMs = 120_000, options = {}) {
     return new Promise((resolve) => {
         const child = spawn(resolveShellCommand(), ['-c', command], {
             stdio: ['ignore', 'pipe', 'pipe'],
+            cwd: options.cwd,
         });
         let stdout = '';
         let stderr = '';
@@ -197,7 +198,11 @@ async function assertHardRequirements(config) {
         throw new Error(message);
     }
 }
-async function resolveSourcePayload(sourceConfig, sourceName) {
+function getProjectCommandCwd(config) {
+    const repoRoot = String(config?.project?.repoRoot || '').trim();
+    return repoRoot ? path.resolve(repoRoot) : process.cwd();
+}
+async function resolveSourcePayload(sourceConfig, sourceName, commandCwd = process.cwd()) {
     if (!sourceConfig || sourceConfig.enabled === false) {
         return null;
     }
@@ -205,7 +210,7 @@ async function resolveSourcePayload(sourceConfig, sourceName) {
         if (!sourceConfig.command) {
             throw new Error(`Source "${sourceName}" has mode=command but no command configured.`);
         }
-        const result = await runShellCommand(String(sourceConfig.command));
+        const result = await runShellCommand(String(sourceConfig.command), 120_000, { cwd: commandCwd });
         if (!result.ok) {
             throw new Error(`Source "${sourceName}" command failed: ${result.stderr || `exit ${result.code}`}`);
         }
@@ -365,7 +370,7 @@ function resolveCursorAwareCommand(command, sourceConfig, cursorState) {
     const lookback = normalizeLookback(sourceConfig?.initialLookback, '30d');
     return `${rawCommand} --last ${quote(lookback)}`;
 }
-async function resolveSourcePayloadWithCursor(sourceConfig, sourceName, cursorState) {
+async function resolveSourcePayloadWithCursor(sourceConfig, sourceName, cursorState, commandCwd = process.cwd()) {
     if (!sourceConfig || sourceConfig.enabled === false) {
         return {
             payload: null,
@@ -378,7 +383,7 @@ async function resolveSourcePayloadWithCursor(sourceConfig, sourceName, cursorSt
             throw new Error(`Source "${sourceName}" has mode=command but no command configured.`);
         }
         const resolvedCommand = resolveCursorAwareCommand(sourceConfig.command, sourceConfig, cursorState);
-        const result = await runShellCommand(String(resolvedCommand));
+        const result = await runShellCommand(String(resolvedCommand), 120_000, { cwd: commandCwd });
         if (!result.ok) {
             throw new Error(`Source "${sourceName}" command failed: ${result.stderr || `exit ${result.code}`}`);
         }
@@ -412,9 +417,10 @@ async function resolveSourcePayloadWithCursor(sourceConfig, sourceName, cursorSt
 async function loadSourcePayloads(config, state) {
     const payloads = {};
     const sourceCursors = { ...(state?.sourceCursors || {}) };
+    const commandCwd = getProjectCommandCwd(config);
     for (const source of getAllSourceEntries(config)) {
         const currentCursor = sourceCursors[source.key] || null;
-        const result = await resolveSourcePayloadWithCursor(source, source.key, currentCursor);
+        const result = await resolveSourcePayloadWithCursor(source, source.key, currentCursor, commandCwd);
         const payload = result.payload;
         if (payload) {
             payloads[source.key] = payload;

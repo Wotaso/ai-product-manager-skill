@@ -116,10 +116,11 @@ function resolveShellCommand(): string {
   return 'sh';
 }
 
-function runShell(command): Promise<ShellResult> {
+function runShell(command, options: { cwd?: string } = {}): Promise<ShellResult> {
   return new Promise((resolve) => {
     const child = spawn(resolveShellCommand(), ['-c', command], {
       stdio: ['ignore', 'pipe', 'pipe'],
+      cwd: options.cwd,
     });
 
     let stdout = '';
@@ -630,8 +631,13 @@ async function testGitHubConnection(githubToken, githubRepo, timeoutMs, actionMo
   }
 }
 
-async function testCommandSourceJson(command) {
-  const result = await runShell(command);
+function getProjectCommandCwd(config) {
+  const repoRoot = String(config?.project?.repoRoot || '').trim();
+  return repoRoot ? path.resolve(repoRoot) : process.cwd();
+}
+
+async function testCommandSourceJson(command, cwd = process.cwd()) {
+  const result = await runShell(command, { cwd });
   if (!result.ok) {
     return {
       ok: false,
@@ -662,6 +668,7 @@ async function runConnectionChecks({ checks, config, timeoutMs }) {
   const githubRepo = String(config?.project?.githubRepo || '').trim();
   const actionMode = getActionMode(config);
   const requiresGitHubDelivery = shouldAutoCreateGitHubArtifact(config);
+  const commandCwd = getProjectCommandCwd(config);
 
   const analyticsSource = config.sources?.analytics;
   if (sourceEnabled(config, 'analytics')) {
@@ -683,7 +690,7 @@ async function runConnectionChecks({ checks, config, timeoutMs }) {
       if (!command) {
         addCheck(checks, 'connection:analytics-command', false, 'analytics source uses command mode but no command configured');
       } else {
-        const commandCheck = await testCommandSourceJson(command);
+        const commandCheck = await testCommandSourceJson(command, commandCwd);
         addCheck(
           checks,
           'connection:analytics-command',
@@ -756,7 +763,7 @@ async function runConnectionChecks({ checks, config, timeoutMs }) {
     if (!command) {
       addCheck(checks, 'connection:feedback', false, 'feedback source uses command mode but no command configured');
     } else {
-      const feedbackConnection = await testCommandSourceJson(command);
+      const feedbackConnection = await testCommandSourceJson(command, commandCwd);
       addCheck(
         checks,
         'connection:feedback',
@@ -800,7 +807,7 @@ async function runConnectionChecks({ checks, config, timeoutMs }) {
         addCheck(checks, checkName, false, 'source uses command mode but no command configured');
         continue;
       }
-      const commandCheck = await testCommandSourceJson(command);
+      const commandCheck = await testCommandSourceJson(command, commandCwd);
       addCheck(
         checks,
         checkName,
@@ -1071,11 +1078,10 @@ async function main() {
       addCheck(
         checks,
         `secret:${analyticsTokenEnv}`,
-        hasAnalyticsToken,
+        true,
         hasAnalyticsToken
           ? 'set (optional if analyticscli uses stored login)'
-          : `nearly done: set ${analyticsTokenEnv} or run analyticscli login --readonly-token <token>`,
-        hasAnalyticsToken ? 'pass' : 'warn',
+          : `not set; analyticscli stored login is also supported and will be verified by the connection check`,
       );
     }
 

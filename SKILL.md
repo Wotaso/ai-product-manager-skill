@@ -27,7 +27,7 @@ Prefer the standalone `openclaw` CLI as the runtime surface.
 
 - Setup path: `openclaw setup --config openclaw.config.json`
 - Primary path: `openclaw start --config openclaw.config.json`
-- Local monorepo path: `pnpm --filter @analyticscli/openclaw-cli dev -- start`
+- Local monorepo path: `pnpm --filter @analyticscli/openclaw-cli dev start --repo-root <repo-root>`
 - Legacy copied-runtime scripts under `scripts/openclaw-growth-*.mjs` remain fallback-only for older OpenClaw workspaces
 
 The CLI is intentionally non-AI. OpenClaw should stay the only conversational/implementation layer.
@@ -50,6 +50,7 @@ Setup should feel guided for a developer, not like a silent preflight dump.
 - Explain why each connection matters before asking for it, especially AnalyticsCLI auth, GitHub code access, and optional GitHub write scopes.
 - Ask for the minimum missing value only; do not request issue/PR permissions unless artifact creation is enabled.
 - For every blocker, return a compact checklist with status, why it matters, where to get it, and the exact minimum permission or command.
+- Always include direct URLs for external dashboards/settings pages whenever the user must create a key, token, app id, or grant access. Use URLs in addition to menu paths.
 - After each setup phase, report what was detected, what was configured, and the next concrete command OpenClaw will run.
 - Keep secrets out of prompts, repo files, logs, and command arguments; prefer OpenClaw secret storage or environment injection.
 - When SDK instrumentation is missing or weak, guide the developer through the `analyticscli-ts-sdk` setup path so analytics events become useful for later growth analysis.
@@ -72,29 +73,75 @@ Then configure only the selected connections. Do not ask for all tokens at once.
 For every selected connection, explain the minimum role/scope and exactly where the user finds the key or login flow.
 If the user already says which connections they want, treat those as selected and start setup immediately. For example, "I want to connect ASC + codebase from GitHub" means configure App Store Connect (ASC) access and GitHub code access; do not respond by asking for a repo path first, and do not claim ASC is connected merely because AnalyticsCLI works.
 
-Connection setup requests are not satisfied by a successful product-manager run.
-If the user asks to set up `asc`, App Store Connect, GitHub, or codebase access, always answer with the concrete setup status and the mini step-by-step instructions for the requested connectors.
-Do not respond with only "run succeeds", "No data changes", or "everything is healthy".
-
-Use this response shape for "setup asc and gh" or similar requests:
+After the AnalyticsCLI baseline is working, always offer these high-impact context connectors explicitly, even if the user did not mention them yet:
 
 ```text
+AnalyticsCLI baseline is connected. Do you want to add any of these high-impact context connectors now?
+1. RevenueCat for monetization/subscription data
+2. ASC / App Store Connect for store, subscription, rating, review, build, and TestFlight context
+3. GitHub code access so findings can be mapped to the real codebase
+```
+
+If the user says yes, "all", "RevenueCat + App Store Connect + GitHub", or names any of these connectors, treat that as an explicit selection and immediately provide the connector-specific setup instructions below.
+Do not ask another vague "what do you want to connect?" question after the user accepts.
+Walk connector-by-connector, request only the next missing value, and mark a connector connected only after its read-only smoke test succeeds.
+Before asking for credentials for accepted connectors, automatically install/verify the matching helper tooling:
+
+```bash
+bash skills/ai-product-manager/scripts/bootstrap-openclaw-workspace.sh
+node scripts/openclaw-growth-start.mjs --config data/openclaw-growth-engineer/config.json --setup-only --connectors revenuecat,asc,github
+```
+
+Use only the connectors the user accepted. This command enables the selected connector stubs in config and tries to install the companion tooling: GitHub helper skill + `gh`, ASC skill pack + `asc`, and RevenueCat MCP transport/config.
+Do not use bare `openclaw setup --config ...` on OpenClaw hosts unless you have verified it is the AI Product Manager CLI; on many hosts `openclaw` is the core OpenClaw CLI and will reject `--config`.
+In the Agentic Analytics monorepo only, use `pnpm --filter @analyticscli/openclaw-cli dev setup --repo-root <repo-root> --skip-shared-skills --connectors <list>`.
+If helper installation fails, report the failed helper and exact next install command, then continue with the other selected connectors.
+
+Connection setup requests are not satisfied by a successful product-manager run.
+If the user asks to set up `asc`, App Store Connect, RevenueCat, GitHub, or codebase access, always answer with the concrete setup status and the mini step-by-step instructions for the requested connectors.
+Do not respond with only "run succeeds", "No data changes", or "everything is healthy".
+
+Use this response shape for "setup revenuecat asc and gh" or similar requests:
+
+```text
+RevenueCat setup:
+1. Run: bash skills/ai-product-manager/scripts/bootstrap-openclaw-workspace.sh, then node scripts/openclaw-growth-start.mjs --config data/openclaw-growth-engineer/config.json --setup-only --connectors revenuecat
+2. Create a RevenueCat secret API key at https://app.revenuecat.com/ -> Project Settings -> API Keys -> + New secret API key.
+3. For growth analysis, prefer a v2 secret key with read-only permissions for charts/metrics plus project configuration resources such as apps, products, offerings, packages, and entitlements. Add customer/subscriber read only if the selected report needs it.
+4. Save it as a secret/env only: REVENUECAT_API_KEY. Never put a secret API key in client code, config JSON, issues, PR bodies, or chat logs.
+5. Rerun the setup command after REVENUECAT_API_KEY is available so RevenueCat MCP can be configured, then smoke test with a read-only RevenueCat MCP/API call.
+
 ASC means App Store Connect. It does not mean analytics. ASC is separate from AnalyticsCLI, and AnalyticsCLI working does not mean App Store Connect is connected.
 
 ASC setup:
-1. Install/refresh the ASC skill pack: npx skills add rorkai/app-store-connect-cli-skills
-2. Create an App Store Connect API key in App Store Connect -> Users and Access -> Integrations -> App Store Connect API. For read-only App Store Connect reporting, use the least role that can read the required reports for the target app; prefer Sales/Sales and Reports style access, use Finance only if needed, avoid Admin unless a report must be enabled once.
-3. Save the values as secrets/env only: ASC_KEY_ID, ASC_ISSUER_ID, ASC_PRIVATE_KEY_PATH or ASC_PRIVATE_KEY. Never commit the .p8 key.
-4. Add/verify the app id as ASC_APP_ID or pass --app <app_id>.
-5. Smoke test with asc auth/status or a read-only asc report command, then wire the exported JSON as an extra source.
+1. Run: bash skills/ai-product-manager/scripts/bootstrap-openclaw-workspace.sh, then node scripts/openclaw-growth-start.mjs --config data/openclaw-growth-engineer/config.json --setup-only --connectors asc
+2. This installs/verifies the ASC skill pack and `asc` CLI when possible.
+3. Create an App Store Connect API key at https://appstoreconnect.apple.com/access/integrations/api or https://appstoreconnect.apple.com/access/users for team access. For read-only App Store Connect reporting, use the least role that can read the required reports for the target app; prefer Sales/Sales and Reports style access, use Finance only if needed, avoid Admin unless a report must be enabled once.
+4. Save the values as secrets/env only: ASC_KEY_ID, ASC_ISSUER_ID, ASC_PRIVATE_KEY_PATH or ASC_PRIVATE_KEY. Never commit the .p8 key.
+5. Add/verify the app id as ASC_APP_ID or pass --app <app_id>.
+6. Smoke test with asc auth/status or a read-only asc report command, then wire the exported JSON as an extra source.
 
 GitHub setup:
-1. Install/verify the GitHub skill: openclaw skills install steipete/github or npx clawhub@latest install github
-2. Detect repo locally: git rev-parse --show-toplevel and git remote get-url origin
-3. Check auth: gh auth status; if missing, run gh auth login.
-4. For code analysis only, read-only repo access is enough. If a token is needed, use a fine-grained token with Contents: Read and Metadata: Read for the selected repos.
-5. Only add Issues write or Pull requests/Contents write if the user wants OpenClaw to create issues or draft PRs.
+1. Run: bash skills/ai-product-manager/scripts/bootstrap-openclaw-workspace.sh, then node scripts/openclaw-growth-start.mjs --config data/openclaw-growth-engineer/config.json --setup-only --connectors github
+2. This installs/verifies the GitHub helper skill and `gh` CLI when possible.
+3. Detect repo locally: git rev-parse --show-toplevel and git remote get-url origin
+4. Check auth: gh auth status; if missing, run gh auth login.
+5. For code analysis only, read-only repo access is enough. If a token is needed, create one at https://github.com/settings/personal-access-tokens/new with Contents: Read and Metadata: Read for the selected repos.
+6. Only add Issues write or Pull requests/Contents write if the user wants OpenClaw to create issues or draft PRs.
 ```
+
+Direct connector URLs to show the user when relevant:
+
+- RevenueCat dashboard/API keys: https://app.revenuecat.com/
+- RevenueCat API key docs: https://www.revenuecat.com/docs/projects/authentication
+- RevenueCat MCP setup docs: https://www.revenuecat.com/docs/tools/mcp/setup
+- App Store Connect API keys: https://appstoreconnect.apple.com/access/integrations/api
+- App Store Connect users/access: https://appstoreconnect.apple.com/access/users
+- App Store Connect individual API key profile: https://appstoreconnect.apple.com/account
+- GitHub fine-grained token creation: https://github.com/settings/personal-access-tokens/new
+- GitHub CLI auth docs: https://cli.github.com/manual/gh_auth_login
+- GitHub CLI install docs: https://github.com/cli/cli#installation
+- GitHub repo settings/apps, for repository-level access checks: https://github.com/settings/installations
 
 ## Mandatory Baseline
 
@@ -295,7 +342,7 @@ ASC setup guidance:
 - Ask: "Soll ASC CLI fuer App Store Connect verbunden werden?"
 - Recommend the least-privilege App Store Connect API access that can read the required App Store Connect reports: prefer a Sales/Sales and Reports style role for generated reports; Finance can work but is broader; Admin should only be used temporarily when a new report type must be requested for the first time.
 - Prefer an individual API key for a user limited to the target app when possible; team API keys can cover all apps and are broader.
-- Tell the user where to create the key: App Store Connect -> Users and Access -> Integrations -> App Store Connect API for team keys, or profile menu -> Edit Profile -> Individual API Key for individual keys.
+- Tell the user where to create the key and include direct URLs: https://appstoreconnect.apple.com/access/integrations/api for team keys, https://appstoreconnect.apple.com/access/users for access management, or https://appstoreconnect.apple.com/account for individual keys.
 - Store only env vars/secrets: `ASC_KEY_ID`, `ASC_ISSUER_ID`, and `ASC_PRIVATE_KEY` or `ASC_PRIVATE_KEY_PATH`; never commit the `.p8` private key.
 - Also ask for or auto-detect the App Store Connect app id and store it as `ASC_APP_ID` or in the project-local OpenClaw secret/config layer.
 - After the key and app id are present, run one read-only `asc` smoke test before marking ASC connected.
@@ -306,7 +353,7 @@ RevenueCat setup guidance:
 - Ask: "Soll RevenueCat fuer Monetization-/Subscription-Daten verbunden werden?"
 - For SDK instrumentation, use the public app-specific SDK key only in the app.
 - For server-side growth summaries, request a RevenueCat secret API key stored server-side only. Prefer a v2 secret key with read-only permissions for charts/metrics and required project configuration resources such as apps, products, offerings, packages, and entitlements; add customer/subscriber read only if the selected summary needs it.
-- Tell the user where to create it: RevenueCat Dashboard -> Project Settings -> API Keys -> + New secret API key.
+- Tell the user where to create it and include direct URLs: https://app.revenuecat.com/ -> Project Settings -> API Keys -> + New secret API key, plus https://www.revenuecat.com/docs/projects/authentication for key docs.
 - Store it as `REVENUECAT_API_KEY` in OpenClaw secret storage or runtime env; never put it in client code, config JSON, issues, or PR bodies.
 
 Mobile-focused examples:
@@ -351,7 +398,7 @@ When the user says "start", "run", or "kick off" the skill:
 3. Then run:
    - `openclaw start --config openclaw.config.json`
 4. In this monorepo, use the workspace dev entrypoint when `openclaw` is not installed globally:
-   - `pnpm --filter @analyticscli/openclaw-cli dev -- start`
+   - `pnpm --filter @analyticscli/openclaw-cli dev start --repo-root <repo-root>`
 5. Run portable checks first when setup is incomplete:
    - `command -v analyticscli`
    - `analyticscli projects list`
@@ -403,6 +450,7 @@ Use the legacy bootstrap-and-copy runtime only when the standalone CLI is unavai
   - prefer Sales/Sales and Reports style access; Admin only temporarily for first-time report type requests
 - `ANALYTICSCLI_ACCESS_TOKEN`
   - recommended for CLI/agent auth when no local CLI login exists
+  - do not ask for `ANALYTICSCLI_READONLY_TOKEN`; the readonly token is passed to `analyticscli login --readonly-token <token>` or stored as `ANALYTICSCLI_ACCESS_TOKEN`
 - `REVENUECAT_API_KEY`
   - optional; ask before setup
   - use a server-side secret API key for RevenueCat command/API mode
