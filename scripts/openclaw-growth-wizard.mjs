@@ -13,7 +13,7 @@ const CONNECTOR_DEFINITIONS = [
         key: 'github',
         label: 'GitHub code access',
         summary: 'Read repo context and optionally create issues or draft PRs.',
-        needs: 'gh auth login, or a fine-grained GITHUB_TOKEN fallback if gh is unavailable.',
+        needs: 'The wizard installs gh locally when needed, then starts gh auth login.',
     },
     {
         key: 'revenuecat',
@@ -307,6 +307,86 @@ async function runInteractiveCommand(command, options = {}) {
         child.on('close', (code) => resolve(code));
     });
 }
+function getUserLocalBinDir() {
+    return process.env.HOME ? path.join(process.env.HOME, '.local', 'bin') : null;
+}
+function prependPath(dir) {
+    const current = process.env.PATH || '';
+    if (!current.split(':').includes(dir)) {
+        process.env.PATH = `${dir}:${current}`;
+    }
+}
+function getGitHubCliReleaseAssetName(version) {
+    const arch = process.arch === 'x64' ? 'amd64' : process.arch === 'arm64' ? 'arm64' : '';
+    if (process.platform === 'linux' && arch) {
+        return `gh_${version}_linux_${arch}.tar.gz`;
+    }
+    return null;
+}
+async function resolveGitHubCliReleaseAssetUrl() {
+    const response = await fetch('https://api.github.com/repos/cli/cli/releases/latest', {
+        headers: {
+            Accept: 'application/vnd.github+json',
+            'User-Agent': 'openclaw-growth-wizard',
+        },
+    });
+    if (!response.ok) {
+        throw new Error(`GitHub CLI release lookup failed (${response.status})`);
+    }
+    const release = await response.json();
+    const version = String(release.tag_name || '').replace(/^v/, '');
+    const assetName = getGitHubCliReleaseAssetName(version);
+    if (!assetName) {
+        throw new Error(`No user-local gh installer is defined for ${process.platform}/${process.arch}`);
+    }
+    const asset = release.assets?.find((entry) => entry.name === assetName);
+    if (!asset?.browser_download_url) {
+        throw new Error(`GitHub CLI release asset not found: ${assetName}`);
+    }
+    return asset.browser_download_url;
+}
+async function installGitHubCliUserLocal() {
+    const binDir = getUserLocalBinDir();
+    if (!binDir) {
+        process.stdout.write('Cannot install gh automatically because HOME is not set.\n');
+        return false;
+    }
+    if (!(await commandExists('curl'))) {
+        process.stdout.write('Cannot install gh automatically because curl is not available.\n');
+        return false;
+    }
+    if (!(await commandExists('tar'))) {
+        process.stdout.write('Cannot install gh automatically because tar is not available.\n');
+        return false;
+    }
+    try {
+        const url = await resolveGitHubCliReleaseAssetUrl();
+        const cacheDir = process.env.HOME
+            ? path.join(process.env.HOME, '.cache', 'openclaw-gh')
+            : path.join(process.cwd(), '.openclaw-gh-cache');
+        const command = [
+            'set -eu',
+            `mkdir -p ${quote(binDir)} ${quote(cacheDir)}`,
+            `tmp="$(mktemp -d ${quote(path.join(cacheDir, 'gh.XXXXXX'))})"`,
+            'trap \'rm -rf "$tmp"\' EXIT',
+            `curl -fsSL ${quote(url)} -o "$tmp/gh.tar.gz"`,
+            'tar -xzf "$tmp/gh.tar.gz" -C "$tmp"',
+            'gh_bin="$(find "$tmp" -path "*/bin/gh" -type f | head -n 1)"',
+            'test -n "$gh_bin"',
+            `cp "$gh_bin" ${quote(path.join(binDir, 'gh'))}`,
+            `chmod 755 ${quote(path.join(binDir, 'gh'))}`,
+            'for profile in "$HOME/.profile" "$HOME/.bashrc" "$HOME/.bash_profile" "$HOME/.zshrc" "$HOME/.zprofile"; do touch "$profile"; grep -Fq \'export PATH="$HOME/.local/bin:$PATH"\' "$profile" || printf \'\\n# OpenClaw user-local bin\\nexport PATH="$HOME/.local/bin:$PATH"\\n\' >> "$profile"; done',
+        ].join(' && ');
+        process.stdout.write(`Installing GitHub CLI locally into ${binDir}/gh...\n`);
+        const code = await runInteractiveCommand(command);
+        prependPath(binDir);
+        return code === 0 && await commandExists('gh');
+    }
+    catch (error) {
+        process.stdout.write(`Automatic gh install failed: ${error instanceof Error ? error.message : String(error)}\n`);
+        return false;
+    }
+}
 function resolveSecretsFile() {
     const explicit = process.env.OPENCLAW_GROWTH_SECRETS_FILE?.trim();
     if (explicit)
@@ -377,13 +457,14 @@ async function guideGitHubConnector(rl, secrets) {
         'Use this when OpenClaw should read repo context or create GitHub delivery artifacts.',
     ]);
     printBullets([
-        'Best path: install GitHub CLI and run `gh auth login` on this host.',
-        'Fallback path: paste a fine-grained `GITHUB_TOKEN` only into this terminal.',
-        'Code analysis needs Metadata: Read and Contents: Read for the selected repository.',
-        'Add Issues/Pull requests write scopes only if you want automated issue or PR delivery.',
-        'Token URL: https://github.com/settings/personal-access-tokens/new',
+        'The wizard installs GitHub CLI locally when needed.',
+        'Then it starts `gh auth login` so you can authenticate this host.',
+        'Token fallback is only used if local install or gh auth is not possible.',
     ]);
-    const hasGh = await commandExists('gh');
+    let hasGh = await commandExists('gh');
+    if (!hasGh) {
+        hasGh = await installGitHubCliUserLocal();
+    }
     if (hasGh) {
         const runLogin = await askYesNo(rl, 'Run `gh auth login` now?', true);
         if (runLogin) {
@@ -394,7 +475,7 @@ async function guideGitHubConnector(rl, secrets) {
         }
     }
     else {
-        process.stdout.write('GitHub CLI is not on PATH, so the token fallback is the fastest path on this host.\n\n');
+        process.stdout.write('GitHub CLI could not be installed automatically, so the token fallback is available.\n\n');
     }
     const storeToken = await askYesNo(rl, hasGh
         ? 'Use a fine-grained GITHUB_TOKEN fallback instead of or in addition to gh auth?'

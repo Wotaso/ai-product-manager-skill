@@ -441,6 +441,88 @@ async function installSystemBinary(commandName, details) {
     }
     return false;
 }
+function getUserLocalBinDir() {
+    return process.env.HOME ? path.join(process.env.HOME, '.local', 'bin') : null;
+}
+function prependPath(dir) {
+    const current = process.env.PATH || '';
+    if (!current.split(':').includes(dir)) {
+        process.env.PATH = `${dir}:${current}`;
+    }
+}
+function getGitHubCliReleaseAssetName(version) {
+    const arch = process.arch === 'x64' ? 'amd64' : process.arch === 'arm64' ? 'arm64' : '';
+    if (process.platform === 'linux' && arch) {
+        return `gh_${version}_linux_${arch}.tar.gz`;
+    }
+    return null;
+}
+async function resolveGitHubCliReleaseAssetUrl() {
+    const response = await fetch('https://api.github.com/repos/cli/cli/releases/latest', {
+        headers: {
+            Accept: 'application/vnd.github+json',
+            'User-Agent': 'openclaw-growth-start',
+        },
+    });
+    if (!response.ok) {
+        throw new Error(`GitHub CLI release lookup failed (${response.status})`);
+    }
+    const release = await response.json();
+    const version = String(release?.tag_name || '').replace(/^v/, '');
+    const assetName = getGitHubCliReleaseAssetName(version);
+    if (!assetName) {
+        throw new Error(`No user-local gh installer is defined for ${process.platform}/${process.arch}`);
+    }
+    const asset = Array.isArray(release?.assets) ? release.assets.find((entry) => entry?.name === assetName) : null;
+    if (!asset?.browser_download_url) {
+        throw new Error(`GitHub CLI release asset not found: ${assetName}`);
+    }
+    return asset.browser_download_url;
+}
+async function installGitHubCliUserLocal(details) {
+    const binDir = getUserLocalBinDir();
+    if (!binDir) {
+        details.push('gh user-local install skipped because HOME is not set');
+        return false;
+    }
+    if (!(await commandExists('curl'))) {
+        details.push('gh user-local install skipped because curl is unavailable');
+        return false;
+    }
+    if (!(await commandExists('tar'))) {
+        details.push('gh user-local install skipped because tar is unavailable');
+        return false;
+    }
+    try {
+        const url = await resolveGitHubCliReleaseAssetUrl();
+        const cacheDir = path.join(process.env.HOME, '.cache', 'openclaw-gh');
+        const command = [
+            'set -eu',
+            `mkdir -p ${quote(binDir)} ${quote(cacheDir)}`,
+            `tmp="$(mktemp -d ${quote(path.join(cacheDir, 'gh.XXXXXX'))})"`,
+            'trap \'rm -rf "$tmp"\' EXIT',
+            `curl -fsSL ${quote(url)} -o "$tmp/gh.tar.gz"`,
+            'tar -xzf "$tmp/gh.tar.gz" -C "$tmp"',
+            'gh_bin="$(find "$tmp" -path "*/bin/gh" -type f | head -n 1)"',
+            'test -n "$gh_bin"',
+            `cp "$gh_bin" ${quote(path.join(binDir, 'gh'))}`,
+            `chmod 755 ${quote(path.join(binDir, 'gh'))}`,
+            'for profile in "$HOME/.profile" "$HOME/.bashrc" "$HOME/.bash_profile" "$HOME/.zshrc" "$HOME/.zprofile"; do touch "$profile"; grep -Fq \'export PATH="$HOME/.local/bin:$PATH"\' "$profile" || printf \'\\n# OpenClaw user-local bin\\nexport PATH="$HOME/.local/bin:$PATH"\\n\' >> "$profile"; done',
+        ].join(' && ');
+        const result = await runShellCommand(command, 600_000);
+        prependPath(binDir);
+        await appendHelperDetail(details, `user-local gh install to ${path.join(binDir, 'gh')}`, result);
+        const installedPath = await resolveCommandPath('gh');
+        if (installedPath) {
+            details.push(`gh binary found at ${installedPath}`);
+            return true;
+        }
+    }
+    catch (error) {
+        details.push(`user-local gh install failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+    return false;
+}
 function resolveMcpNpmCacheDir() {
     return process.env.OPENCLAW_MCP_NPM_CACHE ||
         (process.env.HOME ? path.join(process.env.HOME, '.cache', 'openclaw-mcp-npm') : path.join(process.cwd(), '.openclaw-mcp-npm-cache'));
@@ -501,7 +583,10 @@ async function installRevenueCatConnector() {
 async function installGitHubConnector() {
     const details = [];
     await installClawHubSkill('github', details);
-    const ok = await installSystemBinary('gh', details);
+    let ok = await installSystemBinary('gh', details);
+    if (!ok) {
+        ok = await installGitHubCliUserLocal(details);
+    }
     return { connector: 'github', ok, detail: `${details.join('; ')}${ok ? '; next run gh auth status or gh auth login' : ''}` };
 }
 async function installAscConnector() {
