@@ -935,7 +935,7 @@ async function main() {
               entry.connector === 'github'
                 ? 'Install GitHub CLI (`gh`) and run `gh auth login`, or provide a fine-grained read-only token for code access.'
                 : entry.connector === 'asc'
-                  ? 'Install the ASC CLI and provide ASC_KEY_ID, ASC_ISSUER_ID, ASC_PRIVATE_KEY_PATH or ASC_PRIVATE_KEY, and ASC_APP_ID.'
+                  ? 'Install the ASC CLI and provide ASC_KEY_ID, ASC_ISSUER_ID, and ASC_PRIVATE_KEY_PATH or ASC_PRIVATE_KEY. Resolve the app after auth succeeds.'
                   : 'Set REVENUECAT_API_KEY and rerun connector setup to write RevenueCat MCP config.',
           })),
         },
