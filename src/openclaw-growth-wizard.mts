@@ -5,6 +5,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline/promises';
+import { emitKeypressEvents } from 'node:readline';
 import {
   buildExtraSourceConfig,
   getDefaultSourceCommand,
@@ -15,6 +16,43 @@ import {
 const DEFAULT_CONFIG_PATH = 'data/openclaw-growth-engineer/config.json';
 const CONNECTOR_KEYS = ['github', 'revenuecat', 'asc'] as const;
 type ConnectorKey = (typeof CONNECTOR_KEYS)[number];
+type ConnectorDefinition = {
+  key: ConnectorKey;
+  label: string;
+  summary: string;
+  needs: string;
+};
+
+const CONNECTOR_DEFINITIONS: ConnectorDefinition[] = [
+  {
+    key: 'github',
+    label: 'GitHub code access',
+    summary: 'Read repo context and optionally create issues or draft PRs.',
+    needs: 'gh auth login, or a fine-grained GITHUB_TOKEN fallback if gh is unavailable.',
+  },
+  {
+    key: 'revenuecat',
+    label: 'RevenueCat monetization data',
+    summary: 'Read subscription, product, entitlement, and revenue context.',
+    needs: 'A RevenueCat v2 secret API key with read-only project permissions.',
+  },
+  {
+    key: 'asc',
+    label: 'App Store Connect CLI',
+    summary: 'Read app, build, review, rating, TestFlight, and store metadata signals.',
+    needs: 'ASC_KEY_ID, ASC_ISSUER_ID, and an AuthKey_XXXX.p8 path on this host.',
+  },
+];
+
+const ANSI = {
+  bold: '\x1b[1m',
+  cyan: '\x1b[36m',
+  dim: '\x1b[2m',
+  green: '\x1b[32m',
+  hideCursor: '\x1b[?25l',
+  reset: '\x1b[0m',
+  showCursor: '\x1b[?25h',
+};
 
 async function ensureDirForFile(filePath) {
   await fs.mkdir(path.dirname(filePath), { recursive: true });
@@ -102,25 +140,169 @@ function parseConnectorList(value): ConnectorKey[] {
 }
 
 async function askConnectorSelection(rl): Promise<ConnectorKey[]> {
-  process.stdout.write('Connector setup options:\n');
-  process.stdout.write('  1) GitHub code access\n');
-  process.stdout.write('  2) RevenueCat monetization data\n');
-  process.stdout.write('  3) App Store Connect CLI\n');
+  if (!process.stdin.isTTY || !process.stdout.isTTY || !process.stdin.setRawMode) {
+    return await askConnectorSelectionByText(rl);
+  }
+
+  rl.pause();
+  try {
+    return await askConnectorSelectionByKeys();
+  } finally {
+    rl.resume();
+  }
+}
+
+async function askConnectorSelectionByText(rl): Promise<ConnectorKey[]> {
+  printConnectorIntro();
+  CONNECTOR_DEFINITIONS.forEach((connector, index) => {
+    process.stdout.write(`  ${index + 1}) ${connector.label}\n`);
+    process.stdout.write(`     ${connector.summary}\n`);
+  });
   while (true) {
     const answer = await ask(rl, 'Select connectors (comma-separated numbers/names, or all)', 'all');
-    const selected = new Set<ConnectorKey>();
-    for (const rawEntry of answer.split(',')) {
-      const entry = rawEntry.trim().toLowerCase();
-      if (entry === '1') selected.add('github');
-      if (entry === '2') selected.add('revenuecat');
-      if (entry === '3') selected.add('asc');
-      const key = normalizeConnectorKey(entry);
-      if (key === 'all') CONNECTOR_KEYS.forEach((connector) => selected.add(connector));
-      if (key && key !== 'all') selected.add(key);
-    }
-    if (selected.size > 0) return [...selected];
-    process.stdout.write('Choose at least one connector.\n');
+    const selected = parseConnectorAnswer(answer);
+    if (selected.length > 0) return selected;
+    process.stdout.write('\nChoose at least one connector.\n\n');
   }
+}
+
+function parseConnectorAnswer(answer): ConnectorKey[] {
+  const selected = new Set<ConnectorKey>();
+  for (const rawEntry of String(answer || '').split(',')) {
+    const entry = rawEntry.trim().toLowerCase();
+    if (entry === '1') selected.add('github');
+    if (entry === '2') selected.add('revenuecat');
+    if (entry === '3') selected.add('asc');
+    const key = normalizeConnectorKey(entry);
+    if (key === 'all') CONNECTOR_KEYS.forEach((connector) => selected.add(connector));
+    if (key && key !== 'all') selected.add(key);
+  }
+  return orderConnectors([...selected]);
+}
+
+function orderConnectors(keys: ConnectorKey[]): ConnectorKey[] {
+  const selected = new Set(keys);
+  return CONNECTOR_KEYS.filter((key) => selected.has(key));
+}
+
+function printConnectorIntro() {
+  process.stdout.write(`\n${ANSI.bold}OpenClaw connector setup${ANSI.reset}\n`);
+  process.stdout.write(`${ANSI.dim}Secrets stay local on this host. Do not paste them into Discord/OpenClaw chat.${ANSI.reset}\n\n`);
+}
+
+function connectorLabel(key: ConnectorKey) {
+  return CONNECTOR_DEFINITIONS.find((connector) => connector.key === key)?.label ?? key;
+}
+
+function renderConnectorPicker(cursorIndex: number, selected: Set<ConnectorKey>, warning = '') {
+  process.stdout.write('\x1b[2J\x1b[H');
+  printConnectorIntro();
+  process.stdout.write(`${ANSI.bold}Select connectors${ANSI.reset}\n`);
+  process.stdout.write(`${ANSI.dim}Use Up/Down to move, Space to toggle, A to toggle all, Enter to continue.${ANSI.reset}\n\n`);
+
+  CONNECTOR_DEFINITIONS.forEach((connector, index) => {
+    const active = index === cursorIndex;
+    const checked = selected.has(connector.key);
+    const pointer = active ? `${ANSI.cyan}>${ANSI.reset}` : ' ';
+    const box = checked ? `${ANSI.green}[x]${ANSI.reset}` : '[ ]';
+    const title = active ? `${ANSI.bold}${connector.label}${ANSI.reset}` : connector.label;
+    process.stdout.write(`${pointer} ${box} ${title}\n`);
+    process.stdout.write(`    ${connector.summary}\n`);
+    process.stdout.write(`    ${ANSI.dim}Needs: ${connector.needs}${ANSI.reset}\n\n`);
+  });
+
+  if (warning) {
+    process.stdout.write(`${ANSI.bold}${warning}${ANSI.reset}\n\n`);
+  }
+  process.stdout.write(`${ANSI.dim}Esc/Q cancels. Number keys 1-${CONNECTOR_DEFINITIONS.length} also toggle connectors.${ANSI.reset}\n`);
+}
+
+async function askConnectorSelectionByKeys(): Promise<ConnectorKey[]> {
+  emitKeypressEvents(process.stdin);
+  const wasRaw = process.stdin.isRaw;
+  process.stdin.setRawMode(true);
+  process.stdin.resume();
+
+  let cursorIndex = 0;
+  const selected = new Set<ConnectorKey>(CONNECTOR_KEYS);
+  let warning = '';
+
+  return await new Promise<ConnectorKey[]>((resolve, reject) => {
+    const cleanup = () => {
+      process.stdin.off('keypress', onKeypress);
+      process.stdin.setRawMode(Boolean(wasRaw));
+      process.stdout.write(ANSI.showCursor);
+    };
+
+    const finish = () => {
+      if (selected.size === 0) {
+        warning = 'Choose at least one connector before continuing.';
+        renderConnectorPicker(cursorIndex, selected, warning);
+        return;
+      }
+      cleanup();
+      process.stdout.write('\x1b[2J\x1b[H');
+      resolve(orderConnectors([...selected]));
+    };
+
+    const cancel = () => {
+      cleanup();
+      process.stdout.write('\n');
+      reject(new Error('Connector setup cancelled.'));
+    };
+
+    const toggleCurrent = () => {
+      const key = CONNECTOR_DEFINITIONS[cursorIndex].key;
+      if (selected.has(key)) selected.delete(key);
+      else selected.add(key);
+      warning = '';
+    };
+
+    const toggleAll = () => {
+      if (selected.size === CONNECTOR_KEYS.length) selected.clear();
+      else CONNECTOR_KEYS.forEach((key) => selected.add(key));
+      warning = '';
+    };
+
+    const onKeypress = (_text, key) => {
+      if (key?.ctrl && key?.name === 'c') {
+        cancel();
+        return;
+      }
+      if (key?.name === 'escape' || key?.name === 'q') {
+        cancel();
+        return;
+      }
+      if (key?.name === 'up' || key?.name === 'k') {
+        cursorIndex = (cursorIndex - 1 + CONNECTOR_DEFINITIONS.length) % CONNECTOR_DEFINITIONS.length;
+        warning = '';
+      } else if (key?.name === 'down' || key?.name === 'j') {
+        cursorIndex = (cursorIndex + 1) % CONNECTOR_DEFINITIONS.length;
+        warning = '';
+      } else if (key?.name === 'space') {
+        toggleCurrent();
+      } else if (key?.name === 'a') {
+        toggleAll();
+      } else if (key?.name === 'return' || key?.name === 'enter') {
+        finish();
+        return;
+      } else if (/^[1-9]$/.test(String(_text || ''))) {
+        const index = Number(_text) - 1;
+        const connector = CONNECTOR_DEFINITIONS[index];
+        if (connector) {
+          if (selected.has(connector.key)) selected.delete(connector.key);
+          else selected.add(connector.key);
+          cursorIndex = index;
+          warning = '';
+        }
+      }
+      renderConnectorPicker(cursorIndex, selected, warning);
+    };
+
+    process.stdin.on('keypress', onKeypress);
+    process.stdout.write(ANSI.hideCursor);
+    renderConnectorPicker(cursorIndex, selected, warning);
+  });
 }
 
 async function commandExists(commandName) {
@@ -190,12 +372,33 @@ async function maybePromptSecret(rl, label, envName) {
   return value.trim();
 }
 
+function printSection(title: string, lines: string[] = []) {
+  process.stdout.write(`\n${ANSI.bold}${title}${ANSI.reset}\n`);
+  process.stdout.write(`${'-'.repeat(title.length)}\n`);
+  for (const line of lines) {
+    process.stdout.write(`${line}\n`);
+  }
+  if (lines.length > 0) process.stdout.write('\n');
+}
+
+function printBullets(lines: string[]) {
+  for (const line of lines) {
+    process.stdout.write(`  - ${line}\n`);
+  }
+  process.stdout.write('\n');
+}
+
 async function guideGitHubConnector(rl, secrets: Record<string, string>) {
-  process.stdout.write('\nGitHub code access\n');
-  process.stdout.write('- Preferred path: install GitHub CLI and run `gh auth login` on this host.\n');
-  process.stdout.write('- Minimum read-only access: Metadata: Read and Contents: Read for the selected repository.\n');
-  process.stdout.write('- Add Issues/Pull requests write scopes only if you want automated delivery.\n');
-  process.stdout.write('- Token fallback URL: https://github.com/settings/personal-access-tokens/new\n');
+  printSection('GitHub code access', [
+    'Use this when OpenClaw should read repo context or create GitHub delivery artifacts.',
+  ]);
+  printBullets([
+    'Best path: install GitHub CLI and run `gh auth login` on this host.',
+    'Fallback path: paste a fine-grained `GITHUB_TOKEN` only into this terminal.',
+    'Code analysis needs Metadata: Read and Contents: Read for the selected repository.',
+    'Add Issues/Pull requests write scopes only if you want automated issue or PR delivery.',
+    'Token URL: https://github.com/settings/personal-access-tokens/new',
+  ]);
 
   const hasGh = await commandExists('gh');
   if (hasGh) {
@@ -207,7 +410,7 @@ async function guideGitHubConnector(rl, secrets: Record<string, string>) {
       rl.resume();
     }
   } else {
-    process.stdout.write('GitHub CLI is not on PATH. If this host cannot install `gh`, use the token fallback now.\n');
+    process.stdout.write('GitHub CLI is not on PATH, so the token fallback is the fastest path on this host.\n\n');
   }
 
   const storeToken = await askYesNo(
@@ -224,26 +427,39 @@ async function guideGitHubConnector(rl, secrets: Record<string, string>) {
 }
 
 async function guideRevenueCatConnector(rl, secrets: Record<string, string>) {
-  process.stdout.write('\nRevenueCat monetization data\n');
+  printSection('RevenueCat monetization data', [
+    'Use this when OpenClaw should read subscription, product, entitlement, and revenue context.',
+  ]);
   const projectId = await ask(rl, 'RevenueCat project id for direct API-key URL (optional)', '');
   process.stdout.write(
-    `Create a v2 secret API key here: ${
+    `\nCreate a v2 secret API key here:\n  ${
       projectId ? `https://app.revenuecat.com/projects/${projectId}/api-keys` : 'https://app.revenuecat.com/'
     }\n`,
   );
-  process.stdout.write('- Minimum permissions: read-only charts/metrics plus apps, products, offerings, packages, and entitlements.\n');
-  process.stdout.write('- Add customer/subscriber read only only if the selected report needs it.\n');
+  printBullets([
+    'Minimum permissions: read-only charts/metrics plus apps, products, offerings, packages, and entitlements.',
+    'Add customer/subscriber read only only if the selected report needs it.',
+    'Paste the key only into this terminal when prompted.',
+  ]);
   const apiKey = await maybePromptSecret(rl, 'Paste REVENUECAT_API_KEY into this local terminal', 'REVENUECAT_API_KEY');
   if (apiKey) secrets.REVENUECAT_API_KEY = apiKey;
 }
 
 async function guideAscConnector(rl, secrets: Record<string, string>) {
-  process.stdout.write('\nApp Store Connect CLI\n');
-  process.stdout.write('- Team API keys: https://appstoreconnect.apple.com/access/integrations/api\n');
-  process.stdout.write('- Access/users: https://appstoreconnect.apple.com/access/users\n');
-  process.stdout.write('- Individual account keys: https://appstoreconnect.apple.com/account\n');
-  process.stdout.write('- Use the least role that can read the required reports. Avoid Admin unless temporarily required.\n');
-  process.stdout.write('- Save the downloaded .p8 on this host and paste only its file path here.\n');
+  printSection('App Store Connect CLI', [
+    'Use this when OpenClaw should read app, build, TestFlight, review, rating, and store signals.',
+  ]);
+  process.stdout.write('Create an API key from one of these pages:\n');
+  printBullets([
+    'Team API keys: https://appstoreconnect.apple.com/access/integrations/api',
+    'Access/users: https://appstoreconnect.apple.com/access/users',
+    'Individual account keys: https://appstoreconnect.apple.com/account',
+  ]);
+  printBullets([
+    'Use the least role that can read the required reports. Avoid Admin unless temporarily required.',
+    'Save the downloaded .p8 on this host with chmod 600.',
+    'Paste only the .p8 file path into this terminal.',
+  ]);
 
   const keyId = await ask(rl, 'ASC_KEY_ID (leave empty to skip)', process.env.ASC_KEY_ID || '');
   const issuerId = await ask(rl, 'ASC_ISSUER_ID (leave empty to skip)', process.env.ASC_ISSUER_ID || '');
@@ -269,9 +485,12 @@ async function runConnectorSetupWizard(args) {
       throw new Error('No supported connectors selected. Use github, revenuecat, asc, or all.');
     }
 
-    process.stdout.write('OpenClaw connector setup wizard\n');
-    process.stdout.write('Secrets entered here stay on this host. Do not paste them into Discord/OpenClaw chat.\n');
-    process.stdout.write(`Selected connectors: ${selected.join(', ')}\n`);
+    printConnectorIntro();
+    process.stdout.write(`${ANSI.bold}Selected connectors${ANSI.reset}\n`);
+    for (const key of selected) {
+      process.stdout.write(`  - ${connectorLabel(key)}\n`);
+    }
+    process.stdout.write('\n');
 
     const secrets: Record<string, string> = {};
     if (selected.includes('github')) await guideGitHubConnector(rl, secrets);
