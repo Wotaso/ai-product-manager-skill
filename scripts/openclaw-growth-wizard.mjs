@@ -2,14 +2,19 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
+import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline/promises';
 import { buildExtraSourceConfig, getDefaultSourceCommand, getDefaultSourceHint, getDefaultSourcePath, } from './openclaw-growth-shared.mjs';
 const DEFAULT_CONFIG_PATH = 'data/openclaw-growth-engineer/config.json';
+const CONNECTOR_KEYS = ['github', 'revenuecat', 'asc'];
 async function ensureDirForFile(filePath) {
     await fs.mkdir(path.dirname(filePath), { recursive: true });
 }
 function parseArgs(argv) {
     const args = {
+        config: DEFAULT_CONFIG_PATH,
+        connectorWizard: false,
+        connectors: '',
         out: DEFAULT_CONFIG_PATH,
     };
     for (let i = 0; i < argv.length; i += 1) {
@@ -18,8 +23,21 @@ function parseArgs(argv) {
         if (token === '--') {
             continue;
         }
+        else if (token === '--config') {
+            args.config = next || args.config;
+            args.out = next || args.out;
+            i += 1;
+        }
+        else if (token === '--connectors' || token === '--connector-setup') {
+            args.connectorWizard = true;
+            if (next && !next.startsWith('-')) {
+                args.connectors = next;
+                i += 1;
+            }
+        }
         else if (token === '--out') {
             args.out = next;
+            args.config = next;
             i += 1;
         }
         else if (token === '--help' || token === '-h') {
@@ -40,8 +58,241 @@ OpenClaw Growth Setup Wizard
 
 Usage:
   node scripts/openclaw-growth-wizard.mjs [--out <config-path>]
+  node scripts/openclaw-growth-wizard.mjs --connectors [github,revenuecat,asc] [--config <config-path>]
 `);
     process.exit(exitCode);
+}
+function quote(value) {
+    if (/^[a-zA-Z0-9_./:-]+$/.test(String(value))) {
+        return String(value);
+    }
+    return `'${String(value).replace(/'/g, `'\\''`)}'`;
+}
+function normalizeConnectorKey(value) {
+    const normalized = String(value || '').trim().toLowerCase().replace(/[_\s]+/g, '-');
+    if (!normalized)
+        return null;
+    if (normalized === 'all')
+        return 'all';
+    if (['github', 'gh', 'github-code', 'codebase', 'code-access'].includes(normalized))
+        return 'github';
+    if (['revenuecat', 'revenue-cat', 'rc', 'revenuecat-mcp'].includes(normalized))
+        return 'revenuecat';
+    if (['asc', 'asc-cli', 'app-store-connect', 'appstoreconnect', 'app-store'].includes(normalized))
+        return 'asc';
+    return null;
+}
+function parseConnectorList(value) {
+    const selected = new Set();
+    for (const entry of String(value || '').split(',')) {
+        const connector = normalizeConnectorKey(entry);
+        if (!connector)
+            continue;
+        if (connector === 'all') {
+            CONNECTOR_KEYS.forEach((key) => selected.add(key));
+        }
+        else {
+            selected.add(connector);
+        }
+    }
+    return [...selected];
+}
+async function askConnectorSelection(rl) {
+    process.stdout.write('Connector setup options:\n');
+    process.stdout.write('  1) GitHub code access\n');
+    process.stdout.write('  2) RevenueCat monetization data\n');
+    process.stdout.write('  3) App Store Connect CLI\n');
+    while (true) {
+        const answer = await ask(rl, 'Select connectors (comma-separated numbers/names, or all)', 'all');
+        const selected = new Set();
+        for (const rawEntry of answer.split(',')) {
+            const entry = rawEntry.trim().toLowerCase();
+            if (entry === '1')
+                selected.add('github');
+            if (entry === '2')
+                selected.add('revenuecat');
+            if (entry === '3')
+                selected.add('asc');
+            const key = normalizeConnectorKey(entry);
+            if (key === 'all')
+                CONNECTOR_KEYS.forEach((connector) => selected.add(connector));
+            if (key && key !== 'all')
+                selected.add(key);
+        }
+        if (selected.size > 0)
+            return [...selected];
+        process.stdout.write('Choose at least one connector.\n');
+    }
+}
+async function commandExists(commandName) {
+    const result = await runInteractiveCommand(`command -v ${quote(commandName)} >/dev/null 2>&1`, {
+        silent: true,
+    });
+    return result === 0;
+}
+async function runInteractiveCommand(command, options = {}) {
+    return await new Promise((resolve) => {
+        const child = spawn('/bin/sh', ['-lc', command], {
+            env: options.env ?? process.env,
+            stdio: options.silent ? 'ignore' : 'inherit',
+        });
+        child.on('close', (code) => resolve(code));
+    });
+}
+function resolveSecretsFile() {
+    const explicit = process.env.OPENCLAW_GROWTH_SECRETS_FILE?.trim();
+    if (explicit)
+        return path.resolve(explicit);
+    if (process.env.HOME)
+        return path.join(process.env.HOME, '.config', 'openclaw-growth', 'secrets.env');
+    return path.resolve('.openclaw-growth-secrets.env');
+}
+function renderEnvValue(value) {
+    return `"${String(value).replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\$/g, '\\$')}"`;
+}
+async function readSecretsFile(filePath) {
+    const values = new Map();
+    let raw = '';
+    try {
+        raw = await fs.readFile(filePath, 'utf8');
+    }
+    catch {
+        return values;
+    }
+    for (const line of raw.split(/\r?\n/)) {
+        const match = line.match(/^\s*(?:export\s+)?([A-Z0-9_]+)=(.*)\s*$/);
+        if (!match)
+            continue;
+        values.set(match[1], match[2].replace(/^"|"$/g, ''));
+    }
+    return values;
+}
+async function writeSecretsFile(filePath, nextValues) {
+    const current = await readSecretsFile(filePath);
+    for (const [key, value] of Object.entries(nextValues)) {
+        if (value.trim())
+            current.set(key, value.trim());
+    }
+    await fs.mkdir(path.dirname(filePath), { recursive: true, mode: 0o700 });
+    const lines = [
+        '# OpenClaw Growth local secrets.',
+        '# This file is generated by openclaw-growth-wizard.mjs and should not be committed.',
+        ...[...current.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([key, value]) => `export ${key}=${renderEnvValue(value)}`),
+        '',
+    ];
+    await fs.writeFile(filePath, lines.join('\n'), { encoding: 'utf8', mode: 0o600 });
+    await fs.chmod(filePath, 0o600);
+}
+async function maybePromptSecret(rl, label, envName) {
+    const existing = process.env[envName]?.trim();
+    const suffix = existing ? 'already set in current environment' : 'leave empty to skip';
+    const value = await ask(rl, `${label} (${suffix})`, '');
+    return value.trim();
+}
+async function guideGitHubConnector(rl, secrets) {
+    process.stdout.write('\nGitHub code access\n');
+    process.stdout.write('- Preferred path: install GitHub CLI and run `gh auth login` on this host.\n');
+    process.stdout.write('- Minimum read-only access: Metadata: Read and Contents: Read for the selected repository.\n');
+    process.stdout.write('- Add Issues/Pull requests write scopes only if you want automated delivery.\n');
+    process.stdout.write('- Token fallback URL: https://github.com/settings/personal-access-tokens/new\n');
+    if (await commandExists('gh')) {
+        const runLogin = await askYesNo(rl, 'Run `gh auth login` now?', true);
+        if (runLogin) {
+            process.stdout.write('Launching GitHub CLI login. Return here when it finishes.\n');
+            rl.pause();
+            await runInteractiveCommand('gh auth login');
+            rl.resume();
+        }
+    }
+    else {
+        process.stdout.write('GitHub CLI is not on PATH. The helper setup will try to install it when possible.\n');
+    }
+    const storeToken = await askYesNo(rl, 'Use a fine-grained GITHUB_TOKEN fallback instead of or in addition to gh auth?', false);
+    if (storeToken) {
+        const token = await maybePromptSecret(rl, 'Paste GITHUB_TOKEN into this local terminal', 'GITHUB_TOKEN');
+        if (token)
+            secrets.GITHUB_TOKEN = token;
+    }
+}
+async function guideRevenueCatConnector(rl, secrets) {
+    process.stdout.write('\nRevenueCat monetization data\n');
+    const projectId = await ask(rl, 'RevenueCat project id for direct API-key URL (optional)', '');
+    process.stdout.write(`Create a v2 secret API key here: ${projectId ? `https://app.revenuecat.com/projects/${projectId}/api-keys` : 'https://app.revenuecat.com/'}\n`);
+    process.stdout.write('- Minimum permissions: read-only charts/metrics plus apps, products, offerings, packages, and entitlements.\n');
+    process.stdout.write('- Add customer/subscriber read only only if the selected report needs it.\n');
+    const apiKey = await maybePromptSecret(rl, 'Paste REVENUECAT_API_KEY into this local terminal', 'REVENUECAT_API_KEY');
+    if (apiKey)
+        secrets.REVENUECAT_API_KEY = apiKey;
+}
+async function guideAscConnector(rl, secrets) {
+    process.stdout.write('\nApp Store Connect CLI\n');
+    process.stdout.write('- Team API keys: https://appstoreconnect.apple.com/access/integrations/api\n');
+    process.stdout.write('- Access/users: https://appstoreconnect.apple.com/access/users\n');
+    process.stdout.write('- Individual account keys: https://appstoreconnect.apple.com/account\n');
+    process.stdout.write('- Use the least role that can read the required reports. Avoid Admin unless temporarily required.\n');
+    process.stdout.write('- Save the downloaded .p8 on this host and paste only its file path here.\n');
+    const keyId = await ask(rl, 'ASC_KEY_ID (leave empty to skip)', process.env.ASC_KEY_ID || '');
+    const issuerId = await ask(rl, 'ASC_ISSUER_ID (leave empty to skip)', process.env.ASC_ISSUER_ID || '');
+    const privateKeyPath = await ask(rl, 'ASC_PRIVATE_KEY_PATH (path to AuthKey_XXXX.p8, leave empty to skip)', process.env.ASC_PRIVATE_KEY_PATH || '');
+    if (keyId.trim())
+        secrets.ASC_KEY_ID = keyId.trim();
+    if (issuerId.trim())
+        secrets.ASC_ISSUER_ID = issuerId.trim();
+    if (privateKeyPath.trim())
+        secrets.ASC_PRIVATE_KEY_PATH = privateKeyPath.trim();
+}
+async function runConnectorSetupWizard(args) {
+    if (!process.stdin.isTTY || !process.stdout.isTTY) {
+        throw new Error('Connector wizard requires an interactive terminal.');
+    }
+    const rl = createInterface({ input: process.stdin, output: process.stdout });
+    try {
+        const selected = args.connectors ? parseConnectorList(args.connectors) : await askConnectorSelection(rl);
+        if (selected.length === 0) {
+            throw new Error('No supported connectors selected. Use github, revenuecat, asc, or all.');
+        }
+        process.stdout.write('OpenClaw connector setup wizard\n');
+        process.stdout.write('Secrets entered here stay on this host. Do not paste them into Discord/OpenClaw chat.\n');
+        process.stdout.write(`Selected connectors: ${selected.join(', ')}\n`);
+        const secrets = {};
+        if (selected.includes('github'))
+            await guideGitHubConnector(rl, secrets);
+        if (selected.includes('revenuecat'))
+            await guideRevenueCatConnector(rl, secrets);
+        if (selected.includes('asc'))
+            await guideAscConnector(rl, secrets);
+        const secretsFile = resolveSecretsFile();
+        const wroteSecrets = Object.keys(secrets).length > 0;
+        if (wroteSecrets) {
+            await writeSecretsFile(secretsFile, secrets);
+            process.stdout.write(`\nSaved local secrets to ${secretsFile} with chmod 600.\n`);
+        }
+        else {
+            process.stdout.write('\nNo new secrets were written.\n');
+        }
+        const runSetup = await askYesNo(rl, 'Run helper installation/config enablement now?', true);
+        if (runSetup) {
+            const env = {
+                ...process.env,
+                ...secrets,
+            };
+            const command = `node scripts/openclaw-growth-start.mjs --config ${quote(args.config)} --setup-only --connectors ${quote(selected.join(','))}`;
+            process.stdout.write(`\nRunning: ${command}\n`);
+            await runInteractiveCommand(command, { env });
+        }
+        if (wroteSecrets) {
+            process.stdout.write('\nFor future shell runs, load secrets first:\n');
+            process.stdout.write(`  set -a; . ${quote(secretsFile)}; set +a\n`);
+            process.stdout.write(`Then rerun setup or a smoke test:\n`);
+            process.stdout.write(`  node scripts/openclaw-growth-start.mjs --config ${quote(args.config)} --setup-only --connectors ${quote(selected.join(','))}\n`);
+        }
+        else {
+            process.stdout.write('\nRerun this wizard when you are ready to add connector secrets or run helper setup.\n');
+        }
+    }
+    finally {
+        rl.close();
+    }
 }
 async function ask(rl, label, defaultValue = '') {
     const suffix = defaultValue ? ` (${defaultValue})` : '';
@@ -113,6 +364,10 @@ async function askSourceConfig(rl, sourceName, defaultPath, hint, options = {}) 
 }
 async function main() {
     const args = parseArgs(process.argv.slice(2));
+    if (args.connectorWizard) {
+        await runConnectorSetupWizard(args);
+        return;
+    }
     const configPath = path.resolve(args.out);
     if (!process.stdin.isTTY || !process.stdout.isTTY) {
         throw new Error('Wizard requires an interactive terminal.');

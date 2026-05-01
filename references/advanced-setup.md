@@ -7,7 +7,8 @@ Default path:
 1. Install with `npx -y clawhub install ai-product-manager`
 2. Bootstrap once with `bash skills/openclaw-growth-engineer/scripts/bootstrap-openclaw-workspace.sh`
 3. Run `node scripts/openclaw-growth-wizard.mjs`
-4. Run `node scripts/openclaw-growth-start.mjs --config data/openclaw-growth-engineer/config.json`
+4. For connector setup, run `node scripts/openclaw-growth-wizard.mjs --connectors github,revenuecat,asc`
+5. Run `node scripts/openclaw-growth-start.mjs --config data/openclaw-growth-engineer/config.json`
 
 ## Secrets
 

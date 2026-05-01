@@ -124,15 +124,15 @@ AnalyticsCLI baseline is connected. Do you want to add any of these high-impact 
 
 If the user says yes, "all", "RevenueCat + App Store Connect + GitHub", or names any of these connectors, treat that as an explicit selection and immediately provide the connector-specific setup instructions below.
 Do not ask another vague "what do you want to connect?" question after the user accepts.
-Walk connector-by-connector, request only the next missing value, and mark a connector connected only after its read-only smoke test succeeds.
-Before asking for credentials for accepted connectors, automatically install/verify the matching helper tooling:
+Walk connector-by-connector, request only the next missing value in a local terminal wizard, and mark a connector connected only after its read-only smoke test succeeds.
+For connector setup, use the interactive wizard as the only user-facing setup path. Do not ask the user to manually compose the raw `openclaw-growth-start.mjs --connectors ...` command. Bootstrap the runtime first, then run the connector wizard:
 
 ```bash
-bash skills/ai-product-manager/scripts/bootstrap-openclaw-workspace.sh
-node scripts/openclaw-growth-start.mjs --config data/openclaw-growth-engineer/config.json --setup-only --connectors revenuecat,asc,github
+bash skills/openclaw-growth-engineer/scripts/bootstrap-openclaw-workspace.sh
+node scripts/openclaw-growth-wizard.mjs --connectors revenuecat,asc,github
 ```
 
-Use only the connectors the user accepted. This command enables the selected connector stubs in config and tries to install the companion tooling: GitHub helper skill + `gh`, ASC skill pack + `asc`, and RevenueCat MCP transport/config.
+Use only the connectors the user accepted. The wizard explains the selected provider steps, asks for local-terminal input/multiple choice selections, saves host-local secrets, enables the selected connector stubs in config, and runs helper setup for GitHub helper skill + `gh`, ASC skill pack + `asc`, and RevenueCat MCP transport/config.
 Do not use bare `openclaw setup --config ...` on OpenClaw hosts unless you have verified it is the AI Product Manager CLI; on many hosts `openclaw` is the core OpenClaw CLI and will reject `--config`.
 In the Agentic Analytics monorepo only, use `pnpm --filter @analyticscli/openclaw-cli dev setup --repo-root <repo-root> --skip-shared-skills --connectors <list>`.
 If helper installation fails, report the failed helper and exact next install command, then continue with the other selected connectors.
@@ -145,24 +145,24 @@ Use this response shape for "setup revenuecat asc and gh" or similar requests:
 
 ```text
 RevenueCat setup:
-1. Run: bash skills/ai-product-manager/scripts/bootstrap-openclaw-workspace.sh, then node scripts/openclaw-growth-start.mjs --config data/openclaw-growth-engineer/config.json --setup-only --connectors revenuecat
+1. Run: bash skills/openclaw-growth-engineer/scripts/bootstrap-openclaw-workspace.sh, then node scripts/openclaw-growth-wizard.mjs --connectors revenuecat
 2. Create a RevenueCat secret API key at https://app.revenuecat.com/projects/<project_id>/api-keys, replacing `<project_id>` with the RevenueCat project id. If the id is unknown, open https://app.revenuecat.com/ and select the project first.
 3. For growth analysis, prefer a v2 secret key with read-only permissions for charts/metrics plus project configuration resources such as apps, products, offerings, packages, and entitlements. Add customer/subscriber read only if the selected report needs it.
-4. Save it securely as `REVENUECAT_API_KEY` via host terminal or secret store only. Do not paste it into Discord/OpenClaw chat. Never put it in client code, config JSON, issues, PR bodies, command history, or logs.
-5. Rerun the setup command after REVENUECAT_API_KEY is available so RevenueCat MCP can be configured, then smoke test with a read-only RevenueCat MCP/API call.
+4. Paste the key only when the wizard asks in the host terminal. Do not paste it into Discord/OpenClaw chat. Never put it in client code, config JSON, issues, PR bodies, command history, or logs.
+5. Let the wizard write the local secrets file, run helper setup, and then smoke test with a read-only RevenueCat MCP/API call.
 
 ASC means App Store Connect. It does not mean analytics. ASC is separate from AnalyticsCLI, and AnalyticsCLI working does not mean App Store Connect is connected.
 
 ASC setup:
-1. Run: bash skills/ai-product-manager/scripts/bootstrap-openclaw-workspace.sh, then node scripts/openclaw-growth-start.mjs --config data/openclaw-growth-engineer/config.json --setup-only --connectors asc
+1. Run: bash skills/openclaw-growth-engineer/scripts/bootstrap-openclaw-workspace.sh, then node scripts/openclaw-growth-wizard.mjs --connectors asc
 2. This installs/verifies the ASC skill pack and `asc` CLI when possible.
 3. Create an App Store Connect API key at https://appstoreconnect.apple.com/access/integrations/api or https://appstoreconnect.apple.com/access/users for team access. For read-only App Store Connect reporting, use the least role that can read the required reports for the target app; prefer Sales/Sales and Reports style access, use Finance only if needed, avoid Admin unless a report must be enabled once.
-4. Save the values securely as `ASC_KEY_ID`, `ASC_ISSUER_ID`, and preferably `ASC_PRIVATE_KEY_PATH`. Put the `.p8` on the host with permissions `600`, not in Discord/chat, not in git, and not in logs. Use `ASC_PRIVATE_KEY` only if the secret store supports multiline values safely.
+4. Paste `ASC_KEY_ID`, `ASC_ISSUER_ID`, and `ASC_PRIVATE_KEY_PATH` only when the wizard asks in the host terminal. Put the `.p8` on the host with permissions `600`, not in Discord/chat, not in git, and not in logs. Use `ASC_PRIVATE_KEY` only if the secret store supports multiline values safely.
 5. Do not ask for `ASC_APP_ID` upfront. After auth succeeds, list/infer apps from ASC; if unclear, ask for the app name before asking for any numeric id.
 6. Smoke test with asc auth/status or a read-only list/export command, then wire the exported JSON as an extra source.
 
 GitHub setup:
-1. Run: bash skills/ai-product-manager/scripts/bootstrap-openclaw-workspace.sh, then node scripts/openclaw-growth-start.mjs --config data/openclaw-growth-engineer/config.json --setup-only --connectors github
+1. Run: bash skills/openclaw-growth-engineer/scripts/bootstrap-openclaw-workspace.sh, then node scripts/openclaw-growth-wizard.mjs --connectors github
 2. This installs/verifies the GitHub helper skill and `gh` CLI when possible.
 3. Detect repo locally: git rev-parse --show-toplevel and git remote get-url origin
 4. Check auth: gh auth status; if missing, run gh auth login.

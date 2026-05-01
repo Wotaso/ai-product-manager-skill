@@ -41,4 +41,5 @@ done
 echo "Copied ${skill_slug} runtime into workspace:"
 echo "  ${WORKSPACE}/scripts"
 echo "  ${WORKSPACE}/data/openclaw-growth-engineer"
-echo "Next: node scripts/openclaw-growth-start.mjs --config data/openclaw-growth-engineer/config.json"
+echo "Next: node scripts/openclaw-growth-wizard.mjs --connectors"
+echo "Then: node scripts/openclaw-growth-start.mjs --config data/openclaw-growth-engineer/config.json"
