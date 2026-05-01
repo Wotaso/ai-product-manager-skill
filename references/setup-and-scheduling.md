@@ -6,7 +6,7 @@ This is the recommended OpenClaw-first baseline.
 
 ```bash
 npx -y clawhub install ai-product-manager
-bash skills/openclaw-growth-engineer/scripts/bootstrap-openclaw-workspace.sh
+bash skills/ai-product-manager/scripts/bootstrap-openclaw-workspace.sh
 ```
 
 The runtime must also ensure the AnalyticsCLI npm package is present. The package name is
