@@ -195,7 +195,8 @@ async function guideGitHubConnector(rl, secrets) {
     process.stdout.write('- Minimum read-only access: Metadata: Read and Contents: Read for the selected repository.\n');
     process.stdout.write('- Add Issues/Pull requests write scopes only if you want automated delivery.\n');
     process.stdout.write('- Token fallback URL: https://github.com/settings/personal-access-tokens/new\n');
-    if (await commandExists('gh')) {
+    const hasGh = await commandExists('gh');
+    if (hasGh) {
         const runLogin = await askYesNo(rl, 'Run `gh auth login` now?', true);
         if (runLogin) {
             process.stdout.write('Launching GitHub CLI login. Return here when it finishes.\n');
@@ -205,9 +206,11 @@ async function guideGitHubConnector(rl, secrets) {
         }
     }
     else {
-        process.stdout.write('GitHub CLI is not on PATH. The helper setup will try to install it when possible.\n');
+        process.stdout.write('GitHub CLI is not on PATH. If this host cannot install `gh`, use the token fallback now.\n');
     }
-    const storeToken = await askYesNo(rl, 'Use a fine-grained GITHUB_TOKEN fallback instead of or in addition to gh auth?', false);
+    const storeToken = await askYesNo(rl, hasGh
+        ? 'Use a fine-grained GITHUB_TOKEN fallback instead of or in addition to gh auth?'
+        : 'Paste a fine-grained GITHUB_TOKEN fallback now?', !hasGh);
     if (storeToken) {
         const token = await maybePromptSecret(rl, 'Paste GITHUB_TOKEN into this local terminal', 'GITHUB_TOKEN');
         if (token)
