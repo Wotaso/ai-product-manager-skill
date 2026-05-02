@@ -3,6 +3,7 @@
 import { spawn } from 'node:child_process';
 import process from 'node:process';
 import { buildAscSummary, writeJsonOutput } from './openclaw-exporters-lib.mjs';
+import { loadOpenClawGrowthSecrets } from './openclaw-growth-env.mjs';
 
 function printHelpAndExit(exitCode, reason = null) {
   if (reason) {
@@ -17,7 +18,7 @@ Usage:
   node scripts/export-asc-summary.mjs [options]
 
 Options:
-  --app <id>             App Store Connect app ID (defaults to ASC_APP_ID)
+  --app <id>             Optional App Store Connect app ID filter (defaults to all accessible apps)
   --out <file>           Write JSON to file instead of stdout
   --country <code>       Ratings country override (default: all countries)
   --reviews-limit <n>    Review summarizations limit (default: 20)
@@ -81,10 +82,6 @@ function parseArgs(argv) {
     }
   }
 
-  if (!args.app) {
-    printHelpAndExit(1, 'Missing app ID. Pass --app <id> or set ASC_APP_ID.');
-  }
-
   return args;
 }
 
@@ -132,18 +129,65 @@ async function runOptionalAscQuery(label, args) {
   }
 }
 
-async function main() {
-  const args = parseArgs(process.argv.slice(2));
+function normalizeString(value) {
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
 
+function extractAscAppChoices(payload) {
+  const candidates = (() => {
+    if (Array.isArray(payload)) return payload;
+    if (payload && typeof payload === 'object') {
+      if (Array.isArray(payload.apps)) return payload.apps;
+      if (Array.isArray(payload.items)) return payload.items;
+      if (Array.isArray(payload.data)) return payload.data;
+    }
+    return [];
+  })();
+
+  const byId = new Map();
+  for (const candidate of candidates) {
+    if (!candidate || typeof candidate !== 'object') continue;
+    const attrs = candidate.attributes && typeof candidate.attributes === 'object' ? candidate.attributes : {};
+    const id =
+      normalizeString(candidate.id) ||
+      normalizeString(candidate.appId) ||
+      normalizeString(candidate.app_id);
+    if (!id) continue;
+    byId.set(id, {
+      id,
+      name:
+        normalizeString(candidate.name) ||
+        normalizeString(candidate.appName) ||
+        normalizeString(candidate.displayName) ||
+        normalizeString(attrs.name),
+      bundleId:
+        normalizeString(candidate.bundleId) ||
+        normalizeString(candidate.bundle_id) ||
+        normalizeString(attrs.bundleId),
+    });
+  }
+  return [...byId.values()];
+}
+
+async function listAscApps() {
+  const payload = await runJsonCommand('asc', ['apps', 'list', '--output', 'json']);
+  const apps = extractAscAppChoices(payload);
+  if (apps.length === 0) {
+    throw new Error('asc apps list returned no accessible apps');
+  }
+  return apps;
+}
+
+async function buildSingleAppSummary(appId, args) {
   const statusPayload = await runJsonCommand('asc', [
     'status',
     '--app',
-    args.app,
+    appId,
     '--include',
     'builds,testflight,submission,review,appstore',
   ]);
 
-  const ratingsArgs = ['reviews', 'ratings', '--app', args.app];
+  const ratingsArgs = ['reviews', 'ratings', '--app', appId];
   if (args.country) {
     ratingsArgs.push('--country', args.country);
   } else {
@@ -155,7 +199,7 @@ async function main() {
     'reviews',
     'summarizations',
     '--app',
-    args.app,
+    appId,
     '--platform',
     'IOS',
     '--limit',
@@ -167,21 +211,89 @@ async function main() {
   const feedbackPayload = await runOptionalAscQuery('ASC beta feedback query', [
     'feedback',
     '--app',
-    args.app,
+    appId,
     '--limit',
     String(args.feedbackLimit),
     '--sort',
     '-createdDate',
   ]);
 
-  const summary = buildAscSummary({
-    appId: args.app,
+  return buildAscSummary({
+    appId,
     statusPayload,
     ratingsPayload,
     reviewSummariesPayload,
     feedbackPayload,
     maxSignals: args.maxSignals,
   });
+}
+
+async function buildAllAppsSummary(args) {
+  const apps = args.app ? [{ id: args.app }] : await listAscApps();
+  const summaries = [];
+  const warnings = [];
+
+  for (const app of apps) {
+    try {
+      summaries.push(await buildSingleAppSummary(app.id, args));
+    } catch (error) {
+      warnings.push({
+        appId: app.id,
+        appName: app.name || null,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  if (summaries.length === 0) {
+    throw new Error(`ASC summary failed for every accessible app: ${JSON.stringify(warnings)}`);
+  }
+
+  if (summaries.length === 1) {
+    const summary = summaries[0];
+    if (warnings.length > 0) {
+      summary.meta = { ...(summary.meta || {}), warnings };
+    }
+    return summary;
+  }
+
+  const signals = summaries
+    .flatMap((summary) =>
+      (Array.isArray(summary.signals) ? summary.signals : []).map((signal) => ({
+        ...signal,
+        id: `${summary.meta?.appId || 'app'}_${signal.id}`,
+        evidence: [
+          `ASC app: ${summary.meta?.appId || 'unknown'}`,
+          ...(Array.isArray(signal.evidence) ? signal.evidence : []),
+        ],
+      })),
+    )
+    .sort((a, b) => {
+      const priorityRank = { high: 0, medium: 1, low: 2 };
+      return (priorityRank[a.priority] ?? 3) - (priorityRank[b.priority] ?? 3);
+    })
+    .slice(0, Math.max(1, Number(args.maxSignals) || 4));
+
+  return {
+    project: 'app-store-connect:all',
+    window: 'latest',
+    signals,
+    meta: {
+      generatedAt: new Date().toISOString(),
+      source: 'asc',
+      appScope: 'all',
+      appCount: apps.length,
+      summarizedAppCount: summaries.length,
+      appIds: summaries.map((summary) => summary.meta?.appId).filter(Boolean),
+      warnings,
+    },
+  };
+}
+
+async function main() {
+  await loadOpenClawGrowthSecrets();
+  const args = parseArgs(process.argv.slice(2));
+  const summary = await buildAllAppsSummary(args);
 
   await writeJsonOutput(args.out, summary);
 }

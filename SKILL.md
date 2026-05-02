@@ -3,7 +3,7 @@ name: openclaw-growth-engineer
 description: OpenClaw-first growth autopilot for mobile apps. Correlate analytics, crashes, billing, feedback, store signals, and repo context into proposal drafts that can flow into OpenClaw chat, GitHub issues, or draft pull requests.
 license: MIT
 homepage: https://github.com/wotaso/analyticscli-skills
-metadata: {"author":"wotaso","version":"1.0.40","analyticscli-target":"@analyticscli/cli","analyticscli-supported-range":">=0.1.2-preview.0 <0.2.0","openclaw":{"emoji":"🚀","homepage":"https://github.com/wotaso/analyticscli-skills","requires":{"bins":["node","analyticscli"]},"install":[{"id":"analyticscli-cli","kind":"node","package":"@analyticscli/cli@preview","bins":["analyticscli"],"label":"Install/update AnalyticsCLI CLI (npm package @analyticscli/cli@preview)"}]}}
+metadata: {"author":"wotaso","version":"1.0.41","analyticscli-target":"@analyticscli/cli","analyticscli-supported-range":">=0.1.2-preview.0 <0.2.0","openclaw":{"emoji":"🚀","homepage":"https://github.com/wotaso/analyticscli-skills","requires":{"bins":["node","analyticscli"]},"install":[{"id":"analyticscli-cli","kind":"node","package":"@analyticscli/cli@preview","bins":["analyticscli"],"label":"Install/update AnalyticsCLI CLI (npm package @analyticscli/cli@preview)"}]}}
 ---
 
 # OpenClaw Growth Engineer
@@ -126,7 +126,7 @@ cd /home/lo/.openclaw/workspace && \
 
 Use only the connectors the user accepted. The wizard owns provider-specific instructions, local-terminal secret prompts, helper setup, and smoke tests. Chat should only summarize results after the wizard finishes or when the user asks.
 
-Do not ask for `ASC_APP_ID` during initial setup. After ASC auth works, list/infer apps. If the target is ambiguous, ask for the app name first; only ask for a numeric app id if app-name resolution fails.
+Do not ask for `ASC_APP_ID` during initial setup. ASC summaries default to all accessible App Store Connect apps. A single app ID is only an optional explicit filter later.
 
 Connection setup requests are not satisfied by a successful product-manager run. If the user asks to set up `asc`, App Store Connect, RevenueCat, GitHub, or codebase access, point them to the wizard command above and keep any extra explanation out of chat unless requested.
 
@@ -349,7 +349,7 @@ ASC setup guidance:
 - Say the main role is `Sales`, required for App Analytics, Sales and Trends, downloads, revenue, and conversion context. Add `Customer Support` for App Store ratings/review text, `Developer` for builds/TestFlight/delivery status, and `App Manager` only when app metadata, pricing, or release settings are needed. Avoid `Admin` unless a one-off App Store Connect permission requires it.
 - Tell the user to copy `ASC_ISSUER_ID` from the API keys page, copy `ASC_KEY_ID` from the key row or downloaded `AuthKey_<KEY_ID>.p8` file name, download the `.p8`, open it, and paste the full file content into the local terminal wizard.
 - Store only env vars/secrets: `ASC_KEY_ID`, `ASC_ISSUER_ID`, and `ASC_PRIVATE_KEY_PATH`; the wizard can create the `.p8` file from validated pasted terminal content. Never commit the `.p8` private key.
-- Do not ask for `ASC_APP_ID` upfront. After auth succeeds, auto-detect/list apps; if ambiguous, ask for the app name first. Store `ASC_APP_ID` only after it has been resolved.
+- Do not ask for `ASC_APP_ID` upfront. After auth succeeds, ASC should use all accessible apps by default. Store an app filter only if the user explicitly asks to scope ASC to one app.
 - After the key is present and the target app is inferred or selected, run one read-only `asc` smoke test before marking ASC connected.
 - Prefer `asc auth login` when the local `asc` CLI supports keychain storage; otherwise use runtime env injection.
 

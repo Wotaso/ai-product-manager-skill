@@ -17,8 +17,8 @@
     },
     "revenuecat": {
       "enabled": false,
-      "mode": "file",
-      "path": "data/openclaw-growth-engineer/revenuecat_summary.example.json"
+      "mode": "command",
+      "command": "node scripts/export-revenuecat-summary.mjs"
     },
     "sentry": {
       "enabled": false,

@@ -13,6 +13,7 @@ import {
   getDefaultSourceHint,
   getDefaultSourcePath,
 } from './openclaw-growth-shared.mjs';
+import { loadOpenClawGrowthSecrets } from './openclaw-growth-env.mjs';
 
 const DEFAULT_CONFIG_PATH = 'data/openclaw-growth-engineer/config.json';
 const CONNECTOR_KEYS = ['analytics', 'github', 'revenuecat', 'asc'] as const;
@@ -832,10 +833,7 @@ async function runConnectorSetupWizard(args) {
     }
 
     if (wroteSecrets) {
-      process.stdout.write('\nFor future shell runs, load secrets first:\n');
-      process.stdout.write(`  set -a; . ${quote(secretsFile)}; set +a\n`);
-      process.stdout.write(`Then rerun setup or a smoke test:\n`);
-      process.stdout.write(`  node scripts/openclaw-growth-start.mjs --config ${quote(args.config)} --setup-only --connectors ${quote(selected.join(','))}\n`);
+      process.stdout.write('\nFuture OpenClaw Growth commands load this secrets file automatically.\n');
     } else {
       process.stdout.write('\nRerun this wizard when you are ready to add connector secrets or run helper setup.\n');
     }
@@ -879,7 +877,7 @@ async function askChoice(rl, label, options, defaultValue) {
 
 async function askSourceConfig(rl, sourceName, defaultPath, hint, options: Record<string, any> = {}) {
   const forceEnabled = Boolean(options.forceEnabled);
-  const defaultCommand = String(options.defaultCommand || '').trim();
+  const defaultCommand = String(options.defaultCommand || getDefaultSourceCommand(sourceName) || '').trim();
   const defaultMode = defaultCommand ? 'command' : 'file';
   const defaultEnabled = options.defaultEnabled ?? sourceName === 'analytics';
   const enabled = forceEnabled
@@ -923,6 +921,7 @@ async function askSourceConfig(rl, sourceName, defaultPath, hint, options: Recor
 }
 
 async function main() {
+  await loadOpenClawGrowthSecrets();
   const args = parseArgs(process.argv.slice(2));
   if (args.connectorWizard) {
     await runConnectorSetupWizard(args);

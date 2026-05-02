@@ -6,6 +6,7 @@ import process from 'node:process';
 import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline/promises';
 import { getActionMode, getDefaultSourceCommand } from './openclaw-growth-shared.mjs';
+import { loadOpenClawGrowthSecrets } from './openclaw-growth-env.mjs';
 
 const DEFAULT_CONFIG_PATH = 'data/openclaw-growth-engineer/config.json';
 const DEFAULT_TEMPLATE_PATH = 'data/openclaw-growth-engineer/config.example.json';
@@ -39,7 +40,7 @@ Usage:
 Options:
   --config <file>        Config path (default: ${DEFAULT_CONFIG_PATH})
   --project <id>         AnalyticsCLI project ID to use for generated source commands
-  --asc-app <id>         App Store Connect app ID to use for ASC summaries
+  --asc-app <id>         Optional ASC app ID filter (defaults to all accessible apps)
   --connectors <list>    Install/enable connector helpers (analytics,github,asc,revenuecat,all)
   --setup-only           Run bootstrap + preflight only (skip first run)
   --no-test-connections  Skip live API smoke checks in preflight
@@ -692,7 +693,7 @@ async function enableConnectorConfig(configPath, connectors) {
         ? { ...(config.sources?.analytics || {}), enabled: true, mode: 'command', command: config.sources?.analytics?.command || getDefaultSourceCommand('analytics') }
         : config.sources?.analytics,
       revenuecat: connectors.includes('revenuecat')
-        ? { ...(config.sources?.revenuecat || {}), enabled: true }
+        ? { ...(config.sources?.revenuecat || {}), enabled: true, mode: 'command', command: getDefaultSourceCommand('revenuecat') }
         : config.sources?.revenuecat,
       extra: extra.map((source) =>
         connectors.includes('asc') && source?.service === 'asc-cli'
@@ -770,6 +771,8 @@ async function ensureConfig(configPath) {
       revenuecat: {
         ...(template.sources?.revenuecat || {}),
         enabled: false,
+        mode: 'command',
+        command: getDefaultSourceCommand('revenuecat'),
       },
       sentry: {
         ...(template.sources?.sentry || {}),
@@ -1009,44 +1012,21 @@ async function listAscApps() {
   };
 }
 
-async function askAscAppChoice(apps) {
-  const rl = createInterface({ input: process.stdin, output: process.stdout });
-  try {
-    process.stdout.write('\nSelect the App Store Connect app for ASC summaries:\n');
-    apps.forEach((app, index) => {
-      process.stdout.write(`  ${index + 1}) ${app.label}\n`);
-    });
-    while (true) {
-      const answer = (await rl.question('App number or App ID: ')).trim();
-      if (!answer) continue;
-      const numericIndex = Number.parseInt(answer, 10);
-      if (Number.isInteger(numericIndex) && apps[numericIndex - 1]) {
-        return apps[numericIndex - 1].id;
-      }
-      const matchingApp = apps.find((app) => app.id === answer || app.name === answer || app.bundleId === answer);
-      if (matchingApp) return matchingApp.id;
-      process.stdout.write('Choose one of the listed app numbers, or paste the exact App ID.\n');
-    }
-  } finally {
-    rl.close();
-  }
-}
-
 async function ensureAscAppConfigured(configPath, explicitAppId) {
   if (normalizeString(explicitAppId)) {
     const changed = await configureAscApp(configPath, explicitAppId);
-    return { ok: true, configured: true, changed, appId: explicitAppId, needsUserInput: false };
+    return { ok: true, configured: true, changed, appId: explicitAppId, appScope: 'single_app', needsUserInput: false };
   }
 
   const config = await readJson(configPath);
   if (!configHasEnabledAscSource(config)) {
-    return { ok: true, configured: false, changed: false, appId: null, needsUserInput: false };
+    return { ok: true, configured: false, changed: false, appId: null, appScope: 'disabled', needsUserInput: false };
   }
 
   const configuredAppId = normalizeString(config.project?.ascAppId) || normalizeString(process.env.ASC_APP_ID);
   if (configuredAppId) {
     const changed = await configureAscApp(configPath, configuredAppId);
-    return { ok: true, configured: true, changed, appId: configuredAppId, needsUserInput: false };
+    return { ok: true, configured: true, changed, appId: configuredAppId, appScope: 'single_app', needsUserInput: false };
   }
 
   const appList = await listAscApps();
@@ -1061,25 +1041,15 @@ async function ensureAscAppConfigured(configPath, explicitAppId) {
     };
   }
 
-  if (appList.apps.length === 1) {
-    const appId = appList.apps[0].id;
-    const changed = await configureAscApp(configPath, appId);
-    return { ok: true, configured: true, changed, appId, apps: appList.apps, needsUserInput: false };
-  }
-
-  if (appList.apps.length > 1 && process.stdin.isTTY && process.stdout.isTTY) {
-    const appId = await askAscAppChoice(appList.apps);
-    const changed = await configureAscApp(configPath, appId);
-    return { ok: true, configured: true, changed, appId, apps: appList.apps, needsUserInput: false };
-  }
-
   return {
-    ok: false,
-    configured: false,
+    ok: true,
+    configured: true,
     changed: false,
     appId: null,
+    appScope: 'all_accessible_apps',
     apps: appList.apps,
-    needsUserInput: true,
+    appCount: appList.apps.length,
+    needsUserInput: false,
   };
 }
 
@@ -1287,6 +1257,7 @@ async function runFirstPass(configPath) {
 }
 
 async function main() {
+  await loadOpenClawGrowthSecrets();
   const args = parseArgs(process.argv.slice(2));
   const configPath = path.resolve(args.config);
 
@@ -1392,28 +1363,22 @@ async function main() {
       `${JSON.stringify(
         {
           ok: false,
-          phase: ascAppSetup.needsUserInput ? 'asc_app_selection_required' : 'asc_app_setup',
+          phase: 'asc_app_setup',
           configCreated: configResult.created,
           configPath,
           projectConfigured: projectConfigured || analyticsProjectSetup.configured,
           analyticsProjectId: analyticsProjectSetup.projectId || null,
           ascAppConfigured: false,
           connectorSetup,
-          needsUserInput: ascAppSetup.needsUserInput,
-          question: ascAppSetup.needsUserInput ? 'Which App Store Connect app should OpenClaw use for ASC summaries?' : null,
-          apps: ascAppSetup.apps || [],
-          nextCommand: ascAppSetup.needsUserInput
-            ? `node scripts/openclaw-growth-start.mjs --config ${quote(configPath)} --setup-only --connectors ${quote(args.connectors.join(','))} --asc-app <app_id>`
-            : null,
+          needsUserInput: false,
+          question: null,
+          apps: [],
+          nextCommand: null,
           blockers: [
             {
               check: 'connection:asc_app',
-              detail: ascAppSetup.needsUserInput
-                ? 'ASC auth works, but multiple apps are available and setup is running non-interactively.'
-                : describeAscAppSetupFailure(ascAppSetup.error),
-              remediation: ascAppSetup.needsUserInput
-                ? 'Run the connector wizard in a terminal so it can ask for the app, or rerun start with --asc-app <app_id>.'
-                : remediateAscAppSetupFailure(ascAppSetup.error),
+              detail: describeAscAppSetupFailure(ascAppSetup.error),
+              remediation: remediateAscAppSetupFailure(ascAppSetup.error),
             },
           ],
         },
@@ -1455,6 +1420,7 @@ async function main() {
           analyticsProjectId: analyticsProjectSetup.projectId || null,
           ascAppConfigured: ascAppSetup.configured,
           ascAppId: ascAppSetup.appId || null,
+          ascAppScope: ascAppSetup.appScope || null,
           githubRepo: configResult.githubRepo,
           connectorSetup,
           blockers,
@@ -1479,6 +1445,7 @@ async function main() {
           analyticsProjectId: analyticsProjectSetup.projectId || null,
           ascAppConfigured: ascAppSetup.configured,
           ascAppId: ascAppSetup.appId || null,
+          ascAppScope: ascAppSetup.appScope || null,
           connectorSetup,
           message: 'Preflight passed. First run skipped due to --setup-only.',
         },

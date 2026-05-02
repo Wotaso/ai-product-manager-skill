@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { buildAnalyticsSummary, buildAscSummary } from '../scripts/openclaw-exporters-lib.mjs';
+import { buildAnalyticsSummary, buildAscSummary, buildRevenueCatSummary } from '../scripts/openclaw-exporters-lib.mjs';
 
 test('buildAnalyticsSummary emits onboarding, paywall, and retention signals from weak funnel data', () => {
   const summary = buildAnalyticsSummary({
@@ -93,4 +93,27 @@ test('buildAscSummary emits release blocker, rating, and review-theme signals', 
   assert(summary.signals.some((signal) => signal.id === 'asc_rating_below_target'));
   assert(summary.signals.some((signal) => signal.id === 'asc_review_theme_stability'));
   assert(summary.signals.some((signal) => signal.id === 'asc_review_theme_pricing'));
+});
+
+test('buildRevenueCatSummary emits live metrics and catalog signals', () => {
+  const summary = buildRevenueCatSummary({
+    project: { id: 'proj_123', name: 'Flashes' },
+    overviewPayload: {
+      metrics: [
+        { id: 'revenue', name: 'Revenue', value: 1240 },
+        { id: 'active_trials', name: 'Active Trials', value: 34 },
+      ],
+    },
+    appsPayload: { items: [{ id: 'app_1', name: 'Flashes iOS' }] },
+    productsPayload: { items: [{ id: 'prod_1', store_identifier: 'premium_monthly' }] },
+    offeringsPayload: { items: [{ id: 'offering_1', display_name: 'Default' }] },
+    entitlementsPayload: { items: [{ id: 'entitlement_1', display_name: 'Premium' }] },
+    maxSignals: 4,
+  });
+
+  assert.equal(summary.project, 'revenuecat:proj_123');
+  assert.equal(summary.meta.source, 'revenuecat');
+  assert.equal(summary.meta.productsCount, 1);
+  assert(summary.signals.some((signal) => signal.id === 'revenuecat_overview_metrics_available'));
+  assert(summary.signals.some((signal) => signal.id === 'revenuecat_catalog_summary'));
 });

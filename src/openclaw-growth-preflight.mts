@@ -14,6 +14,7 @@ import {
   getGitHubRequirementText,
   shouldAutoCreateGitHubArtifact,
 } from './openclaw-growth-shared.mjs';
+import { loadOpenClawGrowthSecrets } from './openclaw-growth-env.mjs';
 
 const DEFAULT_CONFIG_PATH = 'data/openclaw-growth-engineer/config.json';
 const DEFAULT_CONNECTION_TIMEOUT_MS = 15_000;
@@ -869,6 +870,7 @@ async function runConnectionChecks({ checks, config, timeoutMs }) {
 }
 
 async function main() {
+  await loadOpenClawGrowthSecrets();
   const args = parseArgs(process.argv.slice(2));
   const configPath = path.resolve(args.config);
   const checks = [];

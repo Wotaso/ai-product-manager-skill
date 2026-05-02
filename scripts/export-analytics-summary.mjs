@@ -2,6 +2,7 @@
 import { spawn } from 'node:child_process';
 import process from 'node:process';
 import { buildAnalyticsSummary, writeJsonOutput } from './openclaw-exporters-lib.mjs';
+import { loadOpenClawGrowthSecrets } from './openclaw-growth-env.mjs';
 function printHelpAndExit(exitCode, reason = null) {
     if (reason) {
         process.stderr.write(`${reason}\n\n`);
@@ -128,6 +129,7 @@ async function runOptionalAnalyticsQuery(label, args) {
     }
 }
 async function main() {
+    await loadOpenClawGrowthSecrets();
     const args = parseArgs(process.argv.slice(2));
     const baseArgs = buildBaseArgs(args);
     const onboardingJourney = await runOptionalAnalyticsQuery('onboarding journey query', [

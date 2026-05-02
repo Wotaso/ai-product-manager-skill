@@ -3,6 +3,7 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import { classifyServiceKind, normalizeServiceType } from './openclaw-growth-shared.mjs';
+import { loadOpenClawGrowthSecrets } from './openclaw-growth-env.mjs';
 const PRIORITY_WEIGHT = {
     high: 3,
     medium: 2,
@@ -958,6 +959,7 @@ async function createProposalPullRequest({ repo, token, draft, labels, branchPre
     };
 }
 async function main() {
+    await loadOpenClawGrowthSecrets();
     const args = parseArgs(process.argv.slice(2));
     const repoRoot = path.resolve(args.repoRoot);
     const outputPath = path.resolve(args.out);

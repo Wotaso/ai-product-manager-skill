@@ -6,6 +6,7 @@ import os from 'node:os';
 import { createHash } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { getActionMode, getAllSourceEntries, getGitHubRequirementText, shouldAutoCreateGitHubArtifact, } from './openclaw-growth-shared.mjs';
+import { loadOpenClawGrowthSecrets } from './openclaw-growth-env.mjs';
 const DEFAULT_CONFIG_PATH = 'data/openclaw-growth-engineer/config.json';
 const DEFAULT_STATE_PATH = 'data/openclaw-growth-engineer/state.json';
 const DEFAULT_RUNTIME_DIR = 'data/openclaw-growth-engineer/runtime';
@@ -536,6 +537,7 @@ async function runOnce(configPath, statePath) {
     }, null, 2), 'utf8');
 }
 async function main() {
+    await loadOpenClawGrowthSecrets();
     const args = parseArgs(process.argv.slice(2));
     const configPath = path.resolve(args.config);
     const statePath = path.resolve(args.state);

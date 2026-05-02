@@ -498,6 +498,153 @@ export function buildAscSummary(input) {
         },
     };
 }
+function extractListItems(payload) {
+    if (Array.isArray(payload))
+        return payload;
+    if (Array.isArray(payload?.items))
+        return payload.items;
+    if (Array.isArray(payload?.data))
+        return payload.data;
+    return [];
+}
+function displayName(value) {
+    return String(value?.display_name ||
+        value?.displayName ||
+        value?.name ||
+        value?.store_identifier ||
+        value?.lookup_key ||
+        value?.id ||
+        '').trim();
+}
+function metricValueById(metrics, candidateIds) {
+    const candidates = new Set(candidateIds.map((id) => String(id).toLowerCase()));
+    for (const metric of metrics) {
+        const id = String(metric?.id || metric?.name || '').toLowerCase();
+        if (!candidates.has(id))
+            continue;
+        const value = coerceNumber(metric?.value);
+        if (value !== null)
+            return { id, value, metric };
+    }
+    return null;
+}
+export function buildRevenueCatSummary(input) {
+    const projectId = String(input?.projectId || input?.project?.id || 'revenuecat-project').trim() || 'revenuecat-project';
+    const projectName = displayName(input?.project) || projectId;
+    const apps = extractListItems(input?.appsPayload);
+    const products = extractListItems(input?.productsPayload);
+    const offerings = extractListItems(input?.offeringsPayload);
+    const entitlements = extractListItems(input?.entitlementsPayload);
+    const metrics = Array.isArray(input?.overviewPayload?.metrics) ? input.overviewPayload.metrics : [];
+    const warnings = Array.isArray(input?.warnings) ? input.warnings.filter(Boolean) : [];
+    const signals = [];
+    const revenueMetric = metricValueById(metrics, ['revenue', 'mrr', 'arr', 'new_revenue', 'monthly_recurring_revenue']);
+    const activeTrialsMetric = metricValueById(metrics, ['active_trials']);
+    const activeSubscriptionsMetric = metricValueById(metrics, ['active_subscriptions', 'actives']);
+    const churnMetric = metricValueById(metrics, ['churn', 'churn_rate']);
+    if (revenueMetric || activeSubscriptionsMetric || activeTrialsMetric) {
+        maybePushSignal(signals, {
+            id: 'revenuecat_overview_metrics_available',
+            title: 'RevenueCat overview metrics are connected',
+            area: 'revenue',
+            priority: 'medium',
+            metric: revenueMetric?.id || activeSubscriptionsMetric?.id || activeTrialsMetric?.id || 'revenuecat_metrics',
+            current_value: revenueMetric?.value ?? activeSubscriptionsMetric?.value ?? activeTrialsMetric?.value ?? 0,
+            baseline_value: null,
+            delta_percent: null,
+            evidence: [
+                revenueMetric ? `${revenueMetric.metric?.name || revenueMetric.id}: ${revenueMetric.value}` : null,
+                activeSubscriptionsMetric ? `${activeSubscriptionsMetric.metric?.name || activeSubscriptionsMetric.id}: ${activeSubscriptionsMetric.value}` : null,
+                activeTrialsMetric ? `${activeTrialsMetric.metric?.name || activeTrialsMetric.id}: ${activeTrialsMetric.value}` : null,
+            ].filter(Boolean),
+            suggested_actions: [
+                'Compare RevenueCat movement with AnalyticsCLI paywall and purchase funnel signals',
+                'Use product and entitlement metadata to verify the paid path users see in the app',
+            ],
+            keywords: ['revenuecat', 'revenue', 'subscription', 'metrics'],
+        });
+    }
+    if (churnMetric && churnMetric.value > 0) {
+        maybePushSignal(signals, {
+            id: 'revenuecat_churn_visible',
+            title: 'RevenueCat reports churn movement',
+            area: 'retention',
+            priority: churnMetric.value >= 10 ? 'high' : 'medium',
+            metric: churnMetric.id,
+            current_value: churnMetric.value,
+            baseline_value: 0,
+            delta_percent: 100,
+            evidence: [`${churnMetric.metric?.name || churnMetric.id}: ${churnMetric.value}`],
+            suggested_actions: [
+                'Inspect cancellation timing against onboarding and first-week retention signals',
+                'Prioritize paywall promise and subscription value alignment if churn clusters after trial or first renewal',
+            ],
+            keywords: ['revenuecat', 'churn', 'subscription', 'retention'],
+        });
+    }
+    if (products.length === 0 || offerings.length === 0 || entitlements.length === 0) {
+        maybePushSignal(signals, {
+            id: 'revenuecat_catalog_incomplete',
+            title: 'RevenueCat product catalog looks incomplete',
+            area: 'paywall',
+            priority: products.length === 0 || offerings.length === 0 ? 'high' : 'medium',
+            metric: 'revenuecat_catalog_entities',
+            current_value: products.length + offerings.length + entitlements.length,
+            baseline_value: 3,
+            delta_percent: computeDeltaPercent(products.length + offerings.length + entitlements.length, 3),
+            evidence: [
+                `Products: ${products.length}`,
+                `Offerings: ${offerings.length}`,
+                `Entitlements: ${entitlements.length}`,
+            ],
+            suggested_actions: [
+                'Verify the app has at least one active product, entitlement, and offering in RevenueCat',
+                'Check that App Store Connect product identifiers match the RevenueCat products used by the app',
+            ],
+            keywords: ['revenuecat', 'products', 'offerings', 'entitlements', 'paywall'],
+        });
+    }
+    else {
+        maybePushSignal(signals, {
+            id: 'revenuecat_catalog_summary',
+            title: 'RevenueCat catalog is available for monetization analysis',
+            area: 'paywall',
+            priority: 'low',
+            metric: 'revenuecat_products',
+            current_value: products.length,
+            baseline_value: 1,
+            delta_percent: computeDeltaPercent(products.length, 1),
+            evidence: [
+                `Apps: ${apps.length}`,
+                `Products: ${products.slice(0, 5).map(displayName).filter(Boolean).join(', ') || products.length}`,
+                `Offerings: ${offerings.slice(0, 5).map(displayName).filter(Boolean).join(', ') || offerings.length}`,
+                `Entitlements: ${entitlements.slice(0, 5).map(displayName).filter(Boolean).join(', ') || entitlements.length}`,
+            ],
+            suggested_actions: [
+                'Use this catalog context when evaluating paywall copy, package order, and entitlement naming',
+                'Cross-check product availability with ASC if users report unavailable purchases',
+            ],
+            keywords: ['revenuecat', 'catalog', 'products', 'offerings', 'entitlements'],
+        });
+    }
+    return {
+        project: `revenuecat:${projectId}`,
+        window: 'latest',
+        signals: sortSignals(signals).slice(0, Math.max(1, Number(input?.maxSignals) || 4)),
+        meta: {
+            generatedAt: new Date().toISOString(),
+            source: 'revenuecat',
+            projectId,
+            projectName,
+            appsCount: apps.length,
+            productsCount: products.length,
+            offeringsCount: offerings.length,
+            entitlementsCount: entitlements.length,
+            metricsCount: metrics.length,
+            warnings,
+        },
+    };
+}
 export async function writeJsonOutput(outPath, payload) {
     const serialized = `${JSON.stringify(payload, null, 2)}\n`;
     if (outPath) {

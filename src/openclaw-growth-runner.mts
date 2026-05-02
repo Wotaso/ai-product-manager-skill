@@ -12,6 +12,7 @@ import {
   getGitHubRequirementText,
   shouldAutoCreateGitHubArtifact,
 } from './openclaw-growth-shared.mjs';
+import { loadOpenClawGrowthSecrets } from './openclaw-growth-env.mjs';
 
 const DEFAULT_CONFIG_PATH = 'data/openclaw-growth-engineer/config.json';
 const DEFAULT_STATE_PATH = 'data/openclaw-growth-engineer/state.json';
@@ -642,6 +643,7 @@ async function runOnce(configPath, statePath) {
 }
 
 async function main() {
+  await loadOpenClawGrowthSecrets();
   const args = parseArgs(process.argv.slice(2));
   const configPath = path.resolve(args.config);
   const statePath = path.resolve(args.state);
