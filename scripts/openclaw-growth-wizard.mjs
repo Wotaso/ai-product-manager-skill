@@ -486,12 +486,11 @@ async function guideRevenueCatConnector(rl, secrets) {
     printSection('RevenueCat monetization data', [
         'Use this when OpenClaw should read subscription, product, entitlement, and revenue context.',
     ]);
-    const projectId = await ask(rl, 'RevenueCat project id for direct API-key URL (optional)', '');
-    process.stdout.write(`\nCreate a v2 secret API key here:\n  ${projectId ? `https://app.revenuecat.com/projects/${projectId}/api-keys` : 'https://app.revenuecat.com/'}\n`);
+    process.stdout.write('\nCreate a RevenueCat secret API key here:\n  https://app.revenuecat.com/\n\n');
     printBullets([
-        'Minimum permissions: read-only charts/metrics plus apps, products, offerings, packages, and entitlements.',
-        'Add customer/subscriber read only only if the selected report needs it.',
-        'Paste the key only into this terminal when prompted.',
+        'Open your project, then Project Settings -> API keys.',
+        'Create/copy a secret API key.',
+        'Use read-only access when RevenueCat offers permission choices.',
     ]);
     const apiKey = await maybePromptSecret(rl, 'Paste REVENUECAT_API_KEY into this local terminal', 'REVENUECAT_API_KEY');
     if (apiKey)

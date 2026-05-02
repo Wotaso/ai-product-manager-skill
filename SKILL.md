@@ -3,7 +3,7 @@ name: openclaw-growth-engineer
 description: OpenClaw-first growth autopilot for mobile apps. Correlate analytics, crashes, billing, feedback, store signals, and repo context into proposal drafts that can flow into OpenClaw chat, GitHub issues, or draft pull requests.
 license: MIT
 homepage: https://github.com/wotaso/analyticscli-skills
-metadata: {"author":"wotaso","version":"1.0.33","analyticscli-target":"@analyticscli/cli","analyticscli-supported-range":">=0.1.2-preview.0 <0.2.0","openclaw":{"emoji":"🚀","homepage":"https://github.com/wotaso/analyticscli-skills","requires":{"bins":["node","analyticscli"]},"install":[{"id":"analyticscli-cli","kind":"node","package":"@analyticscli/cli@preview","bins":["analyticscli"],"label":"Install/update AnalyticsCLI CLI (npm package @analyticscli/cli@preview)"}]}}
+metadata: {"author":"wotaso","version":"1.0.34","analyticscli-target":"@analyticscli/cli","analyticscli-supported-range":">=0.1.2-preview.0 <0.2.0","openclaw":{"emoji":"🚀","homepage":"https://github.com/wotaso/analyticscli-skills","requires":{"bins":["node","analyticscli"]},"install":[{"id":"analyticscli-cli","kind":"node","package":"@analyticscli/cli@preview","bins":["analyticscli"],"label":"Install/update AnalyticsCLI CLI (npm package @analyticscli/cli@preview)"}]}}
 ---
 
 # OpenClaw Growth Engineer
@@ -129,8 +129,7 @@ Connection setup requests are not satisfied by a successful product-manager run.
 
 Reference URLs for the wizard or for explicit follow-up questions:
 
-- RevenueCat dashboard/API keys: https://app.revenuecat.com/projects/<project_id>/api-keys
-- RevenueCat dashboard project picker: https://app.revenuecat.com/
+- RevenueCat dashboard/API keys: https://app.revenuecat.com/
 - RevenueCat API key docs: https://www.revenuecat.com/docs/projects/authentication
 - RevenueCat MCP setup docs: https://www.revenuecat.com/docs/tools/mcp/setup
 - App Store Connect API keys: https://appstoreconnect.apple.com/access/integrations/api
@@ -356,7 +355,7 @@ RevenueCat setup guidance:
 - Ask: "Soll RevenueCat fuer Monetization-/Subscription-Daten verbunden werden?"
 - For SDK instrumentation, use the public app-specific SDK key only in the app.
 - For server-side growth summaries, request a RevenueCat secret API key stored server-side only. Prefer a v2 secret key with read-only permissions for charts/metrics and required project configuration resources such as apps, products, offerings, packages, and entitlements; add customer/subscriber read only if the selected summary needs it.
-- Tell the user where to create it and include direct URLs: https://app.revenuecat.com/projects/<project_id>/api-keys, replacing `<project_id>` with the RevenueCat project id; if unknown, start at https://app.revenuecat.com/. Include https://www.revenuecat.com/docs/projects/authentication for key docs.
+- Tell the user to open https://app.revenuecat.com/, select the project, then Project Settings -> API keys. Do not ask for a RevenueCat project id just to build a deep link.
 - Store it as `REVENUECAT_API_KEY` in OpenClaw secret storage or runtime env; never put it in client code, config JSON, issues, or PR bodies.
 
 Mobile-focused examples:
