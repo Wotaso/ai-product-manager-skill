@@ -3,7 +3,7 @@ name: openclaw-growth-engineer
 description: OpenClaw-first growth autopilot for mobile apps. Correlate analytics, crashes, billing, feedback, store signals, and repo context into proposal drafts that can flow into OpenClaw chat, GitHub issues, or draft pull requests.
 license: MIT
 homepage: https://github.com/wotaso/analyticscli-skills
-metadata: {"author":"wotaso","version":"1.0.28","analyticscli-target":"@analyticscli/cli","analyticscli-supported-range":">=0.1.2-preview.0 <0.2.0","openclaw":{"emoji":"🚀","homepage":"https://github.com/wotaso/analyticscli-skills","requires":{"bins":["node","analyticscli"]},"install":[{"id":"analyticscli-cli","kind":"node","package":"@analyticscli/cli@preview","bins":["analyticscli"],"label":"Install/update AnalyticsCLI CLI (npm package @analyticscli/cli@preview)"}]}}
+metadata: {"author":"wotaso","version":"1.0.29","analyticscli-target":"@analyticscli/cli","analyticscli-supported-range":">=0.1.2-preview.0 <0.2.0","openclaw":{"emoji":"🚀","homepage":"https://github.com/wotaso/analyticscli-skills","requires":{"bins":["node","analyticscli"]},"install":[{"id":"analyticscli-cli","kind":"node","package":"@analyticscli/cli@preview","bins":["analyticscli"],"label":"Install/update AnalyticsCLI CLI (npm package @analyticscli/cli@preview)"}]}}
 ---
 
 # OpenClaw Growth Engineer
@@ -58,6 +58,39 @@ Setup should feel guided for a developer, not like a silent preflight dump.
 - If AnalyticsCLI has no default project and multiple projects are visible, do not report that as a hard error. List the available projects, ask the user which one to use, persist the choice with `openclaw start --config openclaw.config.json --project <project_id>` or `analyticscli projects select <project_id>`, and then retry the setup/run.
 
 During setup chat, keep the first answer short. OpenClaw should not dump provider docs, permissions, status history, or troubleshooting unless the user asks for details.
+
+Hard override for AI Growth Engineer connector questions:
+
+If the user says any of these or close variants, apply this override before any generic OpenClaw, AnalyticsCLI, MCP, messaging-channel, or env-var connector knowledge:
+
+- "AI Growth Engineer connectors"
+- "analyticscli connectors"
+- "AI Product Manager connectors"
+- "I want to setup connectors" in the context of this skill
+- "which connectors can I set up" in the context of this skill
+- "how do I set them up" after asking about this skill's connectors
+
+Answer only with this shape:
+
+```text
+AI Growth Engineer connectors:
+- GitHub code access
+- RevenueCat monetization data
+- App Store Connect CLI
+
+Run the wizard on the VPS:
+```
+
+```bash
+cd /home/lo/.openclaw/workspace && \
+  bash skills/ai-product-manager/scripts/bootstrap-openclaw-workspace.sh && \
+  node scripts/openclaw-growth-wizard.mjs --connectors
+```
+
+Then add only: "Select the connectors in the wizard. Secrets stay in the terminal."
+
+Do not list Discord, Telegram, WhatsApp, Slack, Matrix, OpenAI service connectors, MCP servers, browser connectors, Sentry, feedback endpoints, raw environment variables, token scopes, verification commands, or provider URLs in the initial answer. Those details belong inside the wizard or in a direct follow-up answer.
+
 
 If the user asks a broad question such as "how do I setup everything", answer with only:
 
