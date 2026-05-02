@@ -479,16 +479,81 @@ async function maybePromptSecret(rl, label, envName) {
   return value.trim();
 }
 
-function validateAscPrivateKeyContent(value) {
-  if (!value.includes('-----BEGIN PRIVATE KEY-----') || !value.includes('-----END PRIVATE KEY-----')) {
-    return 'Missing BEGIN/END PRIVATE KEY markers.';
+const ASC_PRIVATE_KEY_BEGIN = '-----BEGIN PRIVATE KEY-----';
+const ASC_PRIVATE_KEY_END = '-----END PRIVATE KEY-----';
+
+function formatPemBase64(value) {
+  return String(value || '').match(/.{1,64}/g)?.join('\n') || '';
+}
+
+function normalizeAscPrivateKeyContent(value) {
+  const raw = String(value || '')
+    .replace(/\x1b\[200~/g, '')
+    .replace(/\x1b\[201~/g, '')
+    .replace(/\r\n/g, '\n')
+    .trim();
+  if (!raw) {
+    return { ok: false, value: '', error: 'No private key content pasted.' };
   }
+
+  const beginIndex = raw.indexOf(ASC_PRIVATE_KEY_BEGIN);
+  const endIndex = raw.indexOf(ASC_PRIVATE_KEY_END);
+  if (beginIndex < 0 || endIndex < 0 || endIndex <= beginIndex) {
+    if (raw.includes('-----BEGIN PRIVATE KEY') && beginIndex < 0) {
+      return {
+        ok: false,
+        value: '',
+        error: `Malformed .p8 header. The first line must be exactly ${ASC_PRIVATE_KEY_BEGIN}`,
+      };
+    }
+    if (raw.includes('-----END PRIVATE KEY') && endIndex < 0) {
+      return {
+        ok: false,
+        value: '',
+        error: `Malformed .p8 footer. The last line must be exactly ${ASC_PRIVATE_KEY_END}`,
+      };
+    }
+    return {
+      ok: false,
+      value: '',
+      error: `Missing exact .p8 markers. Paste from ${ASC_PRIVATE_KEY_BEGIN} through ${ASC_PRIVATE_KEY_END}.`,
+    };
+  }
+
+  const body = raw
+    .slice(beginIndex + ASC_PRIVATE_KEY_BEGIN.length, endIndex)
+    .replace(/\s+/g, '');
+  if (!body) {
+    return { ok: false, value: '', error: 'The .p8 key body is empty.' };
+  }
+  if (!/^[A-Za-z0-9+/=]+$/.test(body)) {
+    return {
+      ok: false,
+      value: '',
+      error: 'The .p8 key body contains non-base64 characters. Copy the downloaded AuthKey file content without redactions or extra text.',
+    };
+  }
+
+  return {
+    ok: true,
+    value: `${ASC_PRIVATE_KEY_BEGIN}\n${formatPemBase64(body)}\n${ASC_PRIVATE_KEY_END}\n`,
+    error: null,
+  };
+}
+
+function validateAscPrivateKeyContent(value) {
+  const normalized = normalizeAscPrivateKeyContent(value);
+  if (!normalized.ok) return normalized;
   try {
-    createPrivateKey(value);
-    return null;
+    createPrivateKey(normalized.value);
+    return normalized;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    return `Invalid .p8 private key content: ${message}`;
+    return {
+      ok: false,
+      value: '',
+      error: `Invalid .p8 private key content: ${message}. Make sure you copied the downloaded AuthKey_<KEY_ID>.p8 file, including both marker lines, with no truncation.`,
+    };
   }
 }
 
@@ -501,10 +566,10 @@ async function askAscPrivateKeyContent(rl) {
   while (true) {
     const value = await readAscPrivateKeyPaste(rl);
     if (!value.trim()) return '';
-    const validationError = validateAscPrivateKeyContent(value);
-    if (!validationError) return value;
+    const validation = validateAscPrivateKeyContent(value);
+    if (validation.ok) return validation.value;
 
-    process.stdout.write(`${validationError}\n`);
+    process.stdout.write(`${validation.error}\n`);
     process.stdout.write('The .p8 was not saved. Paste the full file again from BEGIN to END, or leave empty to use a path.\n');
   }
 }
@@ -583,9 +648,9 @@ async function askAscPrivateKeyPath(rl) {
     if (!trimmedPath) return '';
 
     try {
-      const validationError = await validateAscPrivateKeyPath(trimmedPath);
-      if (!validationError) return trimmedPath;
-      process.stdout.write(`${validationError}\n`);
+      const validation = await validateAscPrivateKeyPath(trimmedPath);
+      if (validation.ok) return trimmedPath;
+      process.stdout.write(`${validation.error}\n`);
     } catch (error) {
       process.stdout.write(`Could not read .p8 file: ${error instanceof Error ? error.message : String(error)}\n`);
     }
