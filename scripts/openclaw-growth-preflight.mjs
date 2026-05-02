@@ -685,11 +685,13 @@ async function runConnectionChecks({ checks, config, timeoutMs }) {
     }
     const githubToken = process.env[githubTokenEnv] || '';
     const githubCheckName = actionMode === 'pull_request' ? 'connection:github-pull-requests' : 'connection:github';
-    if (!requiresGitHubDelivery) {
-        addCheck(checks, githubCheckName, true, 'skipped because GitHub artifact creation is disabled');
+    if (!requiresGitHubDelivery && (!githubToken || !githubRepo)) {
+        addCheck(checks, githubCheckName, true, githubToken
+            ? 'skipped because project.githubRepo is not configured'
+            : 'skipped because GitHub artifact creation is disabled and no GITHUB_TOKEN is configured');
     }
     else if (!githubToken) {
-        addCheck(checks, githubCheckName, false, `${githubTokenEnv} missing (required; ${getGitHubRequirementText(actionMode)})`);
+        addCheck(checks, githubCheckName, !requiresGitHubDelivery, `${githubTokenEnv} missing (required; ${getGitHubRequirementText(actionMode)})`, requiresGitHubDelivery ? 'fail' : 'warn');
     }
     else {
         const githubConnection = await testGitHubConnection(githubToken, githubRepo, timeoutMs, actionMode);
