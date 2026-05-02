@@ -3,7 +3,7 @@ name: openclaw-growth-engineer
 description: OpenClaw-first growth autopilot for mobile apps. Correlate analytics, crashes, billing, feedback, store signals, and repo context into proposal drafts that can flow into OpenClaw chat, GitHub issues, or draft pull requests.
 license: MIT
 homepage: https://github.com/wotaso/analyticscli-skills
-metadata: {"author":"wotaso","version":"1.0.36","analyticscli-target":"@analyticscli/cli","analyticscli-supported-range":">=0.1.2-preview.0 <0.2.0","openclaw":{"emoji":"🚀","homepage":"https://github.com/wotaso/analyticscli-skills","requires":{"bins":["node","analyticscli"]},"install":[{"id":"analyticscli-cli","kind":"node","package":"@analyticscli/cli@preview","bins":["analyticscli"],"label":"Install/update AnalyticsCLI CLI (npm package @analyticscli/cli@preview)"}]}}
+metadata: {"author":"wotaso","version":"1.0.37","analyticscli-target":"@analyticscli/cli","analyticscli-supported-range":">=0.1.2-preview.0 <0.2.0","openclaw":{"emoji":"🚀","homepage":"https://github.com/wotaso/analyticscli-skills","requires":{"bins":["node","analyticscli"]},"install":[{"id":"analyticscli-cli","kind":"node","package":"@analyticscli/cli@preview","bins":["analyticscli"],"label":"Install/update AnalyticsCLI CLI (npm package @analyticscli/cli@preview)"}]}}
 ---
 
 # OpenClaw Growth Engineer
@@ -342,9 +342,9 @@ npx skills add rorkai/app-store-connect-cli-skills
 ASC setup guidance:
 
 - Ask: "Soll ASC CLI fuer App Store Connect verbunden werden?"
-- Recommend the least-privilege App Store Connect API access that can read the required App Store Connect reports: prefer a Sales/Sales and Reports style role for generated reports; Finance can work but is broader; Admin should only be used temporarily when a new report type must be requested for the first time.
-- Prefer an individual API key for a user limited to the target app when possible; team API keys can cover all apps and are broader.
-- Tell the user where to create the key and include direct URLs: https://appstoreconnect.apple.com/access/integrations/api for team keys, https://appstoreconnect.apple.com/access/users for access management, or https://appstoreconnect.apple.com/account for individual keys.
+- Send the user to exactly this page to create the key: https://appstoreconnect.apple.com/access/integrations/api.
+- Say the main role is `Sales`, required for App Analytics, Sales and Trends, downloads, revenue, and conversion context. Add `Customer Support` for App Store ratings/review text, `Developer` for builds/TestFlight/delivery status, and `App Manager` only when app metadata, pricing, or release settings are needed. Avoid `Admin` unless a one-off App Store Connect permission requires it.
+- Tell the user to copy `ASC_ISSUER_ID` from the API keys page, copy `ASC_KEY_ID` from the key row or downloaded `AuthKey_<KEY_ID>.p8` file name, download the `.p8`, open it, and paste the full file content into the local terminal wizard.
 - Store only env vars/secrets: `ASC_KEY_ID`, `ASC_ISSUER_ID`, and `ASC_PRIVATE_KEY_PATH`; the wizard can create the `.p8` file from pasted terminal content. Never commit the `.p8` private key.
 - Do not ask for `ASC_APP_ID` upfront. After auth succeeds, auto-detect/list apps; if ambiguous, ask for the app name first. Store `ASC_APP_ID` only after it has been resolved.
 - After the key is present and the target app is inferred or selected, run one read-only `asc` smoke test before marking ASC connected.
@@ -448,8 +448,8 @@ Use the legacy bootstrap-and-copy runtime only when the standalone CLI is unavai
   - pull-request mode: add `Pull requests: Read/Write` and `Contents: Read/Write` only when draft PR creation is enabled
 - `ASC_KEY_ID`, `ASC_ISSUER_ID`, `ASC_PRIVATE_KEY_PATH`
   - optional; ask before setup
-  - App Store Connect read-only reporting data only
-  - prefer Sales/Sales and Reports style access; Admin only temporarily for first-time report type requests
+  - App Store Connect analytics first, plus optional reviews, builds, TestFlight, and store context
+  - require Sales; add Customer Support for reviews, Developer for builds/TestFlight, and App Manager only for app metadata/pricing/release settings
 - `ANALYTICSCLI_ACCESS_TOKEN`
   - recommended for CLI/agent auth when no local CLI login exists
   - do not ask for `ANALYTICSCLI_READONLY_TOKEN`; the readonly token is passed to `analyticscli login --readonly-token <token>` or stored as `ANALYTICSCLI_ACCESS_TOKEN`

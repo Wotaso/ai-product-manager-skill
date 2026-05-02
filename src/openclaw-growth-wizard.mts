@@ -561,18 +561,23 @@ async function guideRevenueCatConnector(rl, secrets: Record<string, string>) {
 
 async function guideAscConnector(rl, secrets: Record<string, string>) {
   printSection('App Store Connect CLI', [
-    'Use this when OpenClaw should read app, build, TestFlight, review, rating, and store signals.',
+    'Use this mainly for App Store analytics, plus builds, TestFlight, reviews, ratings, and store context.',
   ]);
-  process.stdout.write('Create an API key from one of these pages:\n');
+  process.stdout.write('Create an App Store Connect API key here:\n  https://appstoreconnect.apple.com/access/integrations/api\n\n');
+  process.stdout.write('Roles to choose for this key:\n');
   printBullets([
-    'Team API keys: https://appstoreconnect.apple.com/access/integrations/api',
-    'Access/users: https://appstoreconnect.apple.com/access/users',
-    'Individual account keys: https://appstoreconnect.apple.com/account',
+    'Required: Sales, for App Analytics, Sales and Trends, downloads, revenue, and conversion context.',
+    'Recommended: Customer Support, for App Store ratings and review text.',
+    'Recommended: Developer, for builds, TestFlight, and delivery status.',
+    'Optional: App Manager, only if OpenClaw should also read or manage app metadata, pricing, or release settings.',
+    'Avoid: Admin unless a one-off App Store Connect permission requires it.',
   ]);
+  process.stdout.write('\nAfter creating the key, copy these values into this wizard:\n');
   printBullets([
-    'Use the least role that can read the required reports. Avoid Admin unless temporarily required.',
-    'Download the .p8 file, then paste its file content into this terminal.',
-    'If the .p8 is already saved on this host, leave the content prompt empty and paste the file path instead.',
+    'Issuer ID from the API keys page.',
+    'Key ID from the API key row or from the downloaded file name: AuthKey_<KEY_ID>.p8.',
+    'Download the .p8 file, open it, then paste the full file content into this terminal.',
+    'If the .p8 is already on this host, leave the content prompt empty and paste the file path instead.',
   ]);
 
   const keyId = await ask(rl, 'ASC_KEY_ID (leave empty to skip)', process.env.ASC_KEY_ID || '');
