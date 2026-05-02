@@ -13,7 +13,7 @@ const CONNECTOR_DEFINITIONS = [
         key: 'github',
         label: 'GitHub code access',
         summary: 'Read repo context and optionally create issues or draft PRs.',
-        needs: 'Choose read-only or read/write access; you can change it later by rerunning the wizard.',
+        needs: 'Create a GitHub token with the scopes you want; you can change it later by rerunning the wizard.',
     },
     {
         key: 'revenuecat',
@@ -457,12 +457,9 @@ async function guideGitHubConnector(rl, secrets) {
         'Use this when OpenClaw should read repo context or create GitHub delivery artifacts.',
     ]);
     printBullets([
-        'Choose the permission level you want for this host.',
-        'Read-only is enough for code context and product analysis.',
-        'Read/write is only needed if OpenClaw should create issues, branches, or draft PRs.',
+        'Open the token page, select the scopes you want, then paste the token here.',
         'You can rerun this wizard later to change GitHub permissions.',
     ]);
-    const accessMode = await askChoice(rl, 'GitHub permission mode', ['read-only', 'read-write'], 'read-only');
     let hasGh = await commandExists('gh');
     if (!hasGh) {
         hasGh = await installGitHubCliUserLocal();
@@ -470,24 +467,16 @@ async function guideGitHubConnector(rl, secrets) {
     if (hasGh) {
         process.stdout.write('GitHub CLI is available for helper commands.\n\n');
     }
-    if (accessMode === 'read-only') {
-        printBullets([
-            'Create a GitHub token for the repositories OpenClaw should read.',
-            'Use the minimum scopes GitHub allows for your repo type.',
-            'Do not select workflow, packages, admin, delete, or organization scopes for read-only mode.',
-        ]);
-    }
-    else {
-        printBullets([
-            'Create a GitHub token for the repositories OpenClaw should modify.',
-            'Start with the minimum repo access needed for the selected repositories.',
-            'Add issue-related access only if OpenClaw should create backlog issues.',
-            'Add PR/contents write access only if OpenClaw should create draft PR branches.',
-            'Select workflow only if you explicitly want OpenClaw to edit GitHub Actions workflow files.',
-        ]);
-    }
     process.stdout.write('Token URL: https://github.com/settings/tokens/new\n\n');
-    const token = await maybePromptSecret(rl, `Paste GITHUB_TOKEN for ${accessMode} access into this local terminal`, 'GITHUB_TOKEN');
+    process.stdout.write(`${ANSI.bold}Suggested scopes${ANSI.reset}\n`);
+    printBullets([
+        'Public repo only: select `public_repo`.',
+        'Private repo access: select `repo` (classic GitHub tokens make private repo access broad).',
+        'Create issues / draft PRs in private repos: `repo` is the relevant classic-token scope.',
+        'Edit GitHub Actions workflow files: add `workflow` only if you explicitly want this.',
+        'Usually do not select: packages, admin:org, hooks, gist, user, delete_repo, enterprise, codespace, copilot.',
+    ]);
+    const token = await maybePromptSecret(rl, 'Paste GITHUB_TOKEN into this local terminal', 'GITHUB_TOKEN');
     if (token)
         secrets.GITHUB_TOKEN = token;
     else
