@@ -177,8 +177,11 @@ async function checkGitHub(config, timeoutMs) {
         }
     }
     if (token && !hasRepo) {
-        return connector('partial', 'GITHUB_TOKEN is set, but project.githubRepo is not configured', {
-            nextAction: 'Run: node scripts/openclaw-growth-wizard.mjs --connectors github, then enter the repo as owner/name.',
+        const authCheck = await runShell(`curl -fsS -H ${quote('Accept: application/vnd.github+json')} -H ${quote(`Authorization: Bearer ${token}`)} https://api.github.com/user >/dev/null`, { timeoutMs });
+        return authCheck.ok ? connector('connected', 'GITHUB_TOKEN is valid; repo selection is deferred per app/task', {
+            repoScope: 'per_app_or_task',
+        }) : connector('blocked', 'GITHUB_TOKEN is set, but GitHub auth check failed', {
+            nextAction: 'Run: node scripts/openclaw-growth-wizard.mjs --connectors github.',
         });
     }
     return connector('not_connected', hasRepo ? 'No GITHUB_TOKEN or gh auth found' : 'project.githubRepo is not configured', {

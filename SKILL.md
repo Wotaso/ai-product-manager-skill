@@ -3,7 +3,7 @@ name: openclaw-growth-engineer
 description: OpenClaw-first growth autopilot for mobile apps. Correlate analytics, crashes, billing, feedback, store signals, and repo context into proposal drafts that can flow into OpenClaw chat, GitHub issues, or draft pull requests.
 license: MIT
 homepage: https://github.com/wotaso/analyticscli-skills
-metadata: {"author":"wotaso","version":"1.0.45","analyticscli-target":"@analyticscli/cli","analyticscli-supported-range":">=0.1.2-preview.0 <0.2.0","openclaw":{"emoji":"🚀","homepage":"https://github.com/wotaso/analyticscli-skills","requires":{"bins":["node","analyticscli"]},"install":[{"id":"analyticscli-cli","kind":"node","package":"@analyticscli/cli@preview","bins":["analyticscli"],"label":"Install/update AnalyticsCLI CLI (npm package @analyticscli/cli@preview)"}]}}
+metadata: {"author":"wotaso","version":"1.0.46","analyticscli-target":"@analyticscli/cli","analyticscli-supported-range":">=0.1.2-preview.0 <0.2.0","openclaw":{"emoji":"🚀","homepage":"https://github.com/wotaso/analyticscli-skills","requires":{"bins":["node","analyticscli"]},"install":[{"id":"analyticscli-cli","kind":"node","package":"@analyticscli/cli@preview","bins":["analyticscli"],"label":"Install/update AnalyticsCLI CLI (npm package @analyticscli/cli@preview)"}]}}
 ---
 
 # OpenClaw Growth Engineer
@@ -68,6 +68,7 @@ Connector status questions:
   node scripts/openclaw-growth-status.mjs --config data/openclaw-growth-engineer/config.json --json
   ```
 - The status command loads `~/.config/openclaw-growth/secrets.env`, runs live connector checks, and treats GitHub code access separately from GitHub issue/PR delivery.
+- Do not require a single global GitHub repo for connector setup. GitHub is connected when auth/token is valid; choose or infer the repository per app/task later.
 - Answer from that command only. If it cannot be run, say "I have not run a connector status check yet" and give the wizard command; do not say credentials are missing just because they are not visible in chat.
 - Keep the answer short: say "Ja" only if every connector status is `connected`; otherwise list only the non-connected connector names and the status command's next action.
 

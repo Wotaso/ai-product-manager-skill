@@ -603,10 +603,10 @@ async function installGitHubConnector() {
         details.push(`GitHub repo configured for code access: ${repo}`);
     }
     else if (process.env.GITHUB_TOKEN) {
-        details.push('GITHUB_TOKEN is set, but no GitHub repo is configured yet; rerun connector wizard for github and enter owner/name');
+        details.push('GITHUB_TOKEN is set; repo selection is deferred per app/task');
     }
     else {
-        details.push('GitHub token/repo not fully configured yet; rerun connector wizard for github when ready');
+        details.push('GitHub token not configured yet; rerun connector wizard for github when ready');
     }
     return { connector: 'github', ok, detail: details.join('; ') };
 }

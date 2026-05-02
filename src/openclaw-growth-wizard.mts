@@ -756,21 +756,12 @@ async function guideGitHubConnector(rl, secrets: Record<string, string>) {
   if (token) secrets.GITHUB_TOKEN = token;
   else process.stdout.write('No GitHub token saved. GitHub setup remains pending; rerun this wizard when ready.\n\n');
 
-  const existingRepo = isConfiguredGitHubRepo(process.env.OPENCLAW_GITHUB_REPO)
-    ? process.env.OPENCLAW_GITHUB_REPO.trim()
-    : '';
   const detectedRepo = await detectGitHubRepo();
-  const repo = await ask(
-    rl,
-    'GitHub repo for code access (owner/name, leave empty to skip)',
-    existingRepo || detectedRepo || '',
-  );
-  if (isConfiguredGitHubRepo(repo)) {
-    secrets.OPENCLAW_GITHUB_REPO = repo.trim();
-  } else if (repo.trim()) {
-    process.stdout.write('GitHub repo was not saved because it must look like owner/name.\n\n');
-  } else {
-    process.stdout.write('No GitHub repo saved. GitHub token is stored, but code access remains partial until a repo is configured.\n\n');
+  if (detectedRepo) {
+    secrets.OPENCLAW_GITHUB_REPO = detectedRepo;
+    process.stdout.write(`Detected GitHub repo for this workspace: ${detectedRepo}\n\n`);
+  } else if (token || process.env.GITHUB_TOKEN) {
+    process.stdout.write('GitHub auth is saved. Repo selection is deferred per app/task; no global repo is required.\n\n');
   }
 }
 
