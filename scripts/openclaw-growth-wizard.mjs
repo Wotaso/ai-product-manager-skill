@@ -13,7 +13,7 @@ const CONNECTOR_DEFINITIONS = [
         key: 'github',
         label: 'GitHub code access',
         summary: 'Read repo context and optionally create issues or draft PRs.',
-        needs: 'The wizard installs gh locally when needed, then starts gh auth login.',
+        needs: 'The wizard installs gh locally when needed, then starts GitHub.com login.',
     },
     {
         key: 'revenuecat',
@@ -458,23 +458,32 @@ async function guideGitHubConnector(rl, secrets) {
     ]);
     printBullets([
         'The wizard installs GitHub CLI locally when needed.',
-        'Then it starts `gh auth login` so you can authenticate this host.',
-        'Token fallback is only used if local install or gh auth is not possible.',
+        'Then it starts GitHub.com login for this host.',
+        'Token fallback is only used if local install or GitHub login is not possible.',
     ]);
     let hasGh = await commandExists('gh');
     if (!hasGh) {
         hasGh = await installGitHubCliUserLocal();
     }
+    let authenticated = false;
     if (hasGh) {
-        const runLogin = await askYesNo(rl, 'Run `gh auth login` now?', true);
+        authenticated = (await runInteractiveCommand('gh auth status --hostname github.com >/dev/null 2>&1', { silent: true })) === 0;
+    }
+    if (hasGh && !authenticated) {
+        const runLogin = await askYesNo(rl, 'Start GitHub.com login now?', true);
         if (runLogin) {
-            process.stdout.write('Launching GitHub CLI login. Return here when it finishes.\n');
+            process.stdout.write('Starting GitHub.com login. Return here when it finishes.\n');
             rl.pause();
-            await runInteractiveCommand('gh auth login');
+            await runInteractiveCommand('gh auth login --hostname github.com --git-protocol https --web');
             rl.resume();
+            authenticated = (await runInteractiveCommand('gh auth status --hostname github.com >/dev/null 2>&1', { silent: true })) === 0;
         }
     }
-    else {
+    if (authenticated) {
+        process.stdout.write('GitHub is authenticated on this host.\n\n');
+        return;
+    }
+    if (!hasGh) {
         process.stdout.write('GitHub CLI could not be installed automatically, so the token fallback is available.\n\n');
     }
     const storeToken = await askYesNo(rl, hasGh
