@@ -3,6 +3,7 @@ import { existsSync, promises as fs } from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import { spawn } from 'node:child_process';
+import { createInterface } from 'node:readline/promises';
 import { getActionMode, getDefaultSourceCommand } from './openclaw-growth-shared.mjs';
 const DEFAULT_CONFIG_PATH = 'data/openclaw-growth-engineer/config.json';
 const DEFAULT_TEMPLATE_PATH = 'data/openclaw-growth-engineer/config.example.json';
@@ -27,7 +28,8 @@ Usage:
 Options:
   --config <file>        Config path (default: ${DEFAULT_CONFIG_PATH})
   --project <id>         AnalyticsCLI project ID to use for generated source commands
-  --connectors <list>    Install/enable connector helpers (github,asc,revenuecat,all)
+  --asc-app <id>         App Store Connect app ID to use for ASC summaries
+  --connectors <list>    Install/enable connector helpers (analytics,github,asc,revenuecat,all)
   --setup-only           Run bootstrap + preflight only (skip first run)
   --no-test-connections  Skip live API smoke checks in preflight
   --help, -h             Show help
@@ -38,6 +40,7 @@ function parseArgs(argv) {
     const args = {
         config: DEFAULT_CONFIG_PATH,
         project: '',
+        ascApp: '',
         run: true,
         testConnections: true,
         connectors: [],
@@ -54,6 +57,10 @@ function parseArgs(argv) {
         }
         else if (token === '--project') {
             args.project = String(next || '').trim();
+            i += 1;
+        }
+        else if (token === '--asc-app') {
+            args.ascApp = String(next || '').trim();
             i += 1;
         }
         else if (token === '--connectors') {
@@ -81,6 +88,8 @@ function normalizeConnectorKey(value) {
         return null;
     if (normalized === 'all')
         return 'all';
+    if (['analytics', 'analyticscli', 'product-analytics', 'events'].includes(normalized))
+        return 'analytics';
     if (['github', 'gh', 'github-code', 'codebase', 'code-access'].includes(normalized))
         return 'github';
     if (['asc', 'asc-cli', 'app-store-connect', 'appstoreconnect', 'app-store'].includes(normalized))
@@ -96,9 +105,10 @@ function parseConnectorList(value) {
     for (const entry of String(value).split(',')) {
         const connector = normalizeConnectorKey(entry);
         if (!connector) {
-            printHelpAndExit(1, `Unknown connector: ${entry.trim()}. Use github, asc, revenuecat, or all.`);
+            printHelpAndExit(1, `Unknown connector: ${entry.trim()}. Use analytics, github, asc, revenuecat, or all.`);
         }
         if (connector === 'all') {
+            connectors.add('analytics');
             connectors.add('github');
             connectors.add('asc');
             connectors.add('revenuecat');
@@ -600,6 +610,16 @@ async function installAscConnector() {
     }
     return { connector: 'asc', ok, detail: `${details.join('; ')}${ok ? '; next run asc auth status --validate or asc auth login' : ''}` };
 }
+async function installAnalyticsConnector() {
+    const analyticsCliPath = await resolveCommandPath('analyticscli');
+    return {
+        connector: 'analytics',
+        ok: Boolean(analyticsCliPath),
+        detail: analyticsCliPath
+            ? `analyticscli binary found at ${analyticsCliPath}; token is read from ANALYTICSCLI_ACCESS_TOKEN or local analyticscli login`
+            : 'analyticscli binary missing after dependency setup',
+    };
+}
 async function enableConnectorConfig(configPath, connectors) {
     if (connectors.length === 0 || !(await fileExists(configPath)))
         return;
@@ -609,6 +629,9 @@ async function enableConnectorConfig(configPath, connectors) {
         ...config,
         sources: {
             ...(config.sources || {}),
+            analytics: connectors.includes('analytics')
+                ? { ...(config.sources?.analytics || {}), enabled: true, mode: 'command', command: config.sources?.analytics?.command || getDefaultSourceCommand('analytics') }
+                : config.sources?.analytics,
             revenuecat: connectors.includes('revenuecat')
                 ? { ...(config.sources?.revenuecat || {}), enabled: true }
                 : config.sources?.revenuecat,
@@ -623,6 +646,8 @@ async function installConnectorHelpers(configPath, connectors) {
     await enableConnectorConfig(configPath, connectors);
     const results = [];
     for (const connector of connectors) {
+        if (connector === 'analytics')
+            results.push(await installAnalyticsConnector());
         if (connector === 'github')
             results.push(await installGitHubConnector());
         if (connector === 'asc')
@@ -715,10 +740,13 @@ function parseJsonFromStdout(stdout) {
     if (!raw)
         return null;
     const firstBrace = raw.indexOf('{');
-    if (firstBrace < 0)
+    const firstBracket = raw.indexOf('[');
+    const starts = [firstBrace, firstBracket].filter((index) => index >= 0);
+    if (starts.length === 0)
         return null;
+    const jsonStart = Math.min(...starts);
     try {
-        return JSON.parse(raw.slice(firstBrace));
+        return JSON.parse(raw.slice(jsonStart));
     }
     catch {
         return null;
@@ -773,6 +801,15 @@ function appendProjectFlag(command, projectId) {
         return raw;
     return `${raw} --project ${quote(projectId)}`;
 }
+function commandHasAscAppFlag(command) {
+    return /(^|\s)--app(\s|=|$)/.test(String(command || ''));
+}
+function appendAscAppFlag(command, appId) {
+    const raw = String(command || '').trim();
+    if (!raw || commandHasAscAppFlag(raw))
+        return raw;
+    return `${raw} --app ${quote(appId)}`;
+}
 async function configureAnalyticsProject(configPath, projectId) {
     const normalizedProjectId = normalizeString(projectId);
     if (!normalizedProjectId)
@@ -802,6 +839,175 @@ async function configureAnalyticsProject(configPath, projectId) {
     }
     return changed;
 }
+async function configureAscApp(configPath, appId) {
+    const normalizedAppId = normalizeString(appId);
+    if (!normalizedAppId)
+        return false;
+    const config = await readJson(configPath);
+    let changed = false;
+    const extraSources = Array.isArray(config?.sources?.extra) ? config.sources.extra : [];
+    for (const source of extraSources) {
+        if (!source || typeof source !== 'object')
+            continue;
+        const service = String(source.service || source.key || '').trim().toLowerCase();
+        if (!['asc', 'asc-cli', 'app-store-connect', 'app_store_connect'].includes(service))
+            continue;
+        if (source.mode === 'command' && source.command) {
+            const nextCommand = appendAscAppFlag(source.command, normalizedAppId);
+            if (nextCommand !== source.command) {
+                source.command = nextCommand;
+                changed = true;
+            }
+        }
+    }
+    if (!config.project || typeof config.project !== 'object') {
+        config.project = {};
+    }
+    if (config.project.ascAppId !== normalizedAppId) {
+        config.project.ascAppId = normalizedAppId;
+        changed = true;
+    }
+    if (changed) {
+        await writeJson(configPath, config);
+    }
+    process.env.ASC_APP_ID = normalizedAppId;
+    return changed;
+}
+function configHasEnabledAscSource(config) {
+    const extraSources = Array.isArray(config?.sources?.extra) ? config.sources.extra : [];
+    return extraSources.some((source) => {
+        if (!source || typeof source !== 'object' || source.enabled === false)
+            return false;
+        const service = String(source.service || source.key || '').trim().toLowerCase();
+        return ['asc', 'asc-cli', 'app-store-connect', 'app_store_connect'].includes(service);
+    });
+}
+function extractAscAppChoices(payload) {
+    const candidates = (() => {
+        if (Array.isArray(payload))
+            return payload;
+        if (payload && typeof payload === 'object') {
+            if (Array.isArray(payload.apps))
+                return payload.apps;
+            if (Array.isArray(payload.items))
+                return payload.items;
+            if (Array.isArray(payload.data))
+                return payload.data;
+        }
+        return [];
+    })();
+    const byId = new Map();
+    for (const candidate of candidates) {
+        if (!candidate || typeof candidate !== 'object')
+            continue;
+        const attrs = candidate.attributes && typeof candidate.attributes === 'object' ? candidate.attributes : {};
+        const id = normalizeString(candidate.id) ||
+            normalizeString(candidate.appId) ||
+            normalizeString(candidate.app_id);
+        if (!id)
+            continue;
+        const name = normalizeString(candidate.name) ||
+            normalizeString(candidate.appName) ||
+            normalizeString(candidate.displayName) ||
+            normalizeString(attrs.name) ||
+            normalizeString(attrs.bundleId);
+        const bundleId = normalizeString(candidate.bundleId) ||
+            normalizeString(candidate.bundle_id) ||
+            normalizeString(attrs.bundleId);
+        byId.set(id, {
+            id,
+            name,
+            bundleId,
+            label: [name || id, bundleId ? `(${bundleId})` : null, id !== name ? id : null].filter(Boolean).join(' '),
+        });
+    }
+    return [...byId.values()].sort((a, b) => String(a.label).localeCompare(String(b.label)));
+}
+async function listAscApps() {
+    const result = await runShellCommand('asc apps list --output json', 60_000);
+    if (!result.ok) {
+        return {
+            ok: false,
+            error: result.stderr || `exit ${result.code}`,
+            apps: [],
+        };
+    }
+    const payload = parseJsonFromStdout(result.stdout);
+    return {
+        ok: true,
+        error: null,
+        apps: extractAscAppChoices(payload),
+    };
+}
+async function askAscAppChoice(apps) {
+    const rl = createInterface({ input: process.stdin, output: process.stdout });
+    try {
+        process.stdout.write('\nSelect the App Store Connect app for ASC summaries:\n');
+        apps.forEach((app, index) => {
+            process.stdout.write(`  ${index + 1}) ${app.label}\n`);
+        });
+        while (true) {
+            const answer = (await rl.question('App number or App ID: ')).trim();
+            if (!answer)
+                continue;
+            const numericIndex = Number.parseInt(answer, 10);
+            if (Number.isInteger(numericIndex) && apps[numericIndex - 1]) {
+                return apps[numericIndex - 1].id;
+            }
+            const matchingApp = apps.find((app) => app.id === answer || app.name === answer || app.bundleId === answer);
+            if (matchingApp)
+                return matchingApp.id;
+            process.stdout.write('Choose one of the listed app numbers, or paste the exact App ID.\n');
+        }
+    }
+    finally {
+        rl.close();
+    }
+}
+async function ensureAscAppConfigured(configPath, explicitAppId) {
+    if (normalizeString(explicitAppId)) {
+        const changed = await configureAscApp(configPath, explicitAppId);
+        return { ok: true, configured: true, changed, appId: explicitAppId, needsUserInput: false };
+    }
+    const config = await readJson(configPath);
+    if (!configHasEnabledAscSource(config)) {
+        return { ok: true, configured: false, changed: false, appId: null, needsUserInput: false };
+    }
+    const configuredAppId = normalizeString(config.project?.ascAppId) || normalizeString(process.env.ASC_APP_ID);
+    if (configuredAppId) {
+        const changed = await configureAscApp(configPath, configuredAppId);
+        return { ok: true, configured: true, changed, appId: configuredAppId, needsUserInput: false };
+    }
+    const appList = await listAscApps();
+    if (!appList.ok) {
+        return {
+            ok: false,
+            configured: false,
+            changed: false,
+            appId: null,
+            needsUserInput: false,
+            error: truncate(appList.error, 800),
+        };
+    }
+    if (appList.apps.length === 1) {
+        const appId = appList.apps[0].id;
+        const changed = await configureAscApp(configPath, appId);
+        return { ok: true, configured: true, changed, appId, apps: appList.apps, needsUserInput: false };
+    }
+    if (appList.apps.length > 1 && process.stdin.isTTY && process.stdout.isTTY) {
+        const appId = await askAscAppChoice(appList.apps);
+        const changed = await configureAscApp(configPath, appId);
+        return { ok: true, configured: true, changed, appId, apps: appList.apps, needsUserInput: false };
+    }
+    return {
+        ok: false,
+        configured: false,
+        changed: false,
+        appId: null,
+        apps: appList.apps,
+        needsUserInput: true,
+    };
+}
 async function listAnalyticsProjects() {
     const result = await runShellCommand('analyticscli projects list --format json', 60_000);
     if (!result.ok) {
@@ -816,6 +1022,78 @@ async function listAnalyticsProjects() {
         ok: true,
         error: null,
         projects: extractProjectChoices(payload),
+    };
+}
+function configHasEnabledAnalyticsSource(config) {
+    return Boolean(config?.sources?.analytics && config.sources.analytics.enabled !== false);
+}
+async function askAnalyticsProjectChoice(projects) {
+    const rl = createInterface({ input: process.stdin, output: process.stdout });
+    try {
+        process.stdout.write('\nSelect the AnalyticsCLI project for product analytics:\n');
+        projects.forEach((project, index) => {
+            process.stdout.write(`  ${index + 1}) ${project.label} (${project.id})\n`);
+        });
+        while (true) {
+            const answer = (await rl.question('Project number or project ID: ')).trim();
+            if (!answer)
+                continue;
+            const numericIndex = Number.parseInt(answer, 10);
+            if (Number.isInteger(numericIndex) && projects[numericIndex - 1]) {
+                return projects[numericIndex - 1].id;
+            }
+            const matchingProject = projects.find((project) => project.id === answer || project.name === answer || project.slug === answer);
+            if (matchingProject)
+                return matchingProject.id;
+            process.stdout.write('Choose one of the listed project numbers, or paste the exact project ID.\n');
+        }
+    }
+    finally {
+        rl.close();
+    }
+}
+async function ensureAnalyticsProjectConfigured(configPath, explicitProjectId) {
+    if (normalizeString(explicitProjectId)) {
+        const changed = await configureAnalyticsProject(configPath, explicitProjectId);
+        return { ok: true, configured: true, changed, projectId: explicitProjectId, needsUserInput: false };
+    }
+    const config = await readJson(configPath);
+    if (!configHasEnabledAnalyticsSource(config)) {
+        return { ok: true, configured: false, changed: false, projectId: null, needsUserInput: false };
+    }
+    const configuredProjectId = normalizeString(config.project?.analyticsProjectId);
+    if (configuredProjectId) {
+        const changed = await configureAnalyticsProject(configPath, configuredProjectId);
+        return { ok: true, configured: true, changed, projectId: configuredProjectId, needsUserInput: false };
+    }
+    const projectList = await listAnalyticsProjects();
+    if (!projectList.ok) {
+        return {
+            ok: true,
+            configured: false,
+            changed: false,
+            projectId: null,
+            needsUserInput: false,
+            warning: truncate(projectList.error, 800),
+        };
+    }
+    if (projectList.projects.length === 1) {
+        const projectId = projectList.projects[0].id;
+        const changed = await configureAnalyticsProject(configPath, projectId);
+        return { ok: true, configured: true, changed, projectId, projects: projectList.projects, needsUserInput: false };
+    }
+    if (projectList.projects.length > 1 && process.stdin.isTTY && process.stdout.isTTY) {
+        const projectId = await askAnalyticsProjectChoice(projectList.projects);
+        const changed = await configureAnalyticsProject(configPath, projectId);
+        return { ok: true, configured: true, changed, projectId, projects: projectList.projects, needsUserInput: false };
+    }
+    return {
+        ok: false,
+        configured: false,
+        changed: false,
+        projectId: null,
+        projects: projectList.projects,
+        needsUserInput: true,
     };
 }
 async function buildProjectSelectionResponse({ configCreated, configPath, projectConfigured, rawError }) {
@@ -873,6 +1151,9 @@ function remediationForCheck(checkName, configPath) {
     if (checkName === 'connection:github-pull-requests') {
         return 'Verify `GITHUB_TOKEN` and repo access to `/repos/<owner>/<repo>/pulls`, plus `Pull requests: Read/Write` and `Contents: Read/Write` scopes.';
     }
+    if (checkName === 'connection:asc_cli') {
+        return 'ASC setup should list App Store Connect apps and persist the selected app automatically. Rerun the connector wizard; if this repeats, update the skill/CLI rather than setting ASC_APP_ID by hand.';
+    }
     return 'Fix this blocker and rerun start.';
 }
 async function runPreflight(configPath, testConnections) {
@@ -902,6 +1183,7 @@ async function main() {
     const configPath = path.resolve(args.config);
     const configResult = await ensureConfig(configPath);
     const projectConfigured = await configureAnalyticsProject(configPath, args.project);
+    const ascAppConfiguredFromArg = await configureAscApp(configPath, args.ascApp);
     const analyticscliEnsure = await ensureAnalyticsCliInstalled();
     if (!analyticscliEnsure.ok) {
         process.stdout.write(`${JSON.stringify({
@@ -910,6 +1192,7 @@ async function main() {
             configCreated: configResult.created,
             configPath,
             projectConfigured,
+            ascAppConfigured: ascAppConfiguredFromArg,
             blockers: [
                 {
                     check: 'dependency:analyticscli',
@@ -930,16 +1213,76 @@ async function main() {
             configCreated: configResult.created,
             configPath,
             projectConfigured,
+            ascAppConfigured: ascAppConfiguredFromArg,
             connectorSetup,
             blockers: failedConnectors.map((entry) => ({
                 check: `connector:${entry.connector}`,
                 detail: entry.detail,
-                remediation: entry.connector === 'github'
-                    ? 'Install GitHub CLI (`gh`) and run `gh auth login`, or provide a fine-grained read-only token for code access.'
-                    : entry.connector === 'asc'
-                        ? 'Install the ASC CLI and provide ASC_KEY_ID, ASC_ISSUER_ID, and ASC_PRIVATE_KEY_PATH or ASC_PRIVATE_KEY. Resolve the app after auth succeeds.'
-                        : 'Set REVENUECAT_API_KEY and rerun connector setup to write RevenueCat MCP config.',
+                remediation: entry.connector === 'analytics'
+                    ? 'Paste a fresh AnalyticsCLI readonly token into the connector wizard so it can store ANALYTICSCLI_ACCESS_TOKEN.'
+                    : entry.connector === 'github'
+                        ? 'Install GitHub CLI (`gh`) and run `gh auth login`, or provide a fine-grained read-only token for code access.'
+                        : entry.connector === 'asc'
+                            ? 'Install the ASC CLI and provide ASC_KEY_ID, ASC_ISSUER_ID, and ASC_PRIVATE_KEY_PATH or ASC_PRIVATE_KEY. Resolve the app after auth succeeds.'
+                            : 'Set REVENUECAT_API_KEY and rerun connector setup to write RevenueCat MCP config.',
             })),
+        }, null, 2)}\n`);
+        process.exitCode = 1;
+        return;
+    }
+    const analyticsProjectSetup = await ensureAnalyticsProjectConfigured(configPath, args.project);
+    if (!analyticsProjectSetup.ok) {
+        process.stdout.write(`${JSON.stringify({
+            ok: false,
+            phase: 'analytics_project_selection_required',
+            configCreated: configResult.created,
+            configPath,
+            projectConfigured: false,
+            ascAppConfigured: ascAppConfiguredFromArg,
+            connectorSetup,
+            needsUserInput: analyticsProjectSetup.needsUserInput,
+            question: 'Which AnalyticsCLI project should OpenClaw use for product analytics?',
+            projects: analyticsProjectSetup.projects || [],
+            nextCommand: `node scripts/openclaw-growth-start.mjs --config ${quote(configPath)} --setup-only --connectors ${quote(args.connectors.join(','))} --project <project_id>`,
+            blockers: [
+                {
+                    check: 'connection:analytics_project',
+                    detail: 'AnalyticsCLI auth works, but multiple projects are available and setup is running non-interactively.',
+                    remediation: 'Run the connector wizard in a terminal so it can ask for the project, or rerun start with --project <project_id>.',
+                },
+            ],
+        }, null, 2)}\n`);
+        process.exitCode = 1;
+        return;
+    }
+    const ascAppSetup = await ensureAscAppConfigured(configPath, args.ascApp);
+    if (!ascAppSetup.ok) {
+        process.stdout.write(`${JSON.stringify({
+            ok: false,
+            phase: ascAppSetup.needsUserInput ? 'asc_app_selection_required' : 'asc_app_setup',
+            configCreated: configResult.created,
+            configPath,
+            projectConfigured: projectConfigured || analyticsProjectSetup.configured,
+            analyticsProjectId: analyticsProjectSetup.projectId || null,
+            ascAppConfigured: false,
+            connectorSetup,
+            needsUserInput: ascAppSetup.needsUserInput,
+            question: ascAppSetup.needsUserInput ? 'Which App Store Connect app should OpenClaw use for ASC summaries?' : null,
+            apps: ascAppSetup.apps || [],
+            nextCommand: ascAppSetup.needsUserInput
+                ? `node scripts/openclaw-growth-start.mjs --config ${quote(configPath)} --setup-only --connectors ${quote(args.connectors.join(','))} --asc-app <app_id>`
+                : null,
+            blockers: [
+                {
+                    check: 'connection:asc_app',
+                    detail: ascAppSetup.needsUserInput
+                        ? 'ASC auth works, but multiple apps are available and setup is running non-interactively.'
+                        : `Could not list App Store Connect apps (${ascAppSetup.error || 'unknown error'})`,
+                    remediation: ascAppSetup.needsUserInput
+                        ? 'Run the connector wizard in a terminal so it can ask for the app, or rerun start with --asc-app <app_id>.'
+                        : 'Verify ASC credentials, key role access, and `asc apps list --output json`.',
+                },
+            ],
         }, null, 2)}\n`);
         process.exitCode = 1;
         return;
@@ -963,7 +1306,10 @@ async function main() {
             phase: 'preflight',
             configCreated: configResult.created,
             configPath,
-            projectConfigured,
+            projectConfigured: projectConfigured || analyticsProjectSetup.configured,
+            analyticsProjectId: analyticsProjectSetup.projectId || null,
+            ascAppConfigured: ascAppSetup.configured,
+            ascAppId: ascAppSetup.appId || null,
             githubRepo: configResult.githubRepo,
             connectorSetup,
             blockers,
@@ -977,7 +1323,10 @@ async function main() {
             phase: 'setup_complete',
             configCreated: configResult.created,
             configPath,
-            projectConfigured,
+            projectConfigured: projectConfigured || analyticsProjectSetup.configured,
+            analyticsProjectId: analyticsProjectSetup.projectId || null,
+            ascAppConfigured: ascAppSetup.configured,
+            ascAppId: ascAppSetup.appId || null,
             connectorSetup,
             message: 'Preflight passed. First run skipped due to --setup-only.',
         }, null, 2)}\n`);

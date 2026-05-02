@@ -14,7 +14,7 @@ import {
 } from './openclaw-growth-shared.mjs';
 
 const DEFAULT_CONFIG_PATH = 'data/openclaw-growth-engineer/config.json';
-const CONNECTOR_KEYS = ['github', 'revenuecat', 'asc'] as const;
+const CONNECTOR_KEYS = ['analytics', 'github', 'revenuecat', 'asc'] as const;
 type ConnectorKey = (typeof CONNECTOR_KEYS)[number];
 type ConnectorDefinition = {
   key: ConnectorKey;
@@ -24,6 +24,12 @@ type ConnectorDefinition = {
 };
 
 const CONNECTOR_DEFINITIONS: ConnectorDefinition[] = [
+  {
+    key: 'analytics',
+    label: 'AnalyticsCLI product analytics',
+    summary: 'Read product events, funnels, retention, users, and feedback.',
+    needs: 'An AnalyticsCLI readonly token from dash.analyticscli.com.',
+  },
   {
     key: 'github',
     label: 'GitHub code access',
@@ -103,7 +109,7 @@ OpenClaw Growth Setup Wizard
 
 Usage:
   node scripts/openclaw-growth-wizard.mjs [--out <config-path>]
-  node scripts/openclaw-growth-wizard.mjs --connectors [github,revenuecat,asc] [--config <config-path>]
+  node scripts/openclaw-growth-wizard.mjs --connectors [analytics,github,revenuecat,asc] [--config <config-path>]
 `);
   process.exit(exitCode);
 }
@@ -119,6 +125,7 @@ function normalizeConnectorKey(value): ConnectorKey | 'all' | null {
   const normalized = String(value || '').trim().toLowerCase().replace(/[_\s]+/g, '-');
   if (!normalized) return null;
   if (normalized === 'all') return 'all';
+  if (['analytics', 'analyticscli', 'product-analytics', 'events'].includes(normalized)) return 'analytics';
   if (['github', 'gh', 'github-code', 'codebase', 'code-access'].includes(normalized)) return 'github';
   if (['revenuecat', 'revenue-cat', 'rc', 'revenuecat-mcp'].includes(normalized)) return 'revenuecat';
   if (['asc', 'asc-cli', 'app-store-connect', 'appstoreconnect', 'app-store'].includes(normalized)) return 'asc';
@@ -137,6 +144,10 @@ function parseConnectorList(value): ConnectorKey[] {
     }
   }
   return [...selected];
+}
+
+function withRequiredAnalyticsConnector(selected: ConnectorKey[]): ConnectorKey[] {
+  return selected.includes('analytics') ? orderConnectors(selected) : orderConnectors(['analytics', ...selected]);
 }
 
 async function askConnectorSelection(rl): Promise<ConnectorKey[]> {
@@ -170,9 +181,8 @@ function parseConnectorAnswer(answer): ConnectorKey[] {
   const selected = new Set<ConnectorKey>();
   for (const rawEntry of String(answer || '').split(',')) {
     const entry = rawEntry.trim().toLowerCase();
-    if (entry === '1') selected.add('github');
-    if (entry === '2') selected.add('revenuecat');
-    if (entry === '3') selected.add('asc');
+    const numericConnector = CONNECTOR_DEFINITIONS[Number(entry) - 1]?.key;
+    if (numericConnector) selected.add(numericConnector);
     const key = normalizeConnectorKey(entry);
     if (key === 'all') CONNECTOR_KEYS.forEach((connector) => selected.add(connector));
     if (key && key !== 'all') selected.add(key);
@@ -541,6 +551,26 @@ async function guideGitHubConnector(rl, secrets: Record<string, string>) {
   else process.stdout.write('No GitHub token saved. GitHub setup remains pending; rerun this wizard when ready.\n\n');
 }
 
+async function guideAnalyticsConnector(rl, secrets: Record<string, string>) {
+  printSection('AnalyticsCLI product analytics', [
+    'Required baseline for OpenClaw Growth Engineer: product events, funnels, retention, users, and feedback.',
+  ]);
+  process.stdout.write('\nCreate or copy a readonly AnalyticsCLI token here:\n  https://dash.analyticscli.com/\n\n');
+  printBullets([
+    'Open your project, then API Keys.',
+    'Create/copy a readonly token.',
+    'Paste it into this terminal; the wizard stores it locally as ANALYTICSCLI_ACCESS_TOKEN.',
+    'If multiple AnalyticsCLI projects exist, setup will list them and ask which one to use.',
+  ]);
+  const token = await maybePromptSecret(
+    rl,
+    'Paste AnalyticsCLI readonly token into this local terminal',
+    'ANALYTICSCLI_ACCESS_TOKEN',
+  );
+  if (token) secrets.ANALYTICSCLI_ACCESS_TOKEN = token;
+  else process.stdout.write('No AnalyticsCLI token saved. Product analytics setup remains pending; rerun this wizard when ready.\n\n');
+}
+
 async function guideRevenueCatConnector(rl, secrets: Record<string, string>) {
   printSection('RevenueCat monetization data', [
     'Use this when OpenClaw should read subscription, product, entitlement, and revenue context.',
@@ -610,9 +640,11 @@ async function runConnectorSetupWizard(args) {
 
   const rl = createInterface({ input: process.stdin, output: process.stdout });
   try {
-    const selected = args.connectors ? parseConnectorList(args.connectors) : await askConnectorSelection(rl);
+    const selected = withRequiredAnalyticsConnector(
+      args.connectors ? parseConnectorList(args.connectors) : await askConnectorSelection(rl),
+    );
     if (selected.length === 0) {
-      throw new Error('No supported connectors selected. Use github, revenuecat, asc, or all.');
+      throw new Error('No supported connectors selected. Use analytics, github, revenuecat, asc, or all.');
     }
 
     printConnectorIntro();
@@ -623,6 +655,7 @@ async function runConnectorSetupWizard(args) {
     process.stdout.write('\n');
 
     const secrets: Record<string, string> = {};
+    if (selected.includes('analytics')) await guideAnalyticsConnector(rl, secrets);
     if (selected.includes('github')) await guideGitHubConnector(rl, secrets);
     if (selected.includes('revenuecat')) await guideRevenueCatConnector(rl, secrets);
     if (selected.includes('asc')) await guideAscConnector(rl, secrets);
