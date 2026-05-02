@@ -3,7 +3,7 @@ name: openclaw-growth-engineer
 description: OpenClaw-first growth autopilot for mobile apps. Correlate analytics, crashes, billing, feedback, store signals, and repo context into proposal drafts that can flow into OpenClaw chat, GitHub issues, or draft pull requests.
 license: MIT
 homepage: https://github.com/wotaso/analyticscli-skills
-metadata: {"author":"wotaso","version":"1.0.30","analyticscli-target":"@analyticscli/cli","analyticscli-supported-range":">=0.1.2-preview.0 <0.2.0","openclaw":{"emoji":"🚀","homepage":"https://github.com/wotaso/analyticscli-skills","requires":{"bins":["node","analyticscli"]},"install":[{"id":"analyticscli-cli","kind":"node","package":"@analyticscli/cli@preview","bins":["analyticscli"],"label":"Install/update AnalyticsCLI CLI (npm package @analyticscli/cli@preview)"}]}}
+metadata: {"author":"wotaso","version":"1.0.31","analyticscli-target":"@analyticscli/cli","analyticscli-supported-range":">=0.1.2-preview.0 <0.2.0","openclaw":{"emoji":"🚀","homepage":"https://github.com/wotaso/analyticscli-skills","requires":{"bins":["node","analyticscli"]},"install":[{"id":"analyticscli-cli","kind":"node","package":"@analyticscli/cli@preview","bins":["analyticscli"],"label":"Install/update AnalyticsCLI CLI (npm package @analyticscli/cli@preview)"}]}}
 ---
 
 # OpenClaw Growth Engineer
@@ -184,35 +184,21 @@ openclaw skills install steipete/github
 npx clawhub@latest install github
 ```
 
-Start the GitHub CLI setup flow yourself:
+GitHub setup must go through the connector wizard's permission-mode step, not a raw `gh auth login` flow. The wizard should:
 
-1. Run `git rev-parse --show-toplevel` to detect the local repo root.
-2. Run `git remote get-url origin` and infer `owner/repo` when possible.
-3. Run `gh auth status`.
-4. If `gh` is not authenticated, start `gh auth login` and tell the user to complete the browser/device flow.
-5. After auth succeeds, use local repo context for read-only code analysis immediately.
-6. Ask for issue or pull-request write permissions only if GitHub delivery is enabled.
+1. Detect repo root/remote when useful.
+2. Ask the user to choose `read-only` or `read-write`.
+3. Explain the minimum fine-grained token permissions for that chosen mode only.
+4. Store `GITHUB_TOKEN` locally when the user pastes it into the terminal wizard.
+5. Install `gh` locally only as a helper binary; do not use GitHub CLI OAuth as the default credential path because it can request broad repository/workflow permissions.
+6. Tell the user they can rerun the wizard later to change GitHub permissions.
 
-If GitHub auth is missing, do not stop at "GitHub is blocked" or "no GitHub auth configured".
-Either start the login flow directly with `gh auth login`, or, if the runtime cannot run interactive auth, print the exact next steps:
+Use least privilege:
 
-```text
-GitHub is not connected yet.
-1. Run: gh auth login
-2. Choose GitHub.com.
-3. Prefer HTTPS unless the repo already uses SSH.
-4. For code analysis only, read-only repo access is enough.
-5. If issue creation is desired, add Issues read/write.
-6. If draft PR creation is desired, add Pull requests read/write and Contents read/write.
-7. Verify with: gh auth status
-```
-
-Use the least privilege GitHub access that matches the requested workflow:
-
-- code analysis only: readable repo/code access is enough; prefer `gh auth status` / `gh auth login` when an existing GitHub CLI login can be reused
-- if the user must create a token, prefer a fine-grained read-only token with `Contents: Read` and `Metadata: Read`, and ask for access to all repositories only when the user wants cross-repo code analysis
-- issue creation: add issue write permission only when GitHub issue delivery is enabled
-- pull-request creation: add pull-request and contents write permission only when draft PR delivery is enabled
+- read-only code analysis: Metadata: Read and Contents: Read only
+- issue creation: add Issues: Read/Write only when GitHub issue delivery is enabled
+- draft PR creation: add Pull requests: Read/Write and Contents: Read/Write only when draft PR delivery is enabled
+- workflow permission: request only when the user explicitly wants OpenClaw to edit GitHub Actions workflow files
 
 ## Dependency Refresh Protocol
 

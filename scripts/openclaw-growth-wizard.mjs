@@ -13,7 +13,7 @@ const CONNECTOR_DEFINITIONS = [
         key: 'github',
         label: 'GitHub code access',
         summary: 'Read repo context and optionally create issues or draft PRs.',
-        needs: 'The wizard installs gh locally when needed, then starts GitHub.com login.',
+        needs: 'Choose read-only or read/write access; you can change it later by rerunning the wizard.',
     },
     {
         key: 'revenuecat',
@@ -457,43 +457,41 @@ async function guideGitHubConnector(rl, secrets) {
         'Use this when OpenClaw should read repo context or create GitHub delivery artifacts.',
     ]);
     printBullets([
-        'The wizard installs GitHub CLI locally when needed.',
-        'Then it starts GitHub.com login for this host.',
-        'Token fallback is only used if local install or GitHub login is not possible.',
+        'Choose the permission level you want for this host.',
+        'Read-only is enough for code context and product analysis.',
+        'Read/write is only needed if OpenClaw should create issues, branches, or draft PRs.',
+        'You can rerun this wizard later to change GitHub permissions.',
     ]);
+    const accessMode = await askChoice(rl, 'GitHub permission mode', ['read-only', 'read-write'], 'read-only');
     let hasGh = await commandExists('gh');
     if (!hasGh) {
         hasGh = await installGitHubCliUserLocal();
     }
-    let authenticated = false;
     if (hasGh) {
-        authenticated = (await runInteractiveCommand('gh auth status --hostname github.com >/dev/null 2>&1', { silent: true })) === 0;
+        process.stdout.write('GitHub CLI is available for helper commands.\n\n');
     }
-    if (hasGh && !authenticated) {
-        const runLogin = await askYesNo(rl, 'Start GitHub.com login now?', true);
-        if (runLogin) {
-            process.stdout.write('Starting GitHub.com login. Return here when it finishes.\n');
-            rl.pause();
-            await runInteractiveCommand('gh auth login --hostname github.com --git-protocol https --web');
-            rl.resume();
-            authenticated = (await runInteractiveCommand('gh auth status --hostname github.com >/dev/null 2>&1', { silent: true })) === 0;
-        }
+    if (accessMode === 'read-only') {
+        printBullets([
+            'Create a fine-grained GitHub token for only the repositories OpenClaw should read.',
+            'Required permissions: Metadata: Read, Contents: Read.',
+            'Do not grant Issues, Pull requests, Contents write, Workflow, or full repository control for read-only mode.',
+        ]);
     }
-    if (authenticated) {
-        process.stdout.write('GitHub is authenticated on this host.\n\n');
-        return;
+    else {
+        printBullets([
+            'Create a fine-grained GitHub token for only the repositories OpenClaw should modify.',
+            'Base permissions: Metadata: Read and Contents: Read.',
+            'Add Issues: Read/Write only if OpenClaw should create backlog issues.',
+            'Add Pull requests: Read/Write and Contents: Read/Write only if OpenClaw should create draft PR branches.',
+            'Add Workflow only if you explicitly want OpenClaw to edit GitHub Actions workflow files.',
+        ]);
     }
-    if (!hasGh) {
-        process.stdout.write('GitHub CLI could not be installed automatically, so the token fallback is available.\n\n');
-    }
-    const storeToken = await askYesNo(rl, hasGh
-        ? 'Use a fine-grained GITHUB_TOKEN fallback instead of or in addition to gh auth?'
-        : 'Paste a fine-grained GITHUB_TOKEN fallback now?', !hasGh);
-    if (storeToken) {
-        const token = await maybePromptSecret(rl, 'Paste GITHUB_TOKEN into this local terminal', 'GITHUB_TOKEN');
-        if (token)
-            secrets.GITHUB_TOKEN = token;
-    }
+    process.stdout.write('Token URL: https://github.com/settings/personal-access-tokens/new\n\n');
+    const token = await maybePromptSecret(rl, `Paste GITHUB_TOKEN for ${accessMode} access into this local terminal`, 'GITHUB_TOKEN');
+    if (token)
+        secrets.GITHUB_TOKEN = token;
+    else
+        process.stdout.write('No GitHub token saved. GitHub setup remains pending; rerun this wizard when ready.\n\n');
 }
 async function guideRevenueCatConnector(rl, secrets) {
     printSection('RevenueCat monetization data', [
