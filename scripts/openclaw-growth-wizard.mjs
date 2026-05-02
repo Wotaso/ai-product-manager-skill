@@ -25,7 +25,7 @@ const CONNECTOR_DEFINITIONS = [
         key: 'asc',
         label: 'App Store Connect CLI',
         summary: 'Read app, build, review, rating, TestFlight, and store metadata signals.',
-        needs: 'ASC_KEY_ID, ASC_ISSUER_ID, and an AuthKey_XXXX.p8 path on this host.',
+        needs: 'ASC_KEY_ID, ASC_ISSUER_ID, and the AuthKey_XXXX.p8 content or path.',
     },
 ];
 const ANSI = {
@@ -395,6 +395,13 @@ function resolveSecretsFile() {
         return path.join(process.env.HOME, '.config', 'openclaw-growth', 'secrets.env');
     return path.resolve('.openclaw-growth-secrets.env');
 }
+function resolveAscPrivateKeyPath(keyId) {
+    const safeKeyId = (keyId || 'OPENCLAW').trim().replace(/[^a-zA-Z0-9_-]/g, '_') || 'OPENCLAW';
+    const baseDir = process.env.HOME
+        ? path.join(process.env.HOME, '.config', 'openclaw-growth')
+        : path.resolve('.openclaw-growth');
+    return path.join(baseDir, `AuthKey_${safeKeyId}.p8`);
+}
 function renderEnvValue(value) {
     return `"${String(value).replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\$/g, '\\$')}"`;
 }
@@ -436,6 +443,27 @@ async function maybePromptSecret(rl, label, envName) {
     const suffix = existing ? 'already set in current environment' : 'leave empty to skip';
     const value = await ask(rl, `${label} (${suffix})`, '');
     return value.trim();
+}
+async function askAscPrivateKeyContent(rl) {
+    process.stdout.write('\nPaste the full .p8 file content here. Leave the first line empty if you already saved the .p8 file on this host.\n');
+    process.stdout.write('The wizard stores pasted content locally with chmod 600 and only saves ASC_PRIVATE_KEY_PATH.\n');
+    const firstLine = await rl.question('ASC_PRIVATE_KEY content: ');
+    if (!firstLine.trim())
+        return '';
+    const lines = [firstLine];
+    while (!lines.some((line) => line.includes('-----END PRIVATE KEY-----'))) {
+        const line = await rl.question('');
+        lines.push(line);
+        if (lines.length > 80) {
+            throw new Error('ASC private key paste did not reach -----END PRIVATE KEY----- within 80 lines.');
+        }
+    }
+    const value = lines.join('\n').trim();
+    if (!value.includes('-----BEGIN PRIVATE KEY-----') || !value.includes('-----END PRIVATE KEY-----')) {
+        process.stdout.write('Pasted value does not look like a .p8 private key. Skipping pasted key content.\n');
+        return '';
+    }
+    return `${value}\n`;
 }
 function printSection(title, lines = []) {
     process.stdout.write(`\n${ANSI.bold}${title}${ANSI.reset}\n`);
@@ -488,9 +516,13 @@ async function guideRevenueCatConnector(rl, secrets) {
     ]);
     process.stdout.write('\nCreate a RevenueCat secret API key here:\n  https://app.revenuecat.com/\n\n');
     printBullets([
-        'Open your project, then Project Settings -> API keys.',
-        'Create/copy a secret API key.',
-        'Use read-only access when RevenueCat offers permission choices.',
+        'Select your app.',
+        'In the sidebar, choose "Apps & providers".',
+        'Click "API keys" and generate a new secret API key.',
+        'Name it "analyticscli" and choose API version 2.',
+        'Set Charts metrics permissions to read.',
+        'Set Customer information permissions to read.',
+        'Set Project configuration permissions to read.',
     ]);
     const apiKey = await maybePromptSecret(rl, 'Paste REVENUECAT_API_KEY into this local terminal', 'REVENUECAT_API_KEY');
     if (apiKey)
@@ -508,18 +540,29 @@ async function guideAscConnector(rl, secrets) {
     ]);
     printBullets([
         'Use the least role that can read the required reports. Avoid Admin unless temporarily required.',
-        'Save the downloaded .p8 on this host with chmod 600.',
-        'Paste only the .p8 file path into this terminal.',
+        'Download the .p8 file, then paste its file content into this terminal.',
+        'If the .p8 is already saved on this host, leave the content prompt empty and paste the file path instead.',
     ]);
     const keyId = await ask(rl, 'ASC_KEY_ID (leave empty to skip)', process.env.ASC_KEY_ID || '');
     const issuerId = await ask(rl, 'ASC_ISSUER_ID (leave empty to skip)', process.env.ASC_ISSUER_ID || '');
-    const privateKeyPath = await ask(rl, 'ASC_PRIVATE_KEY_PATH (path to AuthKey_XXXX.p8, leave empty to skip)', process.env.ASC_PRIVATE_KEY_PATH || '');
     if (keyId.trim())
         secrets.ASC_KEY_ID = keyId.trim();
     if (issuerId.trim())
         secrets.ASC_ISSUER_ID = issuerId.trim();
-    if (privateKeyPath.trim())
-        secrets.ASC_PRIVATE_KEY_PATH = privateKeyPath.trim();
+    const privateKeyContent = await askAscPrivateKeyContent(rl);
+    if (privateKeyContent) {
+        const privateKeyPath = resolveAscPrivateKeyPath(keyId);
+        await fs.mkdir(path.dirname(privateKeyPath), { recursive: true, mode: 0o700 });
+        await fs.writeFile(privateKeyPath, privateKeyContent, { encoding: 'utf8', mode: 0o600 });
+        await fs.chmod(privateKeyPath, 0o600);
+        secrets.ASC_PRIVATE_KEY_PATH = privateKeyPath;
+        process.stdout.write(`Saved ASC private key to ${privateKeyPath} with chmod 600.\n`);
+    }
+    else {
+        const privateKeyPath = await ask(rl, 'ASC_PRIVATE_KEY_PATH (path to AuthKey_XXXX.p8, leave empty to skip)', process.env.ASC_PRIVATE_KEY_PATH || '');
+        if (privateKeyPath.trim())
+            secrets.ASC_PRIVATE_KEY_PATH = privateKeyPath.trim();
+    }
 }
 async function runConnectorSetupWizard(args) {
     if (!process.stdin.isTTY || !process.stdout.isTTY) {

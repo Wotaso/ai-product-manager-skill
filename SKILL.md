@@ -3,7 +3,7 @@ name: openclaw-growth-engineer
 description: OpenClaw-first growth autopilot for mobile apps. Correlate analytics, crashes, billing, feedback, store signals, and repo context into proposal drafts that can flow into OpenClaw chat, GitHub issues, or draft pull requests.
 license: MIT
 homepage: https://github.com/wotaso/analyticscli-skills
-metadata: {"author":"wotaso","version":"1.0.34","analyticscli-target":"@analyticscli/cli","analyticscli-supported-range":">=0.1.2-preview.0 <0.2.0","openclaw":{"emoji":"🚀","homepage":"https://github.com/wotaso/analyticscli-skills","requires":{"bins":["node","analyticscli"]},"install":[{"id":"analyticscli-cli","kind":"node","package":"@analyticscli/cli@preview","bins":["analyticscli"],"label":"Install/update AnalyticsCLI CLI (npm package @analyticscli/cli@preview)"}]}}
+metadata: {"author":"wotaso","version":"1.0.36","analyticscli-target":"@analyticscli/cli","analyticscli-supported-range":">=0.1.2-preview.0 <0.2.0","openclaw":{"emoji":"🚀","homepage":"https://github.com/wotaso/analyticscli-skills","requires":{"bins":["node","analyticscli"]},"install":[{"id":"analyticscli-cli","kind":"node","package":"@analyticscli/cli@preview","bins":["analyticscli"],"label":"Install/update AnalyticsCLI CLI (npm package @analyticscli/cli@preview)"}]}}
 ---
 
 # OpenClaw Growth Engineer
@@ -53,7 +53,7 @@ Setup should feel guided for a developer, not like a silent preflight dump.
 - After each setup phase, summarize only the result and the next concrete action.
 - Keep secrets out of prompts, repo files, logs, and command arguments; prefer OpenClaw secret storage or environment injection.
 - Never ask the user to paste API keys, GitHub tokens, or App Store Connect `.p8` private-key contents into Discord, OpenClaw chat, GitHub issues, PRs, or any shared transcript. Discord/chat is not an appropriate secret transport.
-- For secrets, give a secure host-terminal path: set env vars in the runtime shell, an OpenClaw secret store, a password manager injection flow, or a locked-down env file such as `~/.config/openclaw-growth/secrets.env` with `chmod 600`. For `.p8`, prefer writing the file on the host with `umask 077`, store only its path as `ASC_PRIVATE_KEY_PATH`, and never echo the private key back.
+- For secrets, give a secure host-terminal path: set env vars in the runtime shell, an OpenClaw secret store, a password manager injection flow, or a locked-down env file such as `~/.config/openclaw-growth/secrets.env` with `chmod 600`. For `.p8`, the terminal wizard may accept pasted file content, write it to `~/.config/openclaw-growth/AuthKey_<KEY_ID>.p8` with `chmod 600`, and store only `ASC_PRIVATE_KEY_PATH`; never echo the private key back.
 - When SDK instrumentation is missing or weak, guide the developer through the `analyticscli-ts-sdk` setup path so analytics events become useful for later growth analysis.
 - If AnalyticsCLI has no default project and multiple projects are visible, do not report that as a hard error. List the available projects, ask the user which one to use, persist the choice with `openclaw start --config openclaw.config.json --project <project_id>` or `analyticscli projects select <project_id>`, and then retry the setup/run.
 
@@ -156,7 +156,7 @@ Safe secret handoff rules:
   # ASC_PRIVATE_KEY_PATH=/home/lo/.config/openclaw-growth/AuthKey_XXXX.p8
   chmod 600 ~/.config/openclaw-growth/secrets.env
   ```
-- Good `.p8` pattern: save the downloaded App Store Connect private key directly to `~/.config/openclaw-growth/AuthKey_<KEY_ID>.p8`, run `chmod 600` on it, and share only `ASC_PRIVATE_KEY_PATH`.
+- Good `.p8` pattern: paste the downloaded App Store Connect private key content into the local terminal wizard so it can save `~/.config/openclaw-growth/AuthKey_<KEY_ID>.p8` with `chmod 600`, or save the file yourself and share only `ASC_PRIVATE_KEY_PATH`.
 - If OpenClaw runs under systemd, prefer an `EnvironmentFile=` pointing at the `chmod 600` env file and restart the service; never put secrets in command-line args.
 
 ## Mandatory Baseline
@@ -345,7 +345,7 @@ ASC setup guidance:
 - Recommend the least-privilege App Store Connect API access that can read the required App Store Connect reports: prefer a Sales/Sales and Reports style role for generated reports; Finance can work but is broader; Admin should only be used temporarily when a new report type must be requested for the first time.
 - Prefer an individual API key for a user limited to the target app when possible; team API keys can cover all apps and are broader.
 - Tell the user where to create the key and include direct URLs: https://appstoreconnect.apple.com/access/integrations/api for team keys, https://appstoreconnect.apple.com/access/users for access management, or https://appstoreconnect.apple.com/account for individual keys.
-- Store only env vars/secrets: `ASC_KEY_ID`, `ASC_ISSUER_ID`, and `ASC_PRIVATE_KEY` or `ASC_PRIVATE_KEY_PATH`; never commit the `.p8` private key.
+- Store only env vars/secrets: `ASC_KEY_ID`, `ASC_ISSUER_ID`, and `ASC_PRIVATE_KEY_PATH`; the wizard can create the `.p8` file from pasted terminal content. Never commit the `.p8` private key.
 - Do not ask for `ASC_APP_ID` upfront. After auth succeeds, auto-detect/list apps; if ambiguous, ask for the app name first. Store `ASC_APP_ID` only after it has been resolved.
 - After the key is present and the target app is inferred or selected, run one read-only `asc` smoke test before marking ASC connected.
 - Prefer `asc auth login` when the local `asc` CLI supports keychain storage; otherwise use runtime env injection.
@@ -354,8 +354,8 @@ RevenueCat setup guidance:
 
 - Ask: "Soll RevenueCat fuer Monetization-/Subscription-Daten verbunden werden?"
 - For SDK instrumentation, use the public app-specific SDK key only in the app.
-- For server-side growth summaries, request a RevenueCat secret API key stored server-side only. Prefer a v2 secret key with read-only permissions for charts/metrics and required project configuration resources such as apps, products, offerings, packages, and entitlements; add customer/subscriber read only if the selected summary needs it.
-- Tell the user to open https://app.revenuecat.com/, select the project, then Project Settings -> API keys. Do not ask for a RevenueCat project id just to build a deep link.
+- For server-side growth summaries, request a RevenueCat secret API key stored server-side only. Tell the user to generate a new secret API key named `analyticscli`, choose API version 2, and set Charts metrics, Customer information, and Project configuration permissions to read.
+- Tell the user to open https://app.revenuecat.com/, select the app, then choose "Apps & providers" in the sidebar and click "API keys". Do not ask for a RevenueCat project id just to build a deep link.
 - Store it as `REVENUECAT_API_KEY` in OpenClaw secret storage or runtime env; never put it in client code, config JSON, issues, or PR bodies.
 
 Mobile-focused examples:
@@ -446,7 +446,7 @@ Use the legacy bootstrap-and-copy runtime only when the standalone CLI is unavai
   - use the classic token page at `https://github.com/settings/tokens/new`; use `public_repo` for public repos, `repo` for private repo access, and `workflow` only for GitHub Actions workflow edits
   - issue mode: add `Issues: Read/Write` only when issue creation is enabled
   - pull-request mode: add `Pull requests: Read/Write` and `Contents: Read/Write` only when draft PR creation is enabled
-- `ASC_KEY_ID`, `ASC_ISSUER_ID`, `ASC_PRIVATE_KEY` or `ASC_PRIVATE_KEY_PATH`
+- `ASC_KEY_ID`, `ASC_ISSUER_ID`, `ASC_PRIVATE_KEY_PATH`
   - optional; ask before setup
   - App Store Connect read-only reporting data only
   - prefer Sales/Sales and Reports style access; Admin only temporarily for first-time report type requests
