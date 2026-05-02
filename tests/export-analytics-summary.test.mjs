@@ -1,0 +1,65 @@
+import assert from 'node:assert/strict';
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
+import { spawnSync } from 'node:child_process';
+import test from 'node:test';
+
+const skillRoot = resolve(import.meta.dirname, '..');
+const exporter = join(skillRoot, 'scripts', 'export-analytics-summary.mjs');
+
+test('export-analytics-summary passes the wizard token to analyticscli commands', () => {
+  const tempDir = mkdtempSync(join(tmpdir(), 'openclaw-analytics-export-'));
+  const fakeBin = join(tempDir, 'bin');
+  const fakeAnalyticsCli = join(fakeBin, 'analyticscli');
+  mkdirSync(fakeBin, { recursive: true });
+  writeFileSync(
+    fakeAnalyticsCli,
+    `#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ "\${1:-}" != "--readonly-token" || "\${2:-}" != "fresh-token" ]]; then
+  echo '{"error":{"code":"UNAUTHORIZED","message":"Token has been revoked"}}' >&2
+  exit 1
+fi
+shift 2
+
+if [[ "$*" == *" get onboarding-journey "* ]]; then
+  cat <<'JSON'
+{"starters":100,"completedUsers":40,"completionRate":40,"paywallReachedUsers":50,"paywallSkippedUsers":30,"paywallSkipRateFromPaywall":60,"purchasedUsers":4,"purchaseRateFromPaywall":8}
+JSON
+  exit 0
+fi
+
+if [[ "$*" == *" retention "* ]]; then
+  cat <<'JSON'
+{"cohortSize":100,"days":[{"day":7,"retentionRate":0.05}]}
+JSON
+  exit 0
+fi
+
+echo "{}"
+`,
+    { mode: 0o755 },
+  );
+
+  try {
+    const result = spawnSync('node', [exporter], {
+      cwd: skillRoot,
+      env: {
+        ...process.env,
+        PATH: `${fakeBin}:${process.env.PATH || ''}`,
+        ANALYTICSCLI_ACCESS_TOKEN: 'fresh-token',
+        OPENCLAW_GROWTH_SECRETS_FILE: join(tempDir, 'missing.env'),
+      },
+      encoding: 'utf8',
+    });
+
+    assert.equal(result.status, 0, `${result.stderr}\n${result.stdout}`);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.meta.source, 'analyticscli');
+    assert(payload.signals.length > 0);
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});

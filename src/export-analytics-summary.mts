@@ -104,7 +104,12 @@ function runJsonCommand(command, commandArgs) {
 }
 
 function buildBaseArgs(input) {
-  const args = ['--format', 'json'];
+  const args = [];
+  const token = String(process.env.ANALYTICSCLI_ACCESS_TOKEN || process.env.ANALYTICSCLI_READONLY_TOKEN || '').trim();
+  if (token) {
+    args.push('--readonly-token', token);
+  }
+  args.push('--format', 'json');
   if (input.project) {
     args.push('--project', input.project);
   }
