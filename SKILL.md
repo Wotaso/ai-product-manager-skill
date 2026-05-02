@@ -3,7 +3,7 @@ name: openclaw-growth-engineer
 description: OpenClaw-first growth autopilot for mobile apps. Correlate analytics, crashes, billing, feedback, store signals, and repo context into proposal drafts that can flow into OpenClaw chat, GitHub issues, or draft pull requests.
 license: MIT
 homepage: https://github.com/wotaso/analyticscli-skills
-metadata: {"author":"wotaso","version":"1.0.31","analyticscli-target":"@analyticscli/cli","analyticscli-supported-range":">=0.1.2-preview.0 <0.2.0","openclaw":{"emoji":"🚀","homepage":"https://github.com/wotaso/analyticscli-skills","requires":{"bins":["node","analyticscli"]},"install":[{"id":"analyticscli-cli","kind":"node","package":"@analyticscli/cli@preview","bins":["analyticscli"],"label":"Install/update AnalyticsCLI CLI (npm package @analyticscli/cli@preview)"}]}}
+metadata: {"author":"wotaso","version":"1.0.32","analyticscli-target":"@analyticscli/cli","analyticscli-supported-range":">=0.1.2-preview.0 <0.2.0","openclaw":{"emoji":"🚀","homepage":"https://github.com/wotaso/analyticscli-skills","requires":{"bins":["node","analyticscli"]},"install":[{"id":"analyticscli-cli","kind":"node","package":"@analyticscli/cli@preview","bins":["analyticscli"],"label":"Install/update AnalyticsCLI CLI (npm package @analyticscli/cli@preview)"}]}}
 ---
 
 # OpenClaw Growth Engineer
@@ -136,7 +136,7 @@ Reference URLs for the wizard or for explicit follow-up questions:
 - App Store Connect API keys: https://appstoreconnect.apple.com/access/integrations/api
 - App Store Connect users/access: https://appstoreconnect.apple.com/access/users
 - App Store Connect individual API key profile: https://appstoreconnect.apple.com/account
-- GitHub fine-grained token creation: https://github.com/settings/personal-access-tokens/new
+- GitHub token creation: https://github.com/settings/tokens/new
 - GitHub CLI auth docs: https://cli.github.com/manual/gh_auth_login
 - GitHub CLI install docs: https://github.com/cli/cli#installation
 - GitHub repo settings/apps, for repository-level access checks: https://github.com/settings/installations
@@ -188,14 +188,14 @@ GitHub setup must go through the connector wizard's permission-mode step, not a 
 
 1. Detect repo root/remote when useful.
 2. Ask the user to choose `read-only` or `read-write`.
-3. Explain the minimum fine-grained token permissions for that chosen mode only.
+3. Explain the minimum GitHub token scopes for that chosen mode only.
 4. Store `GITHUB_TOKEN` locally when the user pastes it into the terminal wizard.
 5. Install `gh` locally only as a helper binary; do not use GitHub CLI OAuth as the default credential path because it can request broad repository/workflow permissions.
 6. Tell the user they can rerun the wizard later to change GitHub permissions.
 
 Use least privilege:
 
-- read-only code analysis: Metadata: Read and Contents: Read only
+- read-only code analysis: use the minimum scopes GitHub allows for the selected repo type
 - issue creation: add Issues: Read/Write only when GitHub issue delivery is enabled
 - draft PR creation: add Pull requests: Read/Write and Contents: Read/Write only when draft PR delivery is enabled
 - workflow permission: request only when the user explicitly wants OpenClaw to edit GitHub Actions workflow files
@@ -444,7 +444,7 @@ Use the legacy bootstrap-and-copy runtime only when the standalone CLI is unavai
 - `GITHUB_TOKEN`
   - strongly recommended with readable repo/code access for code-aware analysis
   - required with write scopes only when GitHub issue or pull-request delivery is enabled
-  - prefer GitHub CLI auth; if a token is needed for analysis, use fine-grained read-only `Contents: Read` and `Metadata: Read`
+  - use the classic token page at `https://github.com/settings/tokens/new` and choose the minimum scopes GitHub allows for the selected repo type
   - issue mode: add `Issues: Read/Write` only when issue creation is enabled
   - pull-request mode: add `Pull requests: Read/Write` and `Contents: Read/Write` only when draft PR creation is enabled
 - `ASC_KEY_ID`, `ASC_ISSUER_ID`, `ASC_PRIVATE_KEY` or `ASC_PRIVATE_KEY_PATH`

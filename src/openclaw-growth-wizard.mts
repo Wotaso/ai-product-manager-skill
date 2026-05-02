@@ -499,20 +499,20 @@ async function guideGitHubConnector(rl, secrets: Record<string, string>) {
 
   if (accessMode === 'read-only') {
     printBullets([
-      'Create a fine-grained GitHub token for only the repositories OpenClaw should read.',
-      'Required permissions: Metadata: Read, Contents: Read.',
-      'Do not grant Issues, Pull requests, Contents write, Workflow, or full repository control for read-only mode.',
+      'Create a GitHub token for the repositories OpenClaw should read.',
+      'Use the minimum scopes GitHub allows for your repo type.',
+      'Do not select workflow, packages, admin, delete, or organization scopes for read-only mode.',
     ]);
   } else {
     printBullets([
-      'Create a fine-grained GitHub token for only the repositories OpenClaw should modify.',
-      'Base permissions: Metadata: Read and Contents: Read.',
-      'Add Issues: Read/Write only if OpenClaw should create backlog issues.',
-      'Add Pull requests: Read/Write and Contents: Read/Write only if OpenClaw should create draft PR branches.',
-      'Add Workflow only if you explicitly want OpenClaw to edit GitHub Actions workflow files.',
+      'Create a GitHub token for the repositories OpenClaw should modify.',
+      'Start with the minimum repo access needed for the selected repositories.',
+      'Add issue-related access only if OpenClaw should create backlog issues.',
+      'Add PR/contents write access only if OpenClaw should create draft PR branches.',
+      'Select workflow only if you explicitly want OpenClaw to edit GitHub Actions workflow files.',
     ]);
   }
-  process.stdout.write('Token URL: https://github.com/settings/personal-access-tokens/new\n\n');
+  process.stdout.write('Token URL: https://github.com/settings/tokens/new\n\n');
 
   const token = await maybePromptSecret(rl, `Paste GITHUB_TOKEN for ${accessMode} access into this local terminal`, 'GITHUB_TOKEN');
   if (token) secrets.GITHUB_TOKEN = token;
