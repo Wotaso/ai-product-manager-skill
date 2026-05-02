@@ -202,9 +202,13 @@ async function checkGitHub(config, timeoutMs) {
   }
 
   if (token && !hasRepo) {
-    return connector('partial', 'GITHUB_TOKEN is set, but project.githubRepo is not configured');
+    return connector('partial', 'GITHUB_TOKEN is set, but project.githubRepo is not configured', {
+      nextAction: 'Run: node scripts/openclaw-growth-wizard.mjs --connectors github, then enter the repo as owner/name.',
+    });
   }
-  return connector('not_connected', hasRepo ? 'No GITHUB_TOKEN or gh auth found' : 'project.githubRepo is not configured');
+  return connector('not_connected', hasRepo ? 'No GITHUB_TOKEN or gh auth found' : 'project.githubRepo is not configured', {
+    nextAction: 'Run: node scripts/openclaw-growth-wizard.mjs --connectors github.',
+  });
 }
 
 function summarizeAnalytics(preflight, config) {
@@ -276,6 +280,9 @@ async function main() {
 
   const values = Object.values(connectors);
   const allConnected = values.every((entry: any) => entry.status === 'connected');
+  const connectorNextActions = values
+    .map((entry: any) => entry.nextAction)
+    .filter((value): value is string => typeof value === 'string' && value.trim().length > 0);
   const result = {
     ok: allConnected,
     configPath,
@@ -284,7 +291,7 @@ async function main() {
     connectors,
     nextAction: allConnected
       ? null
-      : 'Run the connector wizard for any connector whose status is blocked, partial, not_enabled, or not_connected.',
+      : connectorNextActions[0] || 'Run the connector wizard for any connector whose status is blocked, partial, not_enabled, or not_connected.',
   };
 
   process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);

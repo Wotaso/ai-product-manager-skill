@@ -655,7 +655,15 @@ async function installGitHubConnector() {
   if (!ok) {
     ok = await installGitHubCliUserLocal(details);
   }
-  return { connector: 'github', ok, detail: `${details.join('; ')}${ok ? '; next run gh auth status or gh auth login' : ''}` };
+  const repo = await detectGitHubRepo();
+  if (repo) {
+    details.push(`GitHub repo configured for code access: ${repo}`);
+  } else if (process.env.GITHUB_TOKEN) {
+    details.push('GITHUB_TOKEN is set, but no GitHub repo is configured yet; rerun connector wizard for github and enter owner/name');
+  } else {
+    details.push('GitHub token/repo not fully configured yet; rerun connector wizard for github when ready');
+  }
+  return { connector: 'github', ok, detail: details.join('; ') };
 }
 
 async function installAscConnector() {
