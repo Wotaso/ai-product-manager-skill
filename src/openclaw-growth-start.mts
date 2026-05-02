@@ -730,9 +730,14 @@ function parseGitHubRepoFromRemote(remoteUrl) {
   return null;
 }
 
+function isConfiguredGitHubRepo(value) {
+  const repo = String(value || '').trim();
+  return Boolean(repo && repo !== 'owner/repo' && /^[^/\s]+\/[^/\s]+$/.test(repo));
+}
+
 async function detectGitHubRepo() {
   const explicit = String(process.env.OPENCLAW_GITHUB_REPO || '').trim();
-  if (explicit) return explicit;
+  if (isConfiguredGitHubRepo(explicit)) return explicit;
 
   const remoteResult = await runShellCommand('git config --get remote.origin.url', 10_000);
   if (!remoteResult.ok) return null;
@@ -741,6 +746,22 @@ async function detectGitHubRepo() {
 
 async function ensureConfig(configPath) {
   if (await fileExists(configPath)) {
+    const config = await readJson(configPath);
+    if (!isConfiguredGitHubRepo(config?.project?.githubRepo)) {
+      const detectedRepo = await detectGitHubRepo();
+      if (detectedRepo) {
+        config.project = {
+          ...(config.project || {}),
+          githubRepo: detectedRepo,
+        };
+        await writeJson(configPath, config);
+        return {
+          created: false,
+          configPath,
+          githubRepo: detectedRepo,
+        };
+      }
+    }
     return {
       created: false,
       configPath,
@@ -751,7 +772,7 @@ async function ensureConfig(configPath) {
   const templatePath = path.resolve(DEFAULT_TEMPLATE_PATH);
   const template = await readJson(templatePath);
   const detectedRepo = await detectGitHubRepo();
-  const githubRepo = detectedRepo || String(template.project?.githubRepo || 'owner/repo');
+  const githubRepo = detectedRepo || '';
 
   const config = {
     ...template,

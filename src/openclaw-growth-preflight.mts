@@ -413,6 +413,11 @@ function sourceEnabled(config, sourceName) {
   return Boolean(config?.sources?.[sourceName] && config.sources[sourceName].enabled !== false);
 }
 
+function isConfiguredGitHubRepo(value) {
+  const repo = String(value || '').trim();
+  return Boolean(repo && repo !== 'owner/repo' && /^[^/\s]+\/[^/\s]+$/.test(repo));
+}
+
 async function fetchWithTimeout(url, options, timeoutMs) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -666,7 +671,9 @@ async function runConnectionChecks({ checks, config, timeoutMs }) {
   const sentryTokenEnv = getSecretName(config, 'sentryTokenEnv', 'SENTRY_AUTH_TOKEN');
   const feedbackTokenEnv = getSecretName(config, 'feedbackTokenEnv', 'FEEDBACK_API_TOKEN');
   const githubTokenEnv = getSecretName(config, 'githubTokenEnv', 'GITHUB_TOKEN');
-  const githubRepo = String(config?.project?.githubRepo || '').trim();
+  const githubRepo = isConfiguredGitHubRepo(config?.project?.githubRepo)
+    ? String(config.project.githubRepo).trim()
+    : '';
   const actionMode = getActionMode(config);
   const requiresGitHubDelivery = shouldAutoCreateGitHubArtifact(config);
   const commandCwd = getProjectCommandCwd(config);
@@ -912,7 +919,9 @@ async function main() {
       analyticscliEnsure.detail,
     );
 
-    const githubRepo = String(config.project?.githubRepo || '').trim();
+    const githubRepo = isConfiguredGitHubRepo(config.project?.githubRepo)
+      ? String(config.project.githubRepo).trim()
+      : '';
     addCheck(
       checks,
       'project:github-repo',

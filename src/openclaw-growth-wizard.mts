@@ -334,6 +334,29 @@ async function runInteractiveCommand(command, options: { env?: NodeJS.ProcessEnv
   });
 }
 
+async function runCommandCapture(command, options: { env?: NodeJS.ProcessEnv } = {}) {
+  return await new Promise<{ ok: boolean; stdout: string; stderr: string; code: number | null }>((resolve) => {
+    const child = spawn('/bin/sh', ['-lc', command], {
+      env: options.env ?? process.env,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', (chunk) => {
+      stdout += String(chunk);
+    });
+    child.stderr.on('data', (chunk) => {
+      stderr += String(chunk);
+    });
+    child.on('error', (error) => {
+      resolve({ ok: false, stdout, stderr: error.message, code: null });
+    });
+    child.on('close', (code) => {
+      resolve({ ok: code === 0, stdout, stderr, code });
+    });
+  });
+}
+
 function getUserLocalBinDir() {
   return process.env.HOME ? path.join(process.env.HOME, '.local', 'bin') : null;
 }
@@ -420,6 +443,33 @@ async function installGitHubCliUserLocal() {
     process.stdout.write(`Automatic gh install failed: ${error instanceof Error ? error.message : String(error)}\n`);
     return false;
   }
+}
+
+function parseGitHubRepoFromRemote(remoteUrl) {
+  const value = String(remoteUrl || '').trim();
+  if (!value) return null;
+
+  const sshMatch = value.match(/^git@github\.com:([^/]+\/[^/]+?)(?:\.git)?$/i);
+  if (sshMatch) return sshMatch[1];
+
+  const httpsMatch = value.match(/^https?:\/\/github\.com\/([^/]+\/[^/]+?)(?:\.git)?$/i);
+  if (httpsMatch) return httpsMatch[1];
+
+  return null;
+}
+
+function isConfiguredGitHubRepo(value) {
+  const repo = String(value || '').trim();
+  return Boolean(repo && repo !== 'owner/repo' && /^[^/\s]+\/[^/\s]+$/.test(repo));
+}
+
+async function detectGitHubRepo() {
+  const explicit = String(process.env.OPENCLAW_GITHUB_REPO || '').trim();
+  if (isConfiguredGitHubRepo(explicit)) return explicit;
+
+  const remoteResult = await runCommandCapture('git config --get remote.origin.url');
+  if (!remoteResult.ok) return null;
+  return parseGitHubRepoFromRemote(remoteResult.stdout);
 }
 
 function resolveSecretsFile() {
@@ -705,6 +755,23 @@ async function guideGitHubConnector(rl, secrets: Record<string, string>) {
   const token = await maybePromptSecret(rl, 'Paste GITHUB_TOKEN into this local terminal', 'GITHUB_TOKEN');
   if (token) secrets.GITHUB_TOKEN = token;
   else process.stdout.write('No GitHub token saved. GitHub setup remains pending; rerun this wizard when ready.\n\n');
+
+  const existingRepo = isConfiguredGitHubRepo(process.env.OPENCLAW_GITHUB_REPO)
+    ? process.env.OPENCLAW_GITHUB_REPO.trim()
+    : '';
+  const detectedRepo = await detectGitHubRepo();
+  const repo = await ask(
+    rl,
+    'GitHub repo for code access (owner/name, leave empty to skip)',
+    existingRepo || detectedRepo || '',
+  );
+  if (isConfiguredGitHubRepo(repo)) {
+    secrets.OPENCLAW_GITHUB_REPO = repo.trim();
+  } else if (repo.trim()) {
+    process.stdout.write('GitHub repo was not saved because it must look like owner/name.\n\n');
+  } else {
+    process.stdout.write('No GitHub repo saved. GitHub token is stored, but code access remains partial until a repo is configured.\n\n');
+  }
 }
 
 async function guideAnalyticsConnector(rl, secrets: Record<string, string>) {
