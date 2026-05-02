@@ -5,6 +5,7 @@ import process from 'node:process';
 import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline/promises';
 import { emitKeypressEvents } from 'node:readline';
+import { createPrivateKey } from 'node:crypto';
 import { buildExtraSourceConfig, getDefaultSourceCommand, getDefaultSourceHint, getDefaultSourcePath, } from './openclaw-growth-shared.mjs';
 const DEFAULT_CONFIG_PATH = 'data/openclaw-growth-engineer/config.json';
 const CONNECTOR_KEYS = ['analytics', 'github', 'revenuecat', 'asc'];
@@ -452,26 +453,106 @@ async function maybePromptSecret(rl, label, envName) {
     const value = await ask(rl, `${label} (${suffix})`, '');
     return value.trim();
 }
+function validateAscPrivateKeyContent(value) {
+    if (!value.includes('-----BEGIN PRIVATE KEY-----') || !value.includes('-----END PRIVATE KEY-----')) {
+        return 'Missing BEGIN/END PRIVATE KEY markers.';
+    }
+    try {
+        createPrivateKey(value);
+        return null;
+    }
+    catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        return `Invalid .p8 private key content: ${message}`;
+    }
+}
 async function askAscPrivateKeyContent(rl) {
     process.stdout.write('\nPaste the full .p8 file content here. Leave the first line empty if you already saved the .p8 file on this host.\n');
-    process.stdout.write('The wizard stores pasted content locally with chmod 600 and only saves ASC_PRIVATE_KEY_PATH.\n');
-    const firstLine = await rl.question('ASC_PRIVATE_KEY content: ');
-    if (!firstLine.trim())
-        return '';
-    const lines = [firstLine];
-    while (!lines.some((line) => line.includes('-----END PRIVATE KEY-----'))) {
-        const line = await rl.question('');
-        lines.push(line);
-        if (lines.length > 80) {
-            throw new Error('ASC private key paste did not reach -----END PRIVATE KEY----- within 80 lines.');
+    process.stdout.write('The wizard validates the pasted key, stores it locally with chmod 600, and only saves ASC_PRIVATE_KEY_PATH.\n');
+    while (true) {
+        const value = await readAscPrivateKeyPaste(rl);
+        if (!value.trim())
+            return '';
+        const validationError = validateAscPrivateKeyContent(value);
+        if (!validationError)
+            return value;
+        process.stdout.write(`${validationError}\n`);
+        process.stdout.write('The .p8 was not saved. Paste the full file again from BEGIN to END, or leave empty to use a path.\n');
+    }
+}
+async function readAscPrivateKeyPaste(rl) {
+    return await new Promise((resolve, reject) => {
+        let buffer = '';
+        let settled = false;
+        let lineCount = 0;
+        const previousEncoding = process.stdin.readableEncoding;
+        const cleanup = () => {
+            process.stdin.off('data', onData);
+            process.stdin.off('error', onError);
+            if (previousEncoding)
+                process.stdin.setEncoding(previousEncoding);
+            rl.resume();
+        };
+        const finish = (value) => {
+            if (settled)
+                return;
+            settled = true;
+            cleanup();
+            resolve(value ? `${String(value).trim()}\n` : '');
+        };
+        const onError = (error) => {
+            if (settled)
+                return;
+            settled = true;
+            cleanup();
+            reject(error);
+        };
+        const onData = (chunk) => {
+            buffer += String(chunk);
+            lineCount = buffer.split(/\r?\n/).length;
+            if (/^\s*(?:\r?\n)/.test(buffer)) {
+                finish('');
+                return;
+            }
+            const endMatch = buffer.match(/-----END PRIVATE KEY-----[^\r\n]*(?:\r?\n|$)/);
+            if (endMatch?.index !== undefined) {
+                finish(buffer.slice(0, endMatch.index + endMatch[0].length));
+                return;
+            }
+            if (lineCount > 80) {
+                process.stdout.write('Paste looks incomplete: no -----END PRIVATE KEY----- line found within 80 lines.\n');
+                finish('');
+            }
+        };
+        rl.pause();
+        process.stdin.setEncoding('utf8');
+        process.stdin.on('data', onData);
+        process.stdin.on('error', onError);
+        process.stdout.write('ASC_PRIVATE_KEY content: ');
+        process.stdin.resume();
+    });
+}
+async function validateAscPrivateKeyPath(filePath) {
+    const raw = await fs.readFile(filePath, 'utf8');
+    return validateAscPrivateKeyContent(raw);
+}
+async function askAscPrivateKeyPath(rl) {
+    while (true) {
+        const privateKeyPath = await ask(rl, 'ASC_PRIVATE_KEY_PATH (path to AuthKey_XXXX.p8, leave empty to skip)', process.env.ASC_PRIVATE_KEY_PATH || '');
+        const trimmedPath = privateKeyPath.trim();
+        if (!trimmedPath)
+            return '';
+        try {
+            const validationError = await validateAscPrivateKeyPath(trimmedPath);
+            if (!validationError)
+                return trimmedPath;
+            process.stdout.write(`${validationError}\n`);
         }
+        catch (error) {
+            process.stdout.write(`Could not read .p8 file: ${error instanceof Error ? error.message : String(error)}\n`);
+        }
+        process.stdout.write('The ASC private key path was not saved. Paste a valid path, or leave empty to skip.\n');
     }
-    const value = lines.join('\n').trim();
-    if (!value.includes('-----BEGIN PRIVATE KEY-----') || !value.includes('-----END PRIVATE KEY-----')) {
-        process.stdout.write('Pasted value does not look like a .p8 private key. Skipping pasted key content.\n');
-        return '';
-    }
-    return `${value}\n`;
 }
 function printSection(title, lines = []) {
     process.stdout.write(`\n${ANSI.bold}${title}${ANSI.reset}\n`);
@@ -589,7 +670,7 @@ async function guideAscConnector(rl, secrets) {
         process.stdout.write(`Saved ASC private key to ${privateKeyPath} with chmod 600.\n`);
     }
     else {
-        const privateKeyPath = await ask(rl, 'ASC_PRIVATE_KEY_PATH (path to AuthKey_XXXX.p8, leave empty to skip)', process.env.ASC_PRIVATE_KEY_PATH || '');
+        const privateKeyPath = await askAscPrivateKeyPath(rl);
         if (privateKeyPath.trim())
             secrets.ASC_PRIVATE_KEY_PATH = privateKeyPath.trim();
     }

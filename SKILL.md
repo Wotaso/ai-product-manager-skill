@@ -3,7 +3,7 @@ name: openclaw-growth-engineer
 description: OpenClaw-first growth autopilot for mobile apps. Correlate analytics, crashes, billing, feedback, store signals, and repo context into proposal drafts that can flow into OpenClaw chat, GitHub issues, or draft pull requests.
 license: MIT
 homepage: https://github.com/wotaso/analyticscli-skills
-metadata: {"author":"wotaso","version":"1.0.38","analyticscli-target":"@analyticscli/cli","analyticscli-supported-range":">=0.1.2-preview.0 <0.2.0","openclaw":{"emoji":"🚀","homepage":"https://github.com/wotaso/analyticscli-skills","requires":{"bins":["node","analyticscli"]},"install":[{"id":"analyticscli-cli","kind":"node","package":"@analyticscli/cli@preview","bins":["analyticscli"],"label":"Install/update AnalyticsCLI CLI (npm package @analyticscli/cli@preview)"}]}}
+metadata: {"author":"wotaso","version":"1.0.39","analyticscli-target":"@analyticscli/cli","analyticscli-supported-range":">=0.1.2-preview.0 <0.2.0","openclaw":{"emoji":"🚀","homepage":"https://github.com/wotaso/analyticscli-skills","requires":{"bins":["node","analyticscli"]},"install":[{"id":"analyticscli-cli","kind":"node","package":"@analyticscli/cli@preview","bins":["analyticscli"],"label":"Install/update AnalyticsCLI CLI (npm package @analyticscli/cli@preview)"}]}}
 ---
 
 # OpenClaw Growth Engineer
@@ -54,7 +54,7 @@ Setup should feel guided for a developer, not like a silent preflight dump.
 - After each setup phase, summarize only the result and the next concrete action.
 - Keep secrets out of prompts, repo files, logs, and command arguments; prefer OpenClaw secret storage or environment injection.
 - Never ask the user to paste API keys, GitHub tokens, or App Store Connect `.p8` private-key contents into Discord, OpenClaw chat, GitHub issues, PRs, or any shared transcript. Discord/chat is not an appropriate secret transport.
-- For secrets, give a secure host-terminal path: set env vars in the runtime shell, an OpenClaw secret store, a password manager injection flow, or a locked-down env file such as `~/.config/openclaw-growth/secrets.env` with `chmod 600`. For `.p8`, the terminal wizard may accept pasted file content, write it to `~/.config/openclaw-growth/AuthKey_<KEY_ID>.p8` with `chmod 600`, and store only `ASC_PRIVATE_KEY_PATH`; never echo the private key back.
+- For secrets, give a secure host-terminal path: set env vars in the runtime shell, an OpenClaw secret store, a password manager injection flow, or a locked-down env file such as `~/.config/openclaw-growth/secrets.env` with `chmod 600`. For `.p8`, the terminal wizard must validate pasted file content cryptographically before writing it to `~/.config/openclaw-growth/AuthKey_<KEY_ID>.p8` with `chmod 600`; store only `ASC_PRIVATE_KEY_PATH` and never echo the private key back.
 - When SDK instrumentation is missing or weak, guide the developer through the `analyticscli-ts-sdk` setup path so analytics events become useful for later growth analysis.
 - If AnalyticsCLI has no default project and multiple projects are visible, do not report that as a hard error. List the available projects, ask the user which one to use, persist the choice with `openclaw start --config openclaw.config.json --project <project_id>` or `analyticscli projects select <project_id>`, and then retry the setup/run.
 
@@ -159,7 +159,7 @@ Safe secret handoff rules:
   # ASC_PRIVATE_KEY_PATH=/home/lo/.config/openclaw-growth/AuthKey_XXXX.p8
   chmod 600 ~/.config/openclaw-growth/secrets.env
   ```
-- Good `.p8` pattern: paste the downloaded App Store Connect private key content into the local terminal wizard so it can save `~/.config/openclaw-growth/AuthKey_<KEY_ID>.p8` with `chmod 600`, or save the file yourself and share only `ASC_PRIVATE_KEY_PATH`.
+- Good `.p8` pattern: paste the full downloaded App Store Connect private key content into the local terminal wizard so it can validate and save `~/.config/openclaw-growth/AuthKey_<KEY_ID>.p8` with `chmod 600`, or save the file yourself and share only `ASC_PRIVATE_KEY_PATH`.
 - If OpenClaw runs under systemd, prefer an `EnvironmentFile=` pointing at the `chmod 600` env file and restart the service; never put secrets in command-line args.
 
 ## Mandatory Baseline
@@ -348,7 +348,7 @@ ASC setup guidance:
 - Send the user to exactly this page to create the key: https://appstoreconnect.apple.com/access/integrations/api.
 - Say the main role is `Sales`, required for App Analytics, Sales and Trends, downloads, revenue, and conversion context. Add `Customer Support` for App Store ratings/review text, `Developer` for builds/TestFlight/delivery status, and `App Manager` only when app metadata, pricing, or release settings are needed. Avoid `Admin` unless a one-off App Store Connect permission requires it.
 - Tell the user to copy `ASC_ISSUER_ID` from the API keys page, copy `ASC_KEY_ID` from the key row or downloaded `AuthKey_<KEY_ID>.p8` file name, download the `.p8`, open it, and paste the full file content into the local terminal wizard.
-- Store only env vars/secrets: `ASC_KEY_ID`, `ASC_ISSUER_ID`, and `ASC_PRIVATE_KEY_PATH`; the wizard can create the `.p8` file from pasted terminal content. Never commit the `.p8` private key.
+- Store only env vars/secrets: `ASC_KEY_ID`, `ASC_ISSUER_ID`, and `ASC_PRIVATE_KEY_PATH`; the wizard can create the `.p8` file from validated pasted terminal content. Never commit the `.p8` private key.
 - Do not ask for `ASC_APP_ID` upfront. After auth succeeds, auto-detect/list apps; if ambiguous, ask for the app name first. Store `ASC_APP_ID` only after it has been resolved.
 - After the key is present and the target app is inferred or selected, run one read-only `asc` smoke test before marking ASC connected.
 - Prefer `asc auth login` when the local `asc` CLI supports keychain storage; otherwise use runtime env injection.

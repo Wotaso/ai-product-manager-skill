@@ -1244,6 +1244,24 @@ function remediationForCheck(checkName, configPath) {
   return 'Fix this blocker and rerun start.';
 }
 
+function isInvalidAscPrivateKeyError(error) {
+  return /invalid private key|failed to parse|asn1|sequence truncated|malformed/i.test(String(error || ''));
+}
+
+function describeAscAppSetupFailure(error) {
+  if (isInvalidAscPrivateKeyError(error)) {
+    return 'Stored ASC .p8 private key is invalid or truncated. The connector wizard must reject this before saving; rerun the updated wizard and paste the full .p8 file content from BEGIN PRIVATE KEY to END PRIVATE KEY.';
+  }
+  return `Could not list App Store Connect apps (${error || 'unknown error'})`;
+}
+
+function remediateAscAppSetupFailure(error) {
+  if (isInvalidAscPrivateKeyError(error)) {
+    return 'Rerun the updated connector wizard and paste the full downloaded .p8 file content. The wizard validates it before saving ASC_PRIVATE_KEY_PATH.';
+  }
+  return 'Verify ASC credentials, key role access, and `asc apps list --output json`.';
+}
+
 async function runPreflight(configPath, testConnections) {
   const commandParts = [
     'node',
@@ -1392,10 +1410,10 @@ async function main() {
               check: 'connection:asc_app',
               detail: ascAppSetup.needsUserInput
                 ? 'ASC auth works, but multiple apps are available and setup is running non-interactively.'
-                : `Could not list App Store Connect apps (${ascAppSetup.error || 'unknown error'})`,
+                : describeAscAppSetupFailure(ascAppSetup.error),
               remediation: ascAppSetup.needsUserInput
                 ? 'Run the connector wizard in a terminal so it can ask for the app, or rerun start with --asc-app <app_id>.'
-                : 'Verify ASC credentials, key role access, and `asc apps list --output json`.',
+                : remediateAscAppSetupFailure(ascAppSetup.error),
             },
           ],
         },
