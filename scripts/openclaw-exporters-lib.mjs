@@ -722,6 +722,116 @@ export function buildRevenueCatSummary(input) {
         },
     };
 }
+function normalizeSentryIssueCount(issue) {
+    return coerceNumber(issue?.count ?? issue?.events ?? issue?.eventCount ?? issue?.stats?.sum) || 0;
+}
+function normalizeSentryUserCount(issue) {
+    return coerceNumber(issue?.userCount ?? issue?.users ?? issue?.affectedUsers) || 0;
+}
+function normalizeSentryIssueTitle(issue) {
+    return String(issue?.title || issue?.metadata?.title || issue?.culprit || 'Untitled Sentry issue').trim();
+}
+function normalizeSentryPriority(issue) {
+    const level = String(issue?.level || issue?.priority || '').toLowerCase();
+    const events = normalizeSentryIssueCount(issue);
+    const users = normalizeSentryUserCount(issue);
+    if (level === 'fatal' || events >= 100 || users >= 25)
+        return 'high';
+    if (level === 'error' || events >= 20 || users >= 5)
+        return 'medium';
+    return 'low';
+}
+function normalizeSentryEvidence(issue, environment) {
+    return [
+        issue?.shortId ? `Sentry issue: ${issue.shortId}` : issue?.id ? `Sentry issue id: ${issue.id}` : null,
+        issue?.permalink ? `Permalink: ${issue.permalink}` : null,
+        issue?.level ? `Level: ${issue.level}` : null,
+        issue?.status ? `Status: ${issue.status}` : null,
+        issue?.firstSeen ? `First seen: ${issue.firstSeen}` : null,
+        issue?.lastSeen ? `Last seen: ${issue.lastSeen}` : null,
+        environment ? `Environment: ${environment}` : null,
+        normalizeSentryIssueCount(issue) ? `Events: ${normalizeSentryIssueCount(issue)}` : null,
+        normalizeSentryUserCount(issue) ? `Affected users: ${normalizeSentryUserCount(issue)}` : null,
+        issue?.culprit ? `Culprit: ${issue.culprit}` : null,
+    ].filter(Boolean);
+}
+export function buildSentrySummary(input) {
+    const issues = Array.isArray(input?.issuesPayload)
+        ? input.issuesPayload
+        : Array.isArray(input?.issues)
+            ? input.issues
+            : [];
+    const org = String(input?.org || input?.organization || process.env.SENTRY_ORG || '').trim();
+    const project = String(input?.project || process.env.SENTRY_PROJECT || 'sentry-project').trim();
+    const environment = String(input?.environment || process.env.SENTRY_ENVIRONMENT || '').trim();
+    const last = String(input?.last || input?.window || '24h');
+    const maxSignals = Math.max(1, Number(input?.maxSignals) || 5);
+    const normalizedIssues = issues
+        .filter((issue) => issue && typeof issue === 'object')
+        .map((issue, index) => ({
+        id: String(issue.id || issue.shortId || `sentry_${index + 1}`),
+        title: normalizeSentryIssueTitle(issue),
+        priority: normalizeSentryPriority(issue),
+        impact: normalizeSentryUserCount(issue) > 0
+            ? `${normalizeSentryUserCount(issue)} affected users in ${last}`
+            : `Production stability issue observed in ${last}`,
+        events: normalizeSentryIssueCount(issue),
+        users: normalizeSentryUserCount(issue),
+        area: 'crash',
+        metric: 'sentry_unresolved_issues',
+        stack_keywords: [
+            issue.level,
+            issue.type,
+            issue.platform,
+            issue.metadata?.type,
+            issue.culprit,
+        ]
+            .filter(Boolean)
+            .map((value) => String(value).slice(0, 80)),
+        evidence: normalizeSentryEvidence(issue, environment),
+        suggested_actions: [
+            'Map this Sentry issue to the current production release and affected user journey',
+            'Check whether the crash intersects onboarding, paywall, purchase, or first value events',
+            'Fix or mitigate the highest-user-impact issue before running new growth experiments that send more traffic into the broken path',
+        ],
+        confidence: 'high',
+    }))
+        .sort((a, b) => {
+        const priorityDelta = priorityRank(b.priority) - priorityRank(a.priority);
+        if (priorityDelta !== 0)
+            return priorityDelta;
+        const usersDelta = (b.users || 0) - (a.users || 0);
+        if (usersDelta !== 0)
+            return usersDelta;
+        return (b.events || 0) - (a.events || 0);
+    })
+        .slice(0, maxSignals);
+    return {
+        project: org ? `sentry:${org}/${project}` : `sentry:${project}`,
+        window: normalizeWindow(last),
+        issues: normalizedIssues,
+        signals: normalizedIssues.map((issue) => ({
+            id: issue.id,
+            title: issue.title,
+            area: issue.area,
+            priority: issue.priority,
+            metric: issue.metric,
+            current_value: issue.events,
+            evidence: issue.evidence,
+            suggested_actions: issue.suggested_actions,
+            keywords: issue.stack_keywords,
+            confidence: issue.confidence,
+        })),
+        meta: {
+            generatedAt: new Date().toISOString(),
+            source: 'sentry',
+            org,
+            project,
+            environment: environment || null,
+            issuesReturned: normalizedIssues.length,
+        },
+    };
+}
 export async function writeJsonOutput(outPath, payload) {
     const serialized = `${JSON.stringify(payload, null, 2)}\n`;
     if (outPath) {

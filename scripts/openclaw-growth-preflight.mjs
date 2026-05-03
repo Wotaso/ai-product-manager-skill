@@ -439,7 +439,7 @@ function describeAnalyticsConnectionFailure(detail, analyticsTokenEnv, hasAnalyt
     }
     return `AnalyticsCLI connection failed with \`${analyticsTokenEnv}\` set. Verify the token and selected project. If you are testing staging/local, also verify \`ANALYTICSCLI_API_URL\` or \`--api-url\`. Raw error: ${detail}`;
 }
-async function testSentryConnection(sentryToken, timeoutMs) {
+async function testSentryConnection(sentryToken, timeoutMs, baseUrl = 'https://sentry.io') {
     if (!sentryToken) {
         return {
             ok: false,
@@ -447,7 +447,7 @@ async function testSentryConnection(sentryToken, timeoutMs) {
         };
     }
     try {
-        const response = await fetchWithTimeout('https://sentry.io/api/0/organizations/', {
+        const response = await fetchWithTimeout(`${String(baseUrl || 'https://sentry.io').replace(/\/$/, '')}/api/0/organizations/`, {
             method: 'GET',
             headers: {
                 Accept: 'application/json',
@@ -571,6 +571,7 @@ async function runConnectionChecks({ checks, config, timeoutMs }) {
     const analyticsTokenEnv = getSecretName(config, 'analyticsTokenEnv', 'ANALYTICSCLI_ACCESS_TOKEN');
     const revenuecatTokenEnv = getSecretName(config, 'revenuecatTokenEnv', 'REVENUECAT_API_KEY');
     const sentryTokenEnv = getSecretName(config, 'sentryTokenEnv', 'SENTRY_AUTH_TOKEN');
+    const sentryBaseUrl = process.env.SENTRY_BASE_URL || 'https://sentry.io';
     const feedbackTokenEnv = getSecretName(config, 'feedbackTokenEnv', 'FEEDBACK_API_TOKEN');
     const githubTokenEnv = getSecretName(config, 'githubTokenEnv', 'GITHUB_TOKEN');
     const githubRepo = isConfiguredGitHubRepo(config?.project?.githubRepo)
@@ -626,10 +627,22 @@ async function runConnectionChecks({ checks, config, timeoutMs }) {
             addCheck(checks, `connection:sentry`, false, `${sentryTokenEnv} missing (required for live Sentry API test)`, sentrySource?.mode === 'command' ? 'fail' : 'warn');
         }
         else {
-            const sentryConnection = await testSentryConnection(token, timeoutMs);
+            const sentryConnection = await testSentryConnection(token, timeoutMs, sentryBaseUrl);
             addCheck(checks, 'connection:sentry', sentryConnection.ok, sentryConnection.ok
                 ? `Sentry auth check passed (${sentryConnection.detail})`
                 : `Sentry auth check failed (${sentryConnection.detail})`);
+        }
+        if (sentrySource?.mode === 'command') {
+            const command = String(sentrySource.command || '').trim();
+            if (!command) {
+                addCheck(checks, 'connection:sentry-command', false, 'sentry source uses command mode but no command configured');
+            }
+            else {
+                const commandCheck = await testCommandSourceJson(command, commandCwd);
+                addCheck(checks, 'connection:sentry-command', commandCheck.ok, commandCheck.ok
+                    ? 'Sentry command smoke test passed'
+                    : `Sentry command smoke test failed (${commandCheck.detail})`);
+            }
         }
     }
     else {

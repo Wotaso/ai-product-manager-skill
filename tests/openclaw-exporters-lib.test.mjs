@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { buildAnalyticsSummary, buildAscSummary, buildRevenueCatSummary } from '../scripts/openclaw-exporters-lib.mjs';
+import {
+  buildAnalyticsSummary,
+  buildAscSummary,
+  buildRevenueCatSummary,
+  buildSentrySummary,
+} from '../scripts/openclaw-exporters-lib.mjs';
 
 test('buildAnalyticsSummary emits onboarding, paywall, and retention signals from weak funnel data', () => {
   const summary = buildAnalyticsSummary({
@@ -116,4 +121,36 @@ test('buildRevenueCatSummary emits live metrics and catalog signals', () => {
   assert.equal(summary.meta.productsCount, 1);
   assert(summary.signals.some((signal) => signal.id === 'revenuecat_overview_metrics_available'));
   assert(summary.signals.some((signal) => signal.id === 'revenuecat_catalog_summary'));
+});
+
+test('buildSentrySummary emits crash issues and signals from unresolved issues', () => {
+  const summary = buildSentrySummary({
+    org: 'wotaso',
+    project: 'flashes',
+    environment: 'production',
+    last: '7d',
+    issuesPayload: [
+      {
+        id: '123',
+        shortId: 'FLASHES-1',
+        title: 'TypeError: cannot read property paywallPackage',
+        level: 'error',
+        count: 42,
+        userCount: 11,
+        firstSeen: '2026-05-01T00:00:00Z',
+        lastSeen: '2026-05-03T00:00:00Z',
+        culprit: 'PaywallScreen',
+        permalink: 'https://sentry.io/issues/123',
+      },
+    ],
+    maxSignals: 3,
+  });
+
+  assert.equal(summary.project, 'sentry:wotaso/flashes');
+  assert.equal(summary.meta.source, 'sentry');
+  assert.equal(summary.issues.length, 1);
+  assert.equal(summary.issues[0].id, '123');
+  assert.equal(summary.issues[0].priority, 'medium');
+  assert.equal(summary.signals[0].area, 'crash');
+  assert(summary.signals[0].evidence.some((entry) => entry.includes('FLASHES-1')));
 });

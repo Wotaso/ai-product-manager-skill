@@ -10,7 +10,8 @@ Use this checklist before running autopilot mode.
 | `ANALYTICSCLI_ACCESS_TOKEN` | AnalyticsCLI command auth when no local login exists | Recommended | Read-only analytics access across the account |
 | `ASC_KEY_ID` / `ASC_ISSUER_ID` / `ASC_PRIVATE_KEY` | Optional App Store Connect Analytics reports via `asc` CLI | Optional, ask before setup | Analytics data only. Prefer Sales/Sales and Reports style access for generated analytics reports; use Admin only temporarily if a report type must be requested first |
 | `REVENUECAT_API_KEY` | Optional RevenueCat monetization/subscription refresh | Optional, ask before setup | Secret API key stored server-side only. Prefer v2 read permissions for charts/metrics and required project configuration; add customer/subscriber read only when needed |
-| `SENTRY_AUTH_TOKEN` | Sentry command/API refresh | Recommended | Read-only issue/event scopes |
+| `SENTRY_AUTH_TOKEN` | Sentry command/API refresh | Recommended | Read-only `org:read`, `project:read`, and `event:read` scopes |
+| `SENTRY_ORG` / `SENTRY_PROJECT` / `SENTRY_ENVIRONMENT` | Sentry source targeting | Recommended when Sentry is enabled | Non-secret slugs/environment. `SENTRY_ENVIRONMENT` usually `production`; set `SENTRY_BASE_URL` only for self-hosted Sentry |
 
 ## Extra Connectors
 

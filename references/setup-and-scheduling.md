@@ -44,10 +44,10 @@ The setup flow should be developer-friendly:
 - hand off weak or missing app instrumentation to the `analyticscli-ts-sdk` skill with concrete SDK setup steps
 - ask exactly which optional connections the user wants to set up before requesting credentials: AnalyticsCLI, GitHub code access, ASC CLI for App Store Connect Analytics data, RevenueCat, Sentry/GlitchTip, Feedback/App Reviews, or skip
 
-For GitHub, RevenueCat, and App Store Connect connector setup, use the connector wizard instead of asking the user to compose setup commands manually:
+For GitHub, RevenueCat, Sentry, and App Store Connect connector setup, use the connector wizard instead of asking the user to compose setup commands manually:
 
 ```bash
-node scripts/openclaw-growth-wizard.mjs --connectors github,revenuecat,asc
+node scripts/openclaw-growth-wizard.mjs --connectors github,revenuecat,sentry,asc
 ```
 
 The connector wizard asks only for the selected connectors, explains each provider step in the terminal, writes local secrets to `~/.config/openclaw-growth/secrets.env`, and runs helper setup for the selected connectors.
@@ -113,6 +113,14 @@ RevenueCat setup:
 - For SDK instrumentation use only the public app-specific SDK key in app code.
 - For server-side summaries use a secret API key from RevenueCat -> Project Settings -> API Keys -> + New secret API key.
 - Prefer v2 read permissions for charts/metrics and required project configuration resources; store as `REVENUECAT_API_KEY`.
+
+Sentry setup:
+
+- Ask whether to connect Sentry for crash, error, release, and performance signals.
+- Use the wizard to collect `SENTRY_AUTH_TOKEN`, `SENTRY_ORG`, `SENTRY_PROJECT`, `SENTRY_ENVIRONMENT`, and optional `SENTRY_BASE_URL`.
+- Use read-only Sentry API scopes: `org:read`, `project:read`, and `event:read`.
+- The direct source command is `node scripts/export-sentry-summary.mjs`; optional MCP config uses `@sentry/mcp-server@latest` when `npx` is available.
+- Treat Sentry as connected only after auth and exporter smoke tests pass.
 
 ## 5) Store Secrets
 

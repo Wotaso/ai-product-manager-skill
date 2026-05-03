@@ -22,8 +22,8 @@
     },
     "sentry": {
       "enabled": false,
-      "mode": "file",
-      "path": "data/openclaw-growth-engineer/sentry_summary.example.json"
+      "mode": "command",
+      "command": "node scripts/export-sentry-summary.mjs"
     },
     "feedback": {
       "enabled": true,

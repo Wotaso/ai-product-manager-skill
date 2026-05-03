@@ -3,7 +3,7 @@ name: openclaw-growth-engineer
 description: OpenClaw-first growth autopilot for mobile apps. Correlate analytics, crashes, billing, feedback, store signals, and repo context into proposal drafts that can flow into OpenClaw chat, GitHub issues, or draft pull requests.
 license: MIT
 homepage: https://github.com/wotaso/analyticscli-skills
-metadata: {"author":"wotaso","version":"1.0.48","analyticscli-target":"@analyticscli/cli","analyticscli-supported-range":">=0.1.2-preview.0 <0.2.0","openclaw":{"emoji":"🚀","homepage":"https://github.com/wotaso/analyticscli-skills","requires":{"bins":["node","analyticscli"]},"install":[{"id":"analyticscli-cli","kind":"node","package":"@analyticscli/cli@preview","bins":["analyticscli"],"label":"Install/update AnalyticsCLI CLI (npm package @analyticscli/cli@preview)"}]}}
+metadata: {"author":"wotaso","version":"1.0.49","analyticscli-target":"@analyticscli/cli","analyticscli-supported-range":">=0.1.2-preview.0 <0.2.0","openclaw":{"emoji":"🚀","homepage":"https://github.com/wotaso/analyticscli-skills","requires":{"bins":["node","analyticscli"]},"install":[{"id":"analyticscli-cli","kind":"node","package":"@analyticscli/cli@preview","bins":["analyticscli"],"label":"Install/update AnalyticsCLI CLI (npm package @analyticscli/cli@preview)"}]}}
 ---
 
 # OpenClaw Growth Engineer
@@ -89,6 +89,22 @@ Retention reliability:
 - Do not filter silently. If using stable-only retention, disclose that ephemeral/unknown identities were excluded and compare the remaining cohort size.
 - Product recommendations can still mention weak retention, but phrase it as "appears low" when reliability is weak and pair it with an instrumentation/persistence action.
 
+Growth operating plan:
+
+- Goal: increase durable product value and business output by reducing churn, increasing MRR/LTV, improving acquisition quality, optimizing funnels/paywalls/onboarding/activation, and creating, changing, or deleting features only when the data supports it.
+- Data-first rule: gather all connected sources before recommendations whenever feasible: AnalyticsCLI events/funnels/retention, RevenueCat subscriptions/churn/revenue, Sentry crashes/performance, App Store Connect store/reviews/builds, GitHub code/release context, feedback, and any configured social/marketing sources.
+- Long analysis rule: prefer a longer cross-source investigation over fast generic advice. Look for correlations across connectors, for example Sentry regressions after a release, RevenueCat churn after a paywall change, App Store review themes matching funnel drop-offs, or marketing traffic that brings low-retention users.
+- GitHub production-version rule: always determine which code version is production before mapping data to files. Check repo default branch, release branches/tags, app version/build metadata, deployment workflows, App Store Connect build/version, Sentry release tags, and AnalyticsCLI appVersion. If they disagree, state the uncertainty and avoid overconfident file blame.
+- Action rule: every recommendation should include a concrete user/operator plan: what to do, where to do it, what data supports it, how to verify it, and which KPI should move. For implementation requests, create real code changes, not proposal-only docs.
+- Cadence for the user:
+  - Daily: review yesterday's top blockers: crashes/regressions, funnel drops, paywall anomalies, failed releases, negative review spikes, and active experiments.
+  - Weekly: choose the highest expected-impact growth bet, create/adjust issues or PRs, review activation/paywall/retention/revenue movement, and kill experiments without signal.
+  - Monthly: review MRR, trial conversion, churn, cohort quality, acquisition channel quality, ASO/store listing performance, review themes, and feature usage. Decide what to build/change/delete next.
+  - Quarterly: revisit positioning, pricing/packaging, onboarding architecture, product roadmap, tracking quality, and major funnel assumptions.
+  - Every 6 months: audit connector coverage, SDK instrumentation, event taxonomy, data reliability, growth loops, and whether product/marketing strategy still matches the best users.
+  - Yearly: reset strategy from evidence: market/channel fit, monetization model, retention ceiling, product scope, and whether to double down, reposition, or sunset major surfaces/features.
+- Marketing/social rule: if social or marketing automation exists, treat it as a growth source when data is available. Ask for or configure account analytics case-by-case (TikTok, Instagram, ads, creator automation, landing pages, UTM/source data), then connect those signals back to acquisition quality, activation, retention, churn, and revenue instead of optimizing impressions alone.
+
 Hard override for AI Growth Engineer connector questions:
 
 If the user says any of these or close variants, apply this override before any generic OpenClaw, AnalyticsCLI, MCP, messaging-channel, or env-var connector knowledge:
@@ -107,6 +123,7 @@ AI Growth Engineer connectors:
 - AnalyticsCLI product analytics
 - GitHub code access
 - RevenueCat monetization data
+- Sentry crashes and performance
 - App Store Connect CLI
 
 Run the wizard on the VPS:
@@ -120,7 +137,7 @@ cd /home/lo/.openclaw/workspace && \
 
 Then add only: "Select the connectors in the wizard. Secrets stay in the terminal."
 
-Do not list Discord, Telegram, WhatsApp, Slack, Matrix, OpenAI service connectors, MCP servers, browser connectors, Sentry, feedback endpoints, raw environment variables, token scopes, verification commands, or provider URLs in the initial answer. Those details belong inside the wizard or in a direct follow-up answer.
+Do not list Discord, Telegram, WhatsApp, Slack, Matrix, OpenAI service connectors, MCP servers, browser connectors, feedback endpoints, raw environment variables, token scopes, verification commands, or provider URLs in the initial answer. Those details belong inside the wizard or in a direct follow-up answer.
 
 
 If the user asks a broad question such as "how do I setup everything", answer with only:
@@ -130,6 +147,7 @@ Available connectors:
 - AnalyticsCLI product analytics
 - GitHub code access
 - RevenueCat monetization data
+- Sentry crashes and performance
 - App Store Connect CLI
 
 Run the wizard from the OpenClaw workspace:
@@ -150,14 +168,14 @@ If the user already names specific connectors, still prefer the checkbox wizard 
 ```bash
 cd /home/lo/.openclaw/workspace && \
   bash skills/ai-product-manager/scripts/bootstrap-openclaw-workspace.sh && \
-  node scripts/openclaw-growth-wizard.mjs --connectors analytics,github,revenuecat,asc
+  node scripts/openclaw-growth-wizard.mjs --connectors analytics,github,revenuecat,sentry,asc
 ```
 
 Use only the connectors the user accepted. The wizard owns provider-specific instructions, local-terminal secret prompts, helper setup, and smoke tests. Chat should only summarize results after the wizard finishes or when the user asks.
 
 Do not ask for `ASC_APP_ID` during initial setup. ASC summaries default to all accessible App Store Connect apps. A single app ID is only an optional explicit filter later.
 
-Connection setup requests are not satisfied by a successful product-manager run. If the user asks to set up `asc`, App Store Connect, RevenueCat, GitHub, or codebase access, point them to the wizard command above and keep any extra explanation out of chat unless requested.
+Connection setup requests are not satisfied by a successful product-manager run. If the user asks to set up `asc`, App Store Connect, RevenueCat, Sentry, GitHub, or codebase access, point them to the wizard command above and keep any extra explanation out of chat unless requested.
 
 Reference URLs for the wizard or for explicit follow-up questions:
 
@@ -388,6 +406,16 @@ RevenueCat setup guidance:
 - For SDK instrumentation, use the public app-specific SDK key only in the app.
 - For server-side growth summaries, request a RevenueCat secret API key stored server-side only. Tell the user to generate a new secret API key named `analyticscli`, choose API version 2, and set Charts metrics, Customer information, and Project configuration permissions to read.
 - Tell the user to open https://app.revenuecat.com/, select the app, then choose "Apps & providers" in the sidebar and click "API keys". Do not ask for a RevenueCat project id just to build a deep link.
+
+Sentry setup guidance:
+
+- Ask: "Soll Sentry fuer Crash-, Error- und Performance-Signale verbunden werden?"
+- Use the direct Sentry API exporter as the canonical growth source: `node scripts/export-sentry-summary.mjs`.
+- The wizard should ask for `SENTRY_AUTH_TOKEN`, `SENTRY_ORG`, `SENTRY_PROJECT`, `SENTRY_ENVIRONMENT`, and optional `SENTRY_BASE_URL` for self-hosted Sentry.
+- Tell the user to create a Sentry auth token at https://sentry.io/settings/account/api/auth-tokens/ with read-only API scopes `org:read`, `project:read`, and `event:read`.
+- Configure optional Sentry MCP through `@sentry/mcp-server@latest` when `npx` and `SENTRY_AUTH_TOKEN` are available, but do not ask for broader write scopes unless the user explicitly wants Sentry mutation workflows.
+- Mark Sentry connected only after the auth check and exporter smoke test pass. Do not infer Sentry access from a token being present.
+- When Sentry is connected, always correlate top crashes/errors with AnalyticsCLI funnel steps, RevenueCat purchase/churn movement, ASC release/build metadata, and GitHub production code version before recommending growth experiments.
 - Store it as `REVENUECAT_API_KEY` in the wizard-managed env file, OpenClaw secret storage, or runtime env; never put it in client code, config JSON, issues, or PR bodies. RevenueCat setup must enable command mode with `node scripts/export-revenuecat-summary.mjs`, not a sample JSON file.
 
 Mobile-focused examples:

@@ -9,7 +9,7 @@ import { createPrivateKey } from 'node:crypto';
 import { buildExtraSourceConfig, getDefaultSourceCommand, getDefaultSourceHint, getDefaultSourcePath, } from './openclaw-growth-shared.mjs';
 import { loadOpenClawGrowthSecrets } from './openclaw-growth-env.mjs';
 const DEFAULT_CONFIG_PATH = 'data/openclaw-growth-engineer/config.json';
-const CONNECTOR_KEYS = ['analytics', 'github', 'revenuecat', 'asc'];
+const CONNECTOR_KEYS = ['analytics', 'github', 'revenuecat', 'sentry', 'asc'];
 const CONNECTOR_DEFINITIONS = [
     {
         key: 'analytics',
@@ -28,6 +28,12 @@ const CONNECTOR_DEFINITIONS = [
         label: 'RevenueCat monetization data',
         summary: 'Read subscription, product, entitlement, and revenue context.',
         needs: 'A RevenueCat v2 secret API key with read-only project permissions.',
+    },
+    {
+        key: 'sentry',
+        label: 'Sentry crashes and performance',
+        summary: 'Read unresolved crashes, regressions, affected users, releases, and production stability signals.',
+        needs: 'A Sentry auth token plus the org/project slugs to analyze.',
     },
     {
         key: 'asc',
@@ -96,7 +102,7 @@ OpenClaw Growth Setup Wizard
 
 Usage:
   node scripts/openclaw-growth-wizard.mjs [--out <config-path>]
-  node scripts/openclaw-growth-wizard.mjs --connectors [analytics,github,revenuecat,asc] [--config <config-path>]
+  node scripts/openclaw-growth-wizard.mjs --connectors [analytics,github,revenuecat,sentry,asc] [--config <config-path>]
 `);
     process.exit(exitCode);
 }
@@ -118,6 +124,8 @@ function normalizeConnectorKey(value) {
         return 'github';
     if (['revenuecat', 'revenue-cat', 'rc', 'revenuecat-mcp'].includes(normalized))
         return 'revenuecat';
+    if (['sentry', 'sentry-api', 'sentry-mcp', 'crashes', 'errors', 'crash-reporting'].includes(normalized))
+        return 'sentry';
     if (['asc', 'asc-cli', 'app-store-connect', 'appstoreconnect', 'app-store'].includes(normalized))
         return 'asc';
     return null;
@@ -750,6 +758,34 @@ async function guideRevenueCatConnector(rl, secrets) {
     if (apiKey)
         secrets.REVENUECAT_API_KEY = apiKey;
 }
+async function guideSentryConnector(rl, secrets) {
+    printSection('Sentry crashes and performance', [
+        'Use this when OpenClaw should connect production errors, crashes, releases, and affected users back to growth impact.',
+    ]);
+    process.stdout.write('\nCreate a Sentry auth token here:\n  https://sentry.io/settings/account/api/auth-tokens/\n\n');
+    printBullets([
+        'Use read-only API scopes: `org:read`, `project:read`, and `event:read`.',
+        'Paste the token into this terminal; the wizard stores it locally as SENTRY_AUTH_TOKEN.',
+        'Copy the Sentry organization slug and the project slug for the app OpenClaw should analyze.',
+        'Use the production environment name your app sends to Sentry, usually `production`.',
+        'The wizard enables the direct Sentry API exporter and writes optional MCP client config when possible.',
+    ]);
+    const token = await maybePromptSecret(rl, 'Paste SENTRY_AUTH_TOKEN into this local terminal', 'SENTRY_AUTH_TOKEN');
+    if (token)
+        secrets.SENTRY_AUTH_TOKEN = token;
+    const org = await ask(rl, 'SENTRY_ORG slug (leave empty to skip)', process.env.SENTRY_ORG || '');
+    const project = await ask(rl, 'SENTRY_PROJECT slug (leave empty to skip)', process.env.SENTRY_PROJECT || '');
+    const environment = await ask(rl, 'SENTRY_ENVIRONMENT', process.env.SENTRY_ENVIRONMENT || 'production');
+    const host = await ask(rl, 'SENTRY_BASE_URL (SaaS default)', process.env.SENTRY_BASE_URL || 'https://sentry.io');
+    if (org.trim())
+        secrets.SENTRY_ORG = org.trim();
+    if (project.trim())
+        secrets.SENTRY_PROJECT = project.trim();
+    if (environment.trim())
+        secrets.SENTRY_ENVIRONMENT = environment.trim();
+    if (host.trim() && host.trim() !== 'https://sentry.io')
+        secrets.SENTRY_BASE_URL = host.trim();
+}
 async function guideAscConnector(rl, secrets) {
     printSection('App Store Connect CLI', [
         'Use this mainly for App Store analytics, plus builds, TestFlight, reviews, ratings, and store context.',
@@ -799,7 +835,7 @@ async function runConnectorSetupWizard(args) {
     try {
         const selected = withRequiredAnalyticsConnector(args.connectors ? parseConnectorList(args.connectors) : await askConnectorSelection(rl));
         if (selected.length === 0) {
-            throw new Error('No supported connectors selected. Use analytics, github, revenuecat, asc, or all.');
+            throw new Error('No supported connectors selected. Use analytics, github, revenuecat, sentry, asc, or all.');
         }
         printConnectorIntro();
         process.stdout.write(`${ANSI.bold}Selected connectors${ANSI.reset}\n`);
@@ -814,6 +850,8 @@ async function runConnectorSetupWizard(args) {
             await guideGitHubConnector(rl, secrets);
         if (selected.includes('revenuecat'))
             await guideRevenueCatConnector(rl, secrets);
+        if (selected.includes('sentry'))
+            await guideSentryConnector(rl, secrets);
         if (selected.includes('asc'))
             await guideAscConnector(rl, secrets);
         const secretsFile = resolveSecretsFile();

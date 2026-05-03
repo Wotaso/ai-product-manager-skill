@@ -212,6 +212,22 @@ function summarizeRevenueCat(preflight, config) {
     }
     return connector('blocked', connection?.detail || 'RevenueCat connection was not verified');
 }
+function summarizeSentry(preflight, config) {
+    if (!isEnabled(config?.sources?.sentry)) {
+        return connector('not_enabled', 'Sentry source is disabled');
+    }
+    const connection = checkByName(preflight, 'connection:sentry');
+    const command = checkByName(preflight, 'connection:sentry-command');
+    if (connection?.status === 'pass' && (!command || command.status === 'pass')) {
+        return connector('connected', command ? 'Sentry API and exporter smoke test passed' : 'Sentry API auth check passed');
+    }
+    if (connection?.status === 'pass' && command?.status !== 'pass') {
+        return connector('partial', command?.detail || 'Sentry API auth passed, exporter smoke test did not pass');
+    }
+    return connector('blocked', connection?.detail || 'Sentry connection was not verified', {
+        nextAction: 'Run: node scripts/openclaw-growth-wizard.mjs --connectors sentry.',
+    });
+}
 function summarizeAsc(preflight, config) {
     const ascSources = checksByPrefix(preflight, 'connection:asc_cli');
     const ascConnection = ascSources[0] || null;
@@ -240,12 +256,14 @@ async function main() {
             analyticscli: summarizeAnalytics(preflightPayload, config),
             github: await checkGitHub(config, args.timeoutMs),
             revenuecat: summarizeRevenueCat(preflightPayload, config),
+            sentry: summarizeSentry(preflightPayload, config),
             appStoreConnect: summarizeAsc(preflightPayload, config),
         }
         : {
             analyticscli: connector('unknown', preflight.error || 'Preflight did not run'),
             github: await checkGitHub(config, args.timeoutMs),
             revenuecat: connector('unknown', preflight.error || 'Preflight did not run'),
+            sentry: connector('unknown', preflight.error || 'Preflight did not run'),
             appStoreConnect: connector('unknown', preflight.error || 'Preflight did not run'),
         };
     const values = Object.values(connectors);

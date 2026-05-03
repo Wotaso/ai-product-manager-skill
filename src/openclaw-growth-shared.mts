@@ -94,6 +94,9 @@ export function getDefaultSourceCommand(service) {
   if (normalized === 'revenuecat' || normalized === 'revenue-cat' || normalized === 'rc') {
     return 'node scripts/export-revenuecat-summary.mjs';
   }
+  if (normalized === 'sentry') {
+    return 'node scripts/export-sentry-summary.mjs';
+  }
   if (normalized === 'feedback') {
     return 'analyticscli feedback summary --format json';
   }

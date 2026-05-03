@@ -41,7 +41,7 @@ Options:
   --config <file>        Config path (default: ${DEFAULT_CONFIG_PATH})
   --project <id>         AnalyticsCLI project ID to use for generated source commands
   --asc-app <id>         Optional ASC app ID filter (defaults to all accessible apps)
-  --connectors <list>    Install/enable connector helpers (analytics,github,asc,revenuecat,all)
+  --connectors <list>    Install/enable connector helpers (analytics,github,asc,revenuecat,sentry,all)
   --setup-only           Run bootstrap + preflight only (skip first run)
   --no-test-connections  Skip live API smoke checks in preflight
   --help, -h             Show help
@@ -98,6 +98,7 @@ function normalizeConnectorKey(value) {
   if (['github', 'gh', 'github-code', 'codebase', 'code-access'].includes(normalized)) return 'github';
   if (['asc', 'asc-cli', 'app-store-connect', 'appstoreconnect', 'app-store'].includes(normalized)) return 'asc';
   if (['revenuecat', 'revenue-cat', 'rc', 'revenuecat-mcp'].includes(normalized)) return 'revenuecat';
+  if (['sentry', 'sentry-api', 'sentry-mcp', 'crashes', 'errors', 'crash-reporting'].includes(normalized)) return 'sentry';
   return null;
 }
 
@@ -108,13 +109,14 @@ function parseConnectorList(value) {
   for (const entry of String(value).split(',')) {
     const connector = normalizeConnectorKey(entry);
     if (!connector) {
-      printHelpAndExit(1, `Unknown connector: ${entry.trim()}. Use analytics, github, asc, revenuecat, or all.`);
+      printHelpAndExit(1, `Unknown connector: ${entry.trim()}. Use analytics, github, asc, revenuecat, sentry, or all.`);
     }
     if (connector === 'all') {
       connectors.add('analytics');
       connectors.add('github');
       connectors.add('asc');
       connectors.add('revenuecat');
+      connectors.add('sentry');
     } else {
       connectors.add(connector);
     }
@@ -625,6 +627,39 @@ startup_timeout_ms = 20000
   return configFile;
 }
 
+async function upsertSentryCodexMcpConfig(token) {
+  if (!process.env.HOME) return null;
+
+  const configDir = path.join(process.env.HOME, '.codex');
+  const configFile = path.join(configDir, 'config.toml');
+  await fs.mkdir(configDir, { recursive: true });
+  let existing = '';
+  try {
+    existing = await fs.readFile(configFile, 'utf8');
+  } catch {
+    existing = '';
+  }
+  const envEntries = [
+    `SENTRY_ACCESS_TOKEN = "${escapeTomlString(token)}"`,
+    process.env.SENTRY_BASE_URL && process.env.SENTRY_BASE_URL !== 'https://sentry.io'
+      ? `SENTRY_HOST = "${escapeTomlString(String(process.env.SENTRY_BASE_URL).replace(/^https?:\/\//, '').replace(/\/$/, ''))}"`
+      : null,
+  ].filter(Boolean);
+  const block = `[mcp_servers.sentry]
+command = "npx"
+args = ["--yes", "--cache", "${escapeTomlString(resolveMcpNpmCacheDir())}", "@sentry/mcp-server@latest"]
+env = { ${envEntries.join(', ')} }
+type = "stdio"
+startup_timeout_ms = 30000
+`;
+  const pattern = /(?:^|\n)\[mcp_servers\.sentry\]\n(?:.*\n)*?(?=\n\[|\s*$)/m;
+  const next = pattern.test(existing)
+    ? existing.replace(pattern, `${existing.startsWith('[mcp_servers.sentry]') ? '' : '\n'}${block}`)
+    : `${existing.trimEnd()}${existing.trim() ? '\n\n' : ''}${block}`;
+  await fs.writeFile(configFile, `${next.trimEnd()}\n`, 'utf8');
+  return configFile;
+}
+
 async function installRevenueCatConnector() {
   const details = [];
   if (!(await commandExists('npx'))) {
@@ -646,6 +681,33 @@ async function installRevenueCatConnector() {
     details.push('Set REVENUECAT_API_KEY, then rerun this command to write the RevenueCat MCP client config');
   }
   return { connector: 'revenuecat', ok: true, detail: details.join('; ') };
+}
+
+async function installSentryConnector() {
+  const details = [];
+  if (await commandExists('npx')) {
+    const check = await runShellCommand(`npx --yes --cache ${quote(resolveMcpNpmCacheDir())} @sentry/mcp-server@latest --help`, 120_000);
+    const output = `${check.stderr}\n${check.stdout}`;
+    const available = check.ok || /sentry|mcp-server|access-token/i.test(output);
+    if (available) {
+      details.push(`Sentry MCP server is available via npx cache ${resolveMcpNpmCacheDir()}`);
+    } else {
+      await appendHelperDetail(details, 'Sentry MCP availability check', check);
+    }
+  } else {
+    details.push('npx unavailable; Sentry MCP config was skipped, direct API exporter remains available');
+  }
+
+  const token = String(process.env.SENTRY_AUTH_TOKEN || '').trim();
+  if (token && (await commandExists('npx'))) {
+    const configFile = await upsertSentryCodexMcpConfig(token);
+    details.push(configFile ? `Sentry MCP configured in ${configFile}` : 'Sentry MCP available; HOME missing so MCP config was not written');
+  } else if (!token) {
+    details.push('Set SENTRY_AUTH_TOKEN, then rerun this command to write Sentry MCP client config');
+  }
+
+  details.push('Sentry direct API exporter enabled via node scripts/export-sentry-summary.mjs');
+  return { connector: 'sentry', ok: true, detail: details.join('; ') };
 }
 
 async function installGitHubConnector() {
@@ -703,6 +765,9 @@ async function enableConnectorConfig(configPath, connectors) {
       revenuecat: connectors.includes('revenuecat')
         ? { ...(config.sources?.revenuecat || {}), enabled: true, mode: 'command', command: getDefaultSourceCommand('revenuecat') }
         : config.sources?.revenuecat,
+      sentry: connectors.includes('sentry')
+        ? { ...(config.sources?.sentry || {}), enabled: true, mode: 'command', command: getDefaultSourceCommand('sentry') }
+        : config.sources?.sentry,
       extra: extra.map((source) =>
         connectors.includes('asc') && source?.service === 'asc-cli'
           ? { ...source, enabled: true, mode: 'command', command: source.command || getDefaultSourceCommand('asc') }
@@ -721,6 +786,7 @@ async function installConnectorHelpers(configPath, connectors) {
     if (connector === 'github') results.push(await installGitHubConnector());
     if (connector === 'asc') results.push(await installAscConnector());
     if (connector === 'revenuecat') results.push(await installRevenueCatConnector());
+    if (connector === 'sentry') results.push(await installSentryConnector());
   }
   return results;
 }
@@ -806,6 +872,8 @@ async function ensureConfig(configPath) {
       sentry: {
         ...(template.sources?.sentry || {}),
         enabled: false,
+        mode: 'command',
+        command: getDefaultSourceCommand('sentry'),
       },
       feedback: {
         ...(template.sources?.feedback || {}),
@@ -1343,7 +1411,9 @@ async function main() {
                 ? 'Install GitHub CLI (`gh`) and run `gh auth login`, or provide a fine-grained read-only token for code access.'
                 : entry.connector === 'asc'
                   ? 'Install the ASC CLI and provide ASC_KEY_ID, ASC_ISSUER_ID, and ASC_PRIVATE_KEY_PATH or ASC_PRIVATE_KEY. Resolve the app after auth succeeds.'
-                  : 'Set REVENUECAT_API_KEY and rerun connector setup to write RevenueCat MCP config.',
+                  : entry.connector === 'sentry'
+                    ? 'Set SENTRY_AUTH_TOKEN plus SENTRY_ORG and SENTRY_PROJECT in the connector wizard, then rerun setup.'
+                    : 'Set REVENUECAT_API_KEY and rerun connector setup to write RevenueCat MCP config.',
           })),
         },
         null,
