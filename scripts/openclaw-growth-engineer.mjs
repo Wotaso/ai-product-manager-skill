@@ -110,6 +110,7 @@ function parseArgs(argv) {
         uploadCharts: true,
         branchPrefix: 'openclaw/proposals',
         draftPullRequests: true,
+        allowProposalPullRequests: false,
     };
     for (let i = 0; i < argv.length; i += 1) {
         const token = argv[i];
@@ -154,6 +155,9 @@ function parseArgs(argv) {
         }
         else if (token === '--create-pull-requests') {
             args.createPullRequests = true;
+        }
+        else if (token === '--allow-proposal-pull-requests') {
+            args.allowProposalPullRequests = true;
         }
         else if (token === '--repo') {
             args.repo = next;
@@ -228,7 +232,9 @@ Optional:
   --out <file>           Output JSON with generated issue drafts
   --max-issues <n>       Max number of issues to generate (default: 5)
   --create-issues        Create issues directly on GitHub
-  --create-pull-requests Create draft implementation proposal pull requests on GitHub
+  --create-pull-requests Create proposal-only draft PRs on GitHub
+  --allow-proposal-pull-requests
+                         Required with --create-pull-requests to acknowledge these PRs contain only .openclaw/proposals/*.md files
   --repo <owner/name>    GitHub repository (required with GitHub creation mode)
   --title-prefix <text>  Title prefix (default: [Growth])
   --labels <a,b,c>       Comma-separated GitHub labels
@@ -919,8 +925,8 @@ async function createProposalPullRequest({ repo, token, draft, labels, branchPre
     });
     const prBody = [
         '## Why this PR exists',
-        'This draft PR was generated automatically from product signals and repo context.',
-        'It adds a proposal file that describes the requested implementation before code changes begin.',
+        'This proposal-only draft PR was generated automatically from product signals and repo context.',
+        'It intentionally adds only a proposal file. It does not implement production app changes.',
         '',
         '## Requested change',
         `- Proposal file: \`${proposalPath}\``,
@@ -933,7 +939,7 @@ async function createProposalPullRequest({ repo, token, draft, labels, branchPre
             : ['- No high-confidence file match yet. Start from the owning flow modules.']),
         '',
         '## Next step',
-        'Implement the change on top of this branch, keep the proposal file for traceability, and replace it with production code changes in the same PR.',
+        'OpenClaw or a developer must implement production code changes in a separate implementation PR, or convert this proposal PR by adding real app changes.',
     ].join('\n');
     const pr = await createGithubPullRequest({
         repo,
@@ -1031,6 +1037,9 @@ async function main() {
     if (!args.createIssues && !args.createPullRequests) {
         process.stdout.write('Dry run only. Re-run with --create-issues or --create-pull-requests --repo <owner/name> to create GitHub artifacts.\n');
         return;
+    }
+    if (args.createPullRequests && !args.allowProposalPullRequests) {
+        throw new Error('--create-pull-requests only creates proposal-only markdown PRs. Use --allow-proposal-pull-requests when explicitly requested, or have OpenClaw implement code changes in the target repo instead.');
     }
     if (!args.repo) {
         throw new Error('Missing --repo <owner/name> while using GitHub creation mode.');

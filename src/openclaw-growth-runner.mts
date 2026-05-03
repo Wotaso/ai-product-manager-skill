@@ -319,6 +319,9 @@ async function runAnalyzer({
       '--repo',
       repo,
     );
+    if (getActionMode(config) === 'pull_request') {
+      args.push('--allow-proposal-pull-requests');
+    }
     const labels = Array.isArray(config.project?.labels) ? config.project.labels : [];
     if (labels.length > 0) {
       args.push('--labels', labels.join(','));
