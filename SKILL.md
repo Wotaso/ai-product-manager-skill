@@ -3,7 +3,7 @@ name: openclaw-growth-engineer
 description: OpenClaw-first growth autopilot for mobile apps. Correlate analytics, crashes, billing, feedback, store signals, and repo context into proposal drafts that can flow into OpenClaw chat, GitHub issues, or draft pull requests.
 license: MIT
 homepage: https://github.com/wotaso/analyticscli-skills
-metadata: {"author":"wotaso","version":"1.0.47","analyticscli-target":"@analyticscli/cli","analyticscli-supported-range":">=0.1.2-preview.0 <0.2.0","openclaw":{"emoji":"🚀","homepage":"https://github.com/wotaso/analyticscli-skills","requires":{"bins":["node","analyticscli"]},"install":[{"id":"analyticscli-cli","kind":"node","package":"@analyticscli/cli@preview","bins":["analyticscli"],"label":"Install/update AnalyticsCLI CLI (npm package @analyticscli/cli@preview)"}]}}
+metadata: {"author":"wotaso","version":"1.0.48","analyticscli-target":"@analyticscli/cli","analyticscli-supported-range":">=0.1.2-preview.0 <0.2.0","openclaw":{"emoji":"🚀","homepage":"https://github.com/wotaso/analyticscli-skills","requires":{"bins":["node","analyticscli"]},"install":[{"id":"analyticscli-cli","kind":"node","package":"@analyticscli/cli@preview","bins":["analyticscli"],"label":"Install/update AnalyticsCLI CLI (npm package @analyticscli/cli@preview)"}]}}
 ---
 
 # OpenClaw Growth Engineer
@@ -80,6 +80,14 @@ Connector status questions:
 - Do not require a single global GitHub repo for connector setup. GitHub is connected when auth/token is valid; choose or infer the repository per app/task later.
 - Answer from that command only. If it cannot be run, say "I have not run a connector status check yet" and give the wizard command; do not say credentials are missing just because they are not visible in chat.
 - Keep the answer short: say "Ja" only if every connector status is `connected`; otherwise list only the non-connected connector names and the status command's next action.
+
+Retention reliability:
+
+- Treat D1/D3/D7 retention as an identity-quality-sensitive metric, not as an unconditional product fact.
+- Before making strong retention claims, inspect the `analyticscli retention` response `quality.reliability`, stable identity share, and warnings.
+- If retention reliability is `low` or `unknown`, say the metric may be undercounted because some SDK sessions/users do not have persistent identity. Recommend verifying SDK identity persistence and rerunning retention with `analyticscli retention --identity-quality stable` before prioritizing major retention work from D1/D7 alone.
+- Do not filter silently. If using stable-only retention, disclose that ephemeral/unknown identities were excluded and compare the remaining cohort size.
+- Product recommendations can still mention weak retention, but phrase it as "appears low" when reliability is weak and pair it with an instrumentation/persistence action.
 
 Hard override for AI Growth Engineer connector questions:
 

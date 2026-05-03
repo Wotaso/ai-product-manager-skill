@@ -35,7 +35,9 @@ function computeDeltaPercent(currentValue, baselineValue) {
     return round(((currentValue - baselineValue) / Math.abs(baselineValue)) * 100, 2);
 }
 function normalizeWindow(last) {
-    const normalized = String(last || '30d').trim().toLowerCase();
+    const normalized = String(last || '30d')
+        .trim()
+        .toLowerCase();
     if (!normalized)
         return 'last_30d';
     if (normalized.startsWith('last_'))
@@ -63,6 +65,41 @@ function hasMinimumSample(value, minimum = 20) {
     const numeric = coerceNumber(value);
     return numeric !== null && numeric >= minimum;
 }
+function normalizeRetentionReliability(retention) {
+    if (!retention?.quality || typeof retention.quality !== 'object') {
+        return null;
+    }
+    const value = String(retention?.quality?.reliability || '')
+        .trim()
+        .toLowerCase();
+    if (value === 'high' || value === 'medium' || value === 'low' || value === 'unknown') {
+        return value;
+    }
+    return 'unknown';
+}
+function buildRetentionQualityEvidence(retention) {
+    const quality = retention?.quality;
+    if (!quality || typeof quality !== 'object') {
+        return [];
+    }
+    const evidence = [`Retention reliability: ${normalizeRetentionReliability(retention)}`];
+    const stableShare = coerceNumber(quality.stableIdentityShare);
+    const multiSessionShare = coerceNumber(quality.multiSessionShare);
+    if (stableShare !== null) {
+        evidence.push(`Stable identity share: ${(stableShare * 100).toFixed(1)}%`);
+    }
+    if (multiSessionShare !== null) {
+        evidence.push(`Multi-session identity share: ${(multiSessionShare * 100).toFixed(1)}%`);
+    }
+    if (Array.isArray(quality.warnings)) {
+        for (const warning of quality.warnings.slice(0, 2)) {
+            if (typeof warning === 'string' && warning.trim()) {
+                evidence.push(`Retention caveat: ${warning.trim()}`);
+            }
+        }
+    }
+    return evidence;
+}
 function maybePushSignal(signals, signal) {
     if (!signal)
         return;
@@ -85,10 +122,7 @@ export function buildAnalyticsSummary(input) {
     const last = String(input?.last || '30d');
     const onboardingJourney = input?.onboardingJourney || null;
     const retention = input?.retention || null;
-    const project = String(onboardingJourney?.projectId ||
-        input?.projectId ||
-        input?.project ||
-        'analyticscli-project').trim() || 'analyticscli-project';
+    const project = String(onboardingJourney?.projectId || input?.projectId || input?.project || 'analyticscli-project').trim() || 'analyticscli-project';
     const signals = [];
     const starters = coerceNumber(onboardingJourney?.starters) || 0;
     const paywallReachedUsers = coerceNumber(onboardingJourney?.paywallReachedUsers) || 0;
@@ -193,6 +227,9 @@ export function buildAnalyticsSummary(input) {
         { day: 3, baseline: 0.2 },
         { day: 1, baseline: 0.35 },
     ];
+    const retentionReliability = normalizeRetentionReliability(retention);
+    const retentionHasLowConfidence = retentionReliability === 'low' || retentionReliability === 'unknown';
+    const retentionQualityEvidence = buildRetentionQualityEvidence(retention);
     if (hasMinimumSample(retention?.cohortSize)) {
         for (const target of retentionTargets) {
             const actual = retentionByDay.get(target.day);
@@ -201,9 +238,11 @@ export function buildAnalyticsSummary(input) {
             }
             maybePushSignal(signals, {
                 id: `retention_d${target.day}_below_target`,
-                title: `Day-${target.day} retention is below target`,
+                title: retentionHasLowConfidence
+                    ? `Day-${target.day} retention appears below target, but identity quality is low`
+                    : `Day-${target.day} retention is below target`,
                 area: 'retention',
-                priority: target.day >= 3 ? 'high' : 'medium',
+                priority: retentionHasLowConfidence ? 'medium' : target.day >= 3 ? 'high' : 'medium',
                 metric: `d${target.day}_retention`,
                 current_value: round(actual),
                 baseline_value: target.baseline,
@@ -211,15 +250,19 @@ export function buildAnalyticsSummary(input) {
                 evidence: [
                     `Retention cohort size: ${retention.cohortSize}`,
                     `Observed D${target.day} retention: ${(actual * 100).toFixed(2)}%`,
+                    ...retentionQualityEvidence,
                     retention?.avgActiveDays !== undefined
                         ? `Average active days in the cohort: ${retention.avgActiveDays}`
                         : null,
                 ].filter(Boolean),
                 suggested_actions: [
+                    retentionHasLowConfidence
+                        ? 'Verify SDK identity persistence and rerun retention with stable identity filtering before treating D1/D7 as a product fact'
+                        : null,
                     'Revisit the first-session value loop and ensure the core action completes quickly',
                     'Add targeted re-entry prompts or reminders after the first session',
                     'Instrument the major early-session drop-off points to isolate which step drives the retention loss',
-                ],
+                ].filter(Boolean),
                 keywords: ['retention', 'engagement', 'activation', `d${target.day}`],
             });
             break;
@@ -235,6 +278,8 @@ export function buildAnalyticsSummary(input) {
             starters,
             paywallReachedUsers,
             retentionCohortSize: coerceNumber(retention?.cohortSize) || 0,
+            retentionReliability: retentionReliability || 'unreported',
+            retentionStableIdentityShare: coerceNumber(retention?.quality?.stableIdentityShare) || 0,
         },
     };
 }
@@ -275,7 +320,9 @@ function collectStatusEntries(payload) {
     return entries;
 }
 function classifyAscStatus(value) {
-    const normalized = String(value || '').trim().toLowerCase();
+    const normalized = String(value || '')
+        .trim()
+        .toLowerCase();
     if (!normalized)
         return null;
     if (/(reject|rejected|fail|failed|error|invalid|missing|remove|blocked|denied|cancel)/.test(normalized)) {
@@ -337,7 +384,16 @@ function rankKeywordThemes(texts) {
         {
             id: 'pricing',
             area: 'paywall',
-            keywords: ['subscription', 'subscribe', 'paywall', 'price', 'pricing', 'trial', 'premium', 'restore'],
+            keywords: [
+                'subscription',
+                'subscribe',
+                'paywall',
+                'price',
+                'pricing',
+                'trial',
+                'premium',
+                'restore',
+            ],
             suggestedActions: [
                 'Clarify package differences and restore messaging in the paywall flow',
                 'Use review phrasing directly to rewrite confusing pricing copy',
@@ -480,7 +536,10 @@ export function buildAscSummary(input) {
             current_value: theme.hits,
             baseline_value: 0,
             delta_percent: theme.hits > 0 ? 100 : 0,
-            evidence: reviewTexts.slice(0, 3).map((entry) => entry.text).filter(Boolean),
+            evidence: reviewTexts
+                .slice(0, 3)
+                .map((entry) => entry.text)
+                .filter(Boolean),
             suggested_actions: theme.suggestedActions,
             keywords: ['reviews', 'feedback', theme.area, ...theme.keywords.slice(0, 3)],
         });
@@ -529,16 +588,25 @@ function metricValueById(metrics, candidateIds) {
     return null;
 }
 export function buildRevenueCatSummary(input) {
-    const projectId = String(input?.projectId || input?.project?.id || 'revenuecat-project').trim() || 'revenuecat-project';
+    const projectId = String(input?.projectId || input?.project?.id || 'revenuecat-project').trim() ||
+        'revenuecat-project';
     const projectName = displayName(input?.project) || projectId;
     const apps = extractListItems(input?.appsPayload);
     const products = extractListItems(input?.productsPayload);
     const offerings = extractListItems(input?.offeringsPayload);
     const entitlements = extractListItems(input?.entitlementsPayload);
-    const metrics = Array.isArray(input?.overviewPayload?.metrics) ? input.overviewPayload.metrics : [];
+    const metrics = Array.isArray(input?.overviewPayload?.metrics)
+        ? input.overviewPayload.metrics
+        : [];
     const warnings = Array.isArray(input?.warnings) ? input.warnings.filter(Boolean) : [];
     const signals = [];
-    const revenueMetric = metricValueById(metrics, ['revenue', 'mrr', 'arr', 'new_revenue', 'monthly_recurring_revenue']);
+    const revenueMetric = metricValueById(metrics, [
+        'revenue',
+        'mrr',
+        'arr',
+        'new_revenue',
+        'monthly_recurring_revenue',
+    ]);
     const activeTrialsMetric = metricValueById(metrics, ['active_trials']);
     const activeSubscriptionsMetric = metricValueById(metrics, ['active_subscriptions', 'actives']);
     const churnMetric = metricValueById(metrics, ['churn', 'churn_rate']);
@@ -548,14 +616,23 @@ export function buildRevenueCatSummary(input) {
             title: 'RevenueCat overview metrics are connected',
             area: 'revenue',
             priority: 'medium',
-            metric: revenueMetric?.id || activeSubscriptionsMetric?.id || activeTrialsMetric?.id || 'revenuecat_metrics',
+            metric: revenueMetric?.id ||
+                activeSubscriptionsMetric?.id ||
+                activeTrialsMetric?.id ||
+                'revenuecat_metrics',
             current_value: revenueMetric?.value ?? activeSubscriptionsMetric?.value ?? activeTrialsMetric?.value ?? 0,
             baseline_value: null,
             delta_percent: null,
             evidence: [
-                revenueMetric ? `${revenueMetric.metric?.name || revenueMetric.id}: ${revenueMetric.value}` : null,
-                activeSubscriptionsMetric ? `${activeSubscriptionsMetric.metric?.name || activeSubscriptionsMetric.id}: ${activeSubscriptionsMetric.value}` : null,
-                activeTrialsMetric ? `${activeTrialsMetric.metric?.name || activeTrialsMetric.id}: ${activeTrialsMetric.value}` : null,
+                revenueMetric
+                    ? `${revenueMetric.metric?.name || revenueMetric.id}: ${revenueMetric.value}`
+                    : null,
+                activeSubscriptionsMetric
+                    ? `${activeSubscriptionsMetric.metric?.name || activeSubscriptionsMetric.id}: ${activeSubscriptionsMetric.value}`
+                    : null,
+                activeTrialsMetric
+                    ? `${activeTrialsMetric.metric?.name || activeTrialsMetric.id}: ${activeTrialsMetric.value}`
+                    : null,
             ].filter(Boolean),
             suggested_actions: [
                 'Compare RevenueCat movement with AnalyticsCLI paywall and purchase funnel signals',
