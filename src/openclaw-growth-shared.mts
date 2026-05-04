@@ -194,11 +194,22 @@ export function getActionMode(config) {
 }
 
 export function shouldAutoCreateGitHubArtifact(config) {
+  if (config?.actions?.disableAutoCreateGitHubArtifacts === true) {
+    return false;
+  }
   const mode = getActionMode(config);
   if (mode === 'pull_request') {
     return config?.actions?.autoCreatePullRequests === true;
   }
-  return config?.actions?.autoCreateIssues === true;
+  if (config?.actions?.autoCreateIssues === true) {
+    return true;
+  }
+
+  const tokenEnv = String(config?.secrets?.githubTokenEnv || 'GITHUB_TOKEN').trim();
+  const hasToken = Boolean(process.env[tokenEnv]);
+  const hasRepo = Boolean(String(config?.project?.githubRepo || '').trim());
+  const autoCreateWhenWritable = config?.actions?.autoCreateWhenGitHubWriteAccess !== false;
+  return autoCreateWhenWritable && hasToken && hasRepo;
 }
 
 export function getGitHubRequirementText(actionMode) {

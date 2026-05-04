@@ -18,6 +18,9 @@ Usage:
 Options:
   --app <id>             Optional App Store Connect app ID filter (defaults to all accessible apps)
   --out <file>           Write JSON to file instead of stdout
+  --start <date>         App Store Connect Analytics start date (YYYY-MM-DD, default: last 30 complete days)
+  --end <date>           App Store Connect Analytics end date (YYYY-MM-DD, default: yesterday UTC)
+  --skip-web-analytics   Skip experimental ASC web analytics queries
   --country <code>       Ratings country override (default: all countries)
   --reviews-limit <n>    Review summarizations limit (default: 20)
   --feedback-limit <n>   TestFlight feedback limit (default: 20)
@@ -27,9 +30,14 @@ Options:
     process.exit(exitCode);
 }
 function parseArgs(argv) {
+    const defaultEnd = formatDate(addDays(new Date(), -1));
+    const defaultStart = formatDate(addDays(parseDate(defaultEnd), -29));
     const args = {
         app: String(process.env.ASC_APP_ID || '').trim(),
         out: '',
+        start: String(process.env.ASC_ANALYTICS_START || defaultStart).trim(),
+        end: String(process.env.ASC_ANALYTICS_END || defaultEnd).trim(),
+        webAnalytics: true,
         country: '',
         reviewsLimit: 20,
         feedbackLimit: 20,
@@ -48,6 +56,17 @@ function parseArgs(argv) {
         else if (token === '--out') {
             args.out = String(next || '').trim();
             index += 1;
+        }
+        else if (token === '--start') {
+            args.start = String(next || '').trim();
+            index += 1;
+        }
+        else if (token === '--end') {
+            args.end = String(next || '').trim();
+            index += 1;
+        }
+        else if (token === '--skip-web-analytics') {
+            args.webAnalytics = false;
         }
         else if (token === '--country') {
             args.country = String(next || '').trim();
@@ -86,6 +105,17 @@ function parseArgs(argv) {
     }
     return args;
 }
+function addDays(date, days) {
+    const copy = new Date(date);
+    copy.setUTCDate(copy.getUTCDate() + days);
+    return copy;
+}
+function parseDate(value) {
+    return new Date(`${value}T00:00:00Z`);
+}
+function formatDate(date) {
+    return date.toISOString().slice(0, 10);
+}
 function runJsonCommand(command, commandArgs) {
     return new Promise((resolve, reject) => {
         const child = spawn(command, commandArgs, {
@@ -115,16 +145,13 @@ function runJsonCommand(command, commandArgs) {
         });
     });
 }
-async function runOptionalAscQuery(label, args) {
+async function runBestEffortAscQuery(label, args, warnings) {
     try {
         return await runJsonCommand('asc', args);
     }
     catch (error) {
-        const exitCode = error && typeof error === 'object' && 'exitCode' in error ? error.exitCode : null;
-        if (exitCode === 2 || exitCode === 3) {
-            return null;
-        }
-        throw new Error(`${label} failed: ${error instanceof Error ? error.message : String(error)}`);
+        warnings.push(`${label}: ${error instanceof Error ? error.message : String(error)}`);
+        return null;
     }
 }
 function normalizeString(value) {
@@ -176,13 +203,14 @@ async function listAscApps() {
     return apps;
 }
 async function buildSingleAppSummary(appId, args) {
-    const statusPayload = await runJsonCommand('asc', [
+    const warnings = [];
+    const statusPayload = await runBestEffortAscQuery('ASC status query', [
         'status',
         '--app',
         appId,
         '--include',
         'builds,testflight,submission,review,appstore',
-    ]);
+    ], warnings);
     const ratingsArgs = ['reviews', 'ratings', '--app', appId];
     if (args.country) {
         ratingsArgs.push('--country', args.country);
@@ -190,8 +218,8 @@ async function buildSingleAppSummary(appId, args) {
     else {
         ratingsArgs.push('--all');
     }
-    const ratingsPayload = await runOptionalAscQuery('ASC ratings query', ratingsArgs);
-    const reviewSummariesPayload = await runOptionalAscQuery('ASC review summarizations query', [
+    const ratingsPayload = await runBestEffortAscQuery('ASC ratings query', ratingsArgs, warnings);
+    const reviewSummariesPayload = await runBestEffortAscQuery('ASC review summarizations query', [
         'reviews',
         'summarizations',
         '--app',
@@ -202,8 +230,8 @@ async function buildSingleAppSummary(appId, args) {
         String(args.reviewsLimit),
         '--fields',
         'text,createdDate,locale',
-    ]);
-    const feedbackPayload = await runOptionalAscQuery('ASC beta feedback query', [
+    ], warnings);
+    const feedbackPayload = await runBestEffortAscQuery('ASC beta feedback query', [
         'feedback',
         '--app',
         appId,
@@ -211,13 +239,67 @@ async function buildSingleAppSummary(appId, args) {
         String(args.feedbackLimit),
         '--sort',
         '-createdDate',
-    ]);
+    ], warnings);
+    const analyticsMetricsPayload = args.webAnalytics
+        ? await runBestEffortAscQuery('ASC web analytics metrics query', [
+            'web',
+            'analytics',
+            'metrics',
+            '--app',
+            appId,
+            '--start',
+            args.start,
+            '--end',
+            args.end,
+            '--frequency',
+            'day',
+            '--measures',
+            'units,redownloads,conversionRate,crashRate',
+            '--output',
+            'json',
+        ], warnings)
+        : null;
+    const analyticsSourcesPayload = args.webAnalytics
+        ? await runBestEffortAscQuery('ASC web analytics sources query', [
+            'web',
+            'analytics',
+            'sources',
+            '--app',
+            appId,
+            '--start',
+            args.start,
+            '--end',
+            args.end,
+            '--output',
+            'json',
+        ], warnings)
+        : null;
+    const analyticsOverviewPayload = args.webAnalytics
+        ? await runBestEffortAscQuery('ASC web analytics overview query', [
+            'web',
+            'analytics',
+            'overview',
+            '--app',
+            appId,
+            '--start',
+            args.start,
+            '--end',
+            args.end,
+            '--output',
+            'json',
+        ], warnings)
+        : null;
     return buildAscSummary({
         appId,
         statusPayload,
         ratingsPayload,
         reviewSummariesPayload,
         feedbackPayload,
+        analyticsMetricsPayload,
+        analyticsSourcesPayload,
+        analyticsOverviewPayload,
+        analyticsWindow: { start: args.start, end: args.end },
+        analyticsWarnings: warnings,
         maxSignals: args.maxSignals,
     });
 }
@@ -234,6 +316,11 @@ async function buildAllAppsSummary(args) {
                 appId: app.id,
                 appName: app.name || null,
                 error: error instanceof Error ? error.message : String(error),
+                publicStatusHint: String(error instanceof Error ? error.message : error)
+                    .toLowerCase()
+                    .includes('403')
+                    ? 'app may not be public yet or ASC web analytics may not be available for this app'
+                    : null,
             });
         }
     }

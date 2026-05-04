@@ -100,6 +100,91 @@ test('buildAscSummary emits release blocker, rating, and review-theme signals', 
   assert(summary.signals.some((signal) => signal.id === 'asc_review_theme_pricing'));
 });
 
+test('buildAscSummary emits ASC analytics crashes, units, conversion, and source signals', () => {
+  const summary = buildAscSummary({
+    appId: '123456789',
+    analyticsMetricsPayload: {
+      result: {
+        results: [
+          {
+            measure: 'units',
+            total: 100,
+            previousTotal: 160,
+            percentChange: -0.375,
+            data: [{ date: '2026-05-03T00:00:00Z', value: 4 }],
+          },
+          {
+            measure: 'redownloads',
+            total: 12,
+            previousTotal: 10,
+            percentChange: 0.2,
+            data: [{ date: '2026-05-03T00:00:00Z', value: 1 }],
+          },
+          {
+            measure: 'conversionRate',
+            total: 4.5,
+            previousTotal: 6.2,
+            percentChange: -0.274,
+            data: [{ date: '2026-05-03T00:00:00Z', value: 3.9 }],
+          },
+          {
+            measure: 'crashRate',
+            total: 1.1,
+            previousTotal: 0,
+            percentChange: 1,
+            data: [{ date: '2026-05-03T00:00:00Z', value: 1.1 }],
+          },
+        ],
+      },
+    },
+    analyticsSourcesPayload: {
+      result: {
+        results: [
+          {
+            group: { key: 'Search', title: 'App Store Search' },
+            data: [{ date: '2026-05-03T00:00:00Z', pageViewUnique: 90 }],
+          },
+          {
+            group: { key: 'WebRef', title: 'Web Referrer' },
+            data: [{ date: '2026-05-03T00:00:00Z', pageViewUnique: 10 }],
+          },
+        ],
+      },
+    },
+    analyticsOverviewPayload: {
+      acquisition: [
+        {
+          measure: 'pageViewCount',
+          total: 80,
+          previousTotal: 120,
+          percentChange: -0.333,
+          type: 'COUNT',
+        },
+      ],
+      appUsageBreakdowns: [
+        {
+          measure: 'crashes',
+          total: 3,
+          items: [{ key: '1.0.0 (1)', label: '1.0.0 (iOS)', value: 3 }],
+        },
+      ],
+    },
+    analyticsWindow: { start: '2026-04-04', end: '2026-05-03' },
+    maxSignals: 5,
+  });
+
+  assert.equal(summary.meta.analytics.totalCrashes, 3);
+  assert.equal(summary.meta.analyticsAvailability, 'available');
+  assert.equal(summary.meta.analytics.units.total, 100);
+  assert.equal(summary.meta.analytics.sourceBreakdown[0].title, 'App Store Search');
+  assert(summary.meta.analytics.overviewMetricCatalog.some((metric) => metric.measure === 'pageViewCount'));
+  assert(summary.signals.some((signal) => signal.id === 'asc_production_crashes_detected'));
+  assert(summary.signals.some((signal) => signal.id === 'asc_units_declining'));
+  assert(summary.signals.some((signal) => signal.id === 'asc_conversion_rate_declining'));
+  assert(summary.signals.some((signal) => signal.id === 'asc_source_mix_available'));
+  assert(summary.signals.some((signal) => signal.id === 'asc_overview_metric_movements_detected'));
+});
+
 test('buildRevenueCatSummary emits live metrics and catalog signals', () => {
   const summary = buildRevenueCatSummary({
     project: { id: 'proj_123', name: 'Flashes' },

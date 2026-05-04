@@ -260,7 +260,7 @@ function summarizeSentry(preflight, config) {
   });
 }
 
-function summarizeAsc(preflight, config) {
+async function summarizeAsc(preflight, config, timeoutMs) {
   const ascSources = checksByPrefix(preflight, 'connection:asc_cli');
   const ascConnection = ascSources[0] || null;
   const ascConfigured = (Array.isArray(config?.sources?.extra) ? config.sources.extra : []).some(
@@ -270,8 +270,30 @@ function summarizeAsc(preflight, config) {
     return connector('not_enabled', 'App Store Connect CLI source is disabled');
   }
   if (ascConnection?.status === 'pass') {
+    const webAuth = await runShell('asc web auth status --output json', { timeoutMs });
+    if (!webAuth.ok) {
+      return connector('partial', 'ASC API exporter works, but ASC web analytics login is not verified', {
+        appScope: 'all_accessible_apps',
+        nextAction: 'Run: asc web auth login && asc web auth status --output json --pretty',
+      });
+    }
+    try {
+      const payload = JSON.parse(webAuth.stdout || '{}');
+      if (payload?.authenticated !== true) {
+        return connector('partial', 'ASC API exporter works, but ASC web analytics is not logged in', {
+          appScope: 'all_accessible_apps',
+          nextAction: 'Run: asc web auth login && asc web auth status --output json --pretty',
+        });
+      }
+    } catch {
+      return connector('partial', 'ASC API exporter works, but ASC web analytics status returned invalid JSON', {
+        appScope: 'all_accessible_apps',
+        nextAction: 'Run: asc web auth login && asc web auth status --output json --pretty',
+      });
+    }
     return connector('connected', 'ASC exporter smoke test passed for accessible apps', {
       appScope: 'all_accessible_apps',
+      webAnalytics: 'authenticated',
     });
   }
   return connector('blocked', ascConnection?.detail || 'ASC connection was not verified', {
@@ -293,7 +315,7 @@ async function main() {
         github: await checkGitHub(config, args.timeoutMs),
         revenuecat: summarizeRevenueCat(preflightPayload, config),
         sentry: summarizeSentry(preflightPayload, config),
-        appStoreConnect: summarizeAsc(preflightPayload, config),
+        appStoreConnect: await summarizeAsc(preflightPayload, config, args.timeoutMs),
       }
     : {
         analyticscli: connector('unknown', preflight.error || 'Preflight did not run'),

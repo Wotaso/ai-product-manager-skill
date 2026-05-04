@@ -99,7 +99,7 @@ Recommended mobile extras:
 - `play-console`
 
 For Apple-platform apps, ask whether to connect the `asc` CLI plus the App Store Connect agent skill for App Store Connect Analytics data only.
-Use it for monthly analytics reports, not release/TestFlight/pricing/admin workflows.
+Use it for production App Store analytics, crash totals, source traffic, and monthly analytics reports, not TestFlight/pricing/admin workflows unless the user explicitly asks.
 Recommended least privilege: Sales/Sales and Reports style access for generated analytics reports; Admin only temporarily if a new report type must be requested first.
 
 ASC key locations:
@@ -121,6 +121,7 @@ Sentry setup:
 - Use read-only Sentry API scopes: `org:read`, `project:read`, and `event:read`.
 - The direct source command is `node scripts/export-sentry-summary.mjs`; optional MCP config uses `@sentry/mcp-server@latest` when `npx` is available.
 - Treat Sentry as connected only after auth and exporter smoke tests pass.
+- For production crash monitoring, compare Sentry issue/event/user counts with ASC total crashes and app-version crash breakdowns. ASC `crashRate` is supporting context; total crashes and affected users are the daily alert trigger.
 
 ## 5) Store Secrets
 
@@ -162,6 +163,35 @@ Loop:
 ```bash
 node scripts/openclaw-growth-runner.mjs --config data/openclaw-growth-engineer/config.json --loop
 ```
+
+## 7a) Production Health And Growth Cadence
+
+The default loop interval is one day (`schedule.intervalMinutes = 1440`). Daily runs should cover public production apps only.
+If ASC web analytics returns a 403 for an app that is not public yet, record it as skipped/not-public rather than a failure.
+
+Daily:
+
+- Check ASC total production crashes by app version and Sentry production issues/events/users.
+- Notify the OpenClaw user through configured chat/social delivery when total production crashes are non-zero.
+- Check every available ASC overview metric, especially units/downloads, redownloads, conversion rate, app usage, updates, app opens, subscription state, source traffic, and unique product page views by source.
+- If the ASC web analytics session is missing or expired, tell the user to run `asc web auth login`, verify with `asc web auth status --output json --pretty`, and rerun OpenClaw Growth.
+- Compare crash movement with release/build data before recommending more acquisition traffic.
+- Automatically create GitHub issues or implementation PRs when OpenClaw has configured GitHub API write access. Skip only when write access is missing, the finding is too low-confidence, or `actions.disableAutoCreateGitHubArtifacts = true`.
+
+Weekly:
+
+- Compare units, conversion, source mix, AnalyticsCLI activation/funnels/retention, Sentry stability, RevenueCat monetization when enabled, reviews, and releases.
+- Produce one to three Handlungsempfehlungen with evidence, expected KPI movement, and likely code/store surfaces.
+
+Monthly:
+
+- Compare month-over-month units/downloads, redownloads, conversion, source quality, crash totals, review themes, retention, and churn.
+- Decide which acquisition channel, listing element, onboarding step, paywall, or feature should be built, changed, or deleted.
+
+ASC source reporting caveat:
+
+- `asc web analytics sources` reports unique product page views by source. Do not call this downloads by source unless ASC exposes a true source-level download/unit measure.
+- Use source page views together with units and conversion rate to infer traffic quality.
 
 ## 8) Feedback Collection
 

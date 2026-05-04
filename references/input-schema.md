@@ -98,3 +98,65 @@ Examples:
 - `play_console`
 
 If your connector can already emit shared `signals[]`, use that shape. It is the least ambiguous path.
+
+## ASC Analytics Payloads
+
+The built-in ASC exporter can attach App Store Connect Analytics context under `meta.analytics`.
+Use it for production growth/stability checks, not TestFlight crash triage.
+
+Expected fields:
+
+```json
+{
+  "project": "app-store-connect:123456789",
+  "window": "latest",
+  "signals": [
+    {
+      "id": "asc_production_crashes_detected",
+      "area": "crash",
+      "metric": "asc_total_crashes",
+      "current_value": 3
+    }
+  ],
+  "meta": {
+    "source": "asc",
+    "analyticsWindow": { "start": "2026-04-04", "end": "2026-05-03" },
+    "analytics": {
+      "units": { "total": 100, "previousTotal": 160, "percentChange": -0.375 },
+      "redownloads": { "total": 12, "previousTotal": 10, "percentChange": 0.2 },
+      "conversionRate": { "total": 4.5, "previousTotal": 6.2, "percentChange": -0.274 },
+      "crashRate": {
+        "total": 1.1,
+        "previousTotal": 0,
+        "percentChange": 1,
+        "nonZeroDays": [{ "date": "2026-05-03", "value": 1.1 }]
+      },
+      "totalCrashes": 3,
+      "crashBreakdown": [{ "label": "1.0.0 (iOS)", "value": 3 }],
+      "sourceBreakdown": [
+        { "title": "App Store Search", "pageViewUnique": 90 },
+        { "title": "Web Referrer", "pageViewUnique": 10 }
+      ],
+      "overviewMetricCatalog": [
+        {
+          "section": "acquisition",
+          "measure": "pageViewCount",
+          "total": 80,
+          "previousTotal": 120,
+          "percentChange": -0.333,
+          "type": "COUNT"
+        }
+      ]
+    }
+  }
+}
+```
+
+Rules for recommendations:
+
+- alert daily on non-zero production total crashes
+- compare ASC crash totals with Sentry production issues/events/users when Sentry is connected
+- if ASC web analytics auth is missing, tell the user to run `asc web auth login` and verify with `asc web auth status --output json --pretty`
+- inspect `overviewMetricCatalog` so recommendations use all available ASC metrics, not only units/conversion/source traffic
+- treat ASC sources as unique product page views by source, not download units by source
+- turn source mix into Handlungsempfehlungen only after comparing units/downloads and conversion

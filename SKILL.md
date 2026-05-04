@@ -3,7 +3,7 @@ name: openclaw-growth-engineer
 description: OpenClaw-first growth autopilot for mobile apps. Correlate analytics, crashes, billing, feedback, store signals, and repo context into proposal drafts that can flow into OpenClaw chat, GitHub issues, or draft pull requests.
 license: MIT
 homepage: https://github.com/wotaso/analyticscli-skills
-metadata: {"author":"wotaso","version":"1.0.49","analyticscli-target":"@analyticscli/cli","analyticscli-supported-range":">=0.1.2-preview.0 <0.2.0","openclaw":{"emoji":"🚀","homepage":"https://github.com/wotaso/analyticscli-skills","requires":{"bins":["node","analyticscli"]},"install":[{"id":"analyticscli-cli","kind":"node","package":"@analyticscli/cli@preview","bins":["analyticscli"],"label":"Install/update AnalyticsCLI CLI (npm package @analyticscli/cli@preview)"}]}}
+metadata: {"author":"wotaso","version":"1.0.50","analyticscli-target":"@analyticscli/cli","analyticscli-supported-range":">=0.1.2-preview.0 <0.2.0","openclaw":{"emoji":"🚀","homepage":"https://github.com/wotaso/analyticscli-skills","requires":{"bins":["node","analyticscli"]},"install":[{"id":"analyticscli-cli","kind":"node","package":"@analyticscli/cli@preview","bins":["analyticscli"],"label":"Install/update AnalyticsCLI CLI (npm package @analyticscli/cli@preview)"}]}}
 ---
 
 # OpenClaw Growth Engineer
@@ -104,6 +104,20 @@ Growth operating plan:
   - Every 6 months: audit connector coverage, SDK instrumentation, event taxonomy, data reliability, growth loops, and whether product/marketing strategy still matches the best users.
   - Yearly: reset strategy from evidence: market/channel fit, monetization model, retention ceiling, product scope, and whether to double down, reposition, or sunset major surfaces/features.
 - Marketing/social rule: if social or marketing automation exists, treat it as a growth source when data is available. Ask for or configure account analytics case-by-case (TikTok, Instagram, ads, creator automation, landing pages, UTM/source data), then connect those signals back to acquisition quality, activation, retention, churn, and revenue instead of optimizing impressions alone.
+
+Production crash and ASC growth monitoring:
+
+- Run the production health loop every day for every public, analytics-accessible app. Apps that are not public yet, not eligible for ASC analytics, or returning ASC web analytics 403s should be marked `not_public_or_not_analytics_ready` and skipped without calling them broken.
+- Daily crash check: prefer total production crashes from ASC App Usage breakdowns and Sentry production issue/event counts. Use ASC `crashRate` only as a supporting ratio, never as the only stability signal. TestFlight crashes are out of scope unless the user explicitly asks.
+- Any non-zero production crash count should trigger a short OpenClaw user notification through the configured OpenClaw chat/social delivery channel. The notification should name the app, date range, total crash count, affected app version when available, Sentry issue count/users when connected, and the recommended next action.
+- If GitHub issue/PR write access is configured through OpenClaw's GitHub API connection, automatically create the tracking GitHub issue or implementation PR for production crashes and high-confidence growth findings. Only skip GitHub artifact creation when `actions.disableAutoCreateGitHubArtifacts = true`, GitHub write access is unavailable, or the finding is too low-confidence to be useful.
+- Correlate ASC total crashes with Sentry production data before recommending growth pushes: app version/build, release date, top Sentry issue, affected users/events, funnel step, paywall/purchase path, and recent code changes. If ASC and Sentry disagree, report both and say which connector is more complete for the app.
+- Daily ASC acquisition check: collect all available ASC overview metrics, including but not limited to `units`, `redownloads`, `conversionRate`, `crashRate`, source page views, app usage, updates, app opens, subscription state, and total crashes. Treat ASC source data as source-level product page views, not source-level download units unless the CLI exposes a true source-download measure.
+- If ASC web analytics is not logged in or the user-owned web session expired, tell the OpenClaw user exactly how to refresh it: run `asc web auth login`, then verify with `asc web auth status --output json --pretty`, then rerun OpenClaw Growth. Do not confuse this with API-key ASC auth.
+- Weekly growth review: compare units/downloads, redownloads, conversion rate, source mix, AnalyticsCLI activation/funnels/retention, Sentry stability, RevenueCat monetization, reviews, and recent releases. Turn the strongest cross-source pattern into one implementation-ready Handlungsempfehlung.
+- Monthly growth review: compare month-over-month units, conversion, source quality, reviews, retention, churn, crash totals, and production versions. Decide which acquisition channel, store listing element, onboarding step, paywall, or feature should be built, changed, or deleted next.
+- Handlungsempfehlungen must be source-aware: Search means ASO/keywords/screenshots; Web Referrer means landing pages, UTMs, creator/SEO traffic, and deep links; Browse means category positioning and visual conversion; App Referrer means cross-promotion and in-app referral paths. Always verify the recommendation against units/conversion and downstream activation, not traffic volume alone.
+- For financial data, keep it secondary unless the user asks. Prioritize production crashes, downloads/units, redownloads, conversion, source traffic, activation, retention, and qualitative store/user feedback.
 
 Hard override for AI Growth Engineer connector questions:
 

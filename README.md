@@ -53,7 +53,9 @@ Before requesting optional credentials, ask which connections the user wants to 
 ## What It Does
 
 - Reads analytics by default and can add RevenueCat, Sentry/GlitchTip, feedback, store/release connectors, Slack, and generic webhooks.
-- For iOS/macOS apps, setup should ask whether to connect the `asc` CLI and App Store Connect skill for App Store Connect Analytics data only.
+- For iOS/macOS apps, setup should ask whether to connect the `asc` CLI and App Store Connect skill for production App Store Connect Analytics: units/downloads, redownloads, conversion, source page views, and crash totals.
+- Runs a daily production health pass when scheduled: non-zero production crash totals should notify the OpenClaw user through configured chat/social delivery, then create a GitHub issue or implementation PR automatically when GitHub API write access is configured.
+- Checks whether ASC web analytics access is usable. If the user-owned web session expired, it tells the user to run `asc web auth login` and verify with `asc web auth status --output json --pretty`.
 - Uses `analyticscli feedback summary --format json` as the built-in feedback source instead of a separate duplicate feedback definition.
 - Correlates product signals with repo context; connect GitHub with readable code access whenever possible because it makes analytics findings much more actionable.
 - Generates local issue drafts by default.

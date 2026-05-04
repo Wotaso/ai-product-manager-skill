@@ -443,6 +443,150 @@ function rankKeywordThemes(texts) {
         .filter((theme) => theme.hits > 0)
         .sort((a, b) => b.hits - a.hits);
 }
+function collectAscMetricEntries(payload) {
+    if (Array.isArray(payload?.result?.results))
+        return payload.result.results;
+    if (Array.isArray(payload?.results))
+        return payload.results;
+    if (Array.isArray(payload?.acquisition))
+        return payload.acquisition;
+    if (Array.isArray(payload))
+        return payload;
+    return [];
+}
+function findAscMetric(payload, measure) {
+    const normalized = String(measure || '').toLowerCase();
+    return collectAscMetricEntries(payload).find((entry) => String(entry?.measure || '').toLowerCase() === normalized) || null;
+}
+function normalizeMetricData(entry) {
+    return Array.isArray(entry?.data)
+        ? entry.data
+            .map((point) => ({
+            date: String(point?.date || '').slice(0, 10),
+            value: coerceNumber(point?.value),
+        }))
+            .filter((point) => point.date && point.value !== null)
+        : [];
+}
+function summarizeSourceBreakdown(payload) {
+    const entries = Array.isArray(payload?.result?.results)
+        ? payload.result.results
+        : Array.isArray(payload?.results)
+            ? payload.results
+            : [];
+    return entries
+        .map((entry) => {
+        const data = Array.isArray(entry?.data) ? entry.data : [];
+        const total = data.reduce((sum, point) => sum + (coerceNumber(point?.pageViewUnique ?? point?.value) || 0), 0);
+        return {
+            key: String(entry?.group?.key || entry?.key || entry?.source || 'unknown'),
+            title: String(entry?.group?.title || entry?.title || entry?.label || entry?.group?.key || 'Unknown'),
+            pageViewUnique: total,
+        };
+    })
+        .filter((entry) => entry.pageViewUnique > 0)
+        .sort((a, b) => b.pageViewUnique - a.pageViewUnique);
+}
+function extractAscCrashBreakdowns(payload) {
+    const breakdowns = Array.isArray(payload?.appUsageBreakdowns) ? payload.appUsageBreakdowns : [];
+    return breakdowns
+        .filter((breakdown) => String(breakdown?.measure || '').toLowerCase() === 'crashes')
+        .flatMap((breakdown) => Array.isArray(breakdown?.items)
+        ? breakdown.items.map((item) => ({
+            label: String(item?.label || item?.key || 'Unknown app version'),
+            value: coerceNumber(item?.value) || 0,
+        }))
+        : [])
+        .filter((entry) => entry.value > 0)
+        .sort((a, b) => b.value - a.value);
+}
+function totalAscCrashes(payload) {
+    const breakdowns = Array.isArray(payload?.appUsageBreakdowns) ? payload.appUsageBreakdowns : [];
+    const directTotal = breakdowns
+        .filter((breakdown) => String(breakdown?.measure || '').toLowerCase() === 'crashes')
+        .reduce((sum, breakdown) => sum + (coerceNumber(breakdown?.total) || 0), 0);
+    if (directTotal > 0)
+        return directTotal;
+    return extractAscCrashBreakdowns(payload).reduce((sum, entry) => sum + entry.value, 0);
+}
+function isLikelyAscWebAuthMissing(warnings) {
+    return warnings.some((warning) => {
+        const normalized = String(warning || '').toLowerCase();
+        return (normalized.includes('asc web auth login') ||
+            normalized.includes('web session is unauthorized') ||
+            normalized.includes('web session is expired'));
+    });
+}
+function collectAscOverviewMetricCatalog(payload) {
+    const sections = ['acquisition', 'sales', 'subscriptions'];
+    const metrics = [];
+    for (const section of sections) {
+        const entries = Array.isArray(payload?.[section]) ? payload[section] : [];
+        for (const entry of entries) {
+            const measure = String(entry?.measure || '').trim();
+            if (!measure)
+                continue;
+            metrics.push({
+                section,
+                measure,
+                total: coerceNumber(entry?.total),
+                previousTotal: coerceNumber(entry?.previousTotal),
+                percentChange: coerceNumber(entry?.percentChange),
+                type: String(entry?.type || '').trim() || null,
+            });
+        }
+    }
+    const breakdownSections = ['featureBreakdowns', 'appUsageBreakdowns'];
+    for (const section of breakdownSections) {
+        const entries = Array.isArray(payload?.[section]) ? payload[section] : [];
+        for (const entry of entries) {
+            const measure = String(entry?.measure || entry?.name || '').trim();
+            if (!measure)
+                continue;
+            metrics.push({
+                section,
+                measure,
+                total: coerceNumber(entry?.total),
+                previousTotal: coerceNumber(entry?.previousTotal),
+                percentChange: coerceNumber(entry?.percentChange),
+                type: 'BREAKDOWN',
+            });
+        }
+    }
+    const planTimeline = Array.isArray(payload?.planTimeline) ? payload.planTimeline : [];
+    for (const entry of planTimeline) {
+        const totals = entry?.totals && typeof entry.totals === 'object' ? entry.totals : null;
+        const measure = String(totals?.key || '').trim();
+        if (!measure)
+            continue;
+        metrics.push({
+            section: 'planTimeline',
+            measure,
+            total: coerceNumber(totals?.value),
+            previousTotal: null,
+            percentChange: null,
+            type: String(totals?.type || 'COUNT'),
+        });
+    }
+    const byKey = new Map();
+    for (const metric of metrics) {
+        const key = `${metric.section}:${metric.measure}`;
+        if (!byKey.has(key))
+            byKey.set(key, metric);
+    }
+    return [...byKey.values()];
+}
+function formatMetricMovement(metric) {
+    const total = metric.total === null ? 'unknown' : round(metric.total);
+    const previous = metric.previousTotal === null ? null : ` previous ${round(metric.previousTotal)}`;
+    const change = metric.percentChange === null ? null : ` change ${formatPercent(metric.percentChange)}`;
+    return `${metric.section}.${metric.measure}: ${total}${previous || ''}${change || ''}`;
+}
+function formatPercent(value) {
+    if (value === null || value === undefined || !Number.isFinite(Number(value)))
+        return 'unknown';
+    return `${round(Number(value) * 100)}%`;
+}
 export function buildAscSummary(input) {
     const appId = String(input?.appId || 'ASC_APP_ID').trim() || 'ASC_APP_ID';
     const statusEntries = collectStatusEntries(input?.statusPayload);
@@ -467,7 +611,68 @@ export function buildAscSummary(input) {
         ...extractReviewTexts(input?.feedbackPayload),
     ];
     const topThemes = rankKeywordThemes(reviewTexts).slice(0, 2);
+    const analyticsMetricsPayload = input?.analyticsMetricsPayload || input?.analyticsOverviewPayload;
+    const unitsMetric = findAscMetric(analyticsMetricsPayload, 'units');
+    const redownloadsMetric = findAscMetric(analyticsMetricsPayload, 'redownloads');
+    const conversionRateMetric = findAscMetric(analyticsMetricsPayload || input?.analyticsOverviewPayload, 'conversionRate');
+    const crashRateMetric = findAscMetric(analyticsMetricsPayload, 'crashRate');
+    const sourceBreakdown = summarizeSourceBreakdown(input?.analyticsSourcesPayload);
+    const totalSourcePageViews = sourceBreakdown.reduce((sum, source) => sum + source.pageViewUnique, 0);
+    const topSource = sourceBreakdown[0] || null;
+    const crashBreakdown = extractAscCrashBreakdowns(input?.analyticsOverviewPayload);
+    const totalCrashes = totalAscCrashes(input?.analyticsOverviewPayload);
+    const analyticsWarnings = Array.isArray(input?.analyticsWarnings) ? input.analyticsWarnings : [];
+    const webAuthMissing = isLikelyAscWebAuthMissing(analyticsWarnings);
+    const analyticsAvailability = webAuthMissing
+        ? 'web_auth_missing'
+        : analyticsWarnings.some((warning) => String(warning).includes('403'))
+            ? 'not_public_or_not_analytics_ready'
+            : unitsMetric || conversionRateMetric || sourceBreakdown.length > 0 || totalCrashes > 0
+                ? 'available'
+                : 'unknown';
+    const overviewMetricCatalog = collectAscOverviewMetricCatalog(input?.analyticsOverviewPayload);
+    const notableOverviewMetrics = overviewMetricCatalog
+        .filter((metric) => {
+        const measure = metric.measure.toLowerCase();
+        if (['units', 'redownloads', 'conversionrate'].includes(measure))
+            return false;
+        if (measure === 'crashrate' || measure === 'crashes')
+            return false;
+        const percentChange = Math.abs(coerceNumber(metric.percentChange) || 0);
+        const total = Math.abs(coerceNumber(metric.total) || 0);
+        return percentChange >= 0.1 || total > 0;
+    })
+        .sort((a, b) => {
+        const aChange = Math.abs(coerceNumber(a.percentChange) || 0);
+        const bChange = Math.abs(coerceNumber(b.percentChange) || 0);
+        if (aChange !== bChange)
+            return bChange - aChange;
+        return Math.abs(coerceNumber(b.total) || 0) - Math.abs(coerceNumber(a.total) || 0);
+    })
+        .slice(0, 6);
+    const nonZeroCrashRateDays = normalizeMetricData(crashRateMetric)
+        .filter((point) => Number(point.value) > 0)
+        .slice(-5);
     const signals = [];
+    if (webAuthMissing) {
+        maybePushSignal(signals, {
+            id: 'asc_web_analytics_access_missing',
+            title: 'ASC web analytics access needs login refresh',
+            area: 'connector',
+            priority: 'high',
+            metric: 'asc_web_analytics_access',
+            current_value: 0,
+            baseline_value: 1,
+            delta_percent: -100,
+            evidence: analyticsWarnings.slice(0, 3),
+            suggested_actions: [
+                'Tell the OpenClaw user to run: asc web auth login',
+                'After login, verify with: asc web auth status --output json --pretty',
+                'Retry the ASC exporter so units, conversion, source traffic, and production crash totals are available',
+            ],
+            keywords: ['asc', 'web_analytics', 'login', 'connector'],
+        });
+    }
     if (blockingStatuses.length > 0) {
         maybePushSignal(signals, {
             id: 'asc_release_blockers_detected',
@@ -544,6 +749,133 @@ export function buildAscSummary(input) {
             keywords: ['reviews', 'feedback', theme.area, ...theme.keywords.slice(0, 3)],
         });
     }
+    if (totalCrashes > 0 || nonZeroCrashRateDays.length > 0) {
+        maybePushSignal(signals, {
+            id: 'asc_production_crashes_detected',
+            title: 'ASC reports production crashes',
+            area: 'crash',
+            priority: totalCrashes >= 10 || nonZeroCrashRateDays.length >= 3 ? 'high' : 'medium',
+            metric: 'asc_total_crashes',
+            current_value: totalCrashes,
+            baseline_value: 0,
+            delta_percent: totalCrashes > 0 ? 100 : null,
+            evidence: [
+                totalCrashes > 0 ? `ASC total crashes: ${totalCrashes}` : null,
+                ...crashBreakdown
+                    .slice(0, 3)
+                    .map((entry) => `Crashes by app version: ${entry.label} = ${entry.value}`),
+                ...nonZeroCrashRateDays.map((point) => `Crash rate ${point.date}: ${point.value}`),
+            ].filter(Boolean),
+            suggested_actions: [
+                'Notify the OpenClaw user through the connected chat or social delivery channel before growth traffic is scaled',
+                'Compare ASC total crashes with Sentry production issues for the same app version and date range',
+                'If GitHub issue/PR write access is configured in OpenClaw, create the tracking issue or implementation PR automatically',
+            ],
+            keywords: ['asc', 'crash', 'production', 'sentry', 'release'],
+        });
+    }
+    if (notableOverviewMetrics.length > 0) {
+        maybePushSignal(signals, {
+            id: 'asc_overview_metric_movements_detected',
+            title: 'ASC overview metrics have movement worth comparing',
+            area: 'analytics',
+            priority: notableOverviewMetrics.some((metric) => Math.abs(coerceNumber(metric.percentChange) || 0) >= 0.5)
+                ? 'medium'
+                : 'low',
+            metric: 'asc_overview_metrics',
+            current_value: notableOverviewMetrics.length,
+            baseline_value: overviewMetricCatalog.length,
+            delta_percent: null,
+            evidence: notableOverviewMetrics.map(formatMetricMovement),
+            suggested_actions: [
+                'Analyze every available ASC overview metric together with units, conversion, sources, AnalyticsCLI funnels, Sentry stability, and reviews before choosing a recommendation',
+                'Keep financial metrics secondary unless the user asks, but still use them as validation for acquisition and conversion quality',
+            ],
+            keywords: ['asc', 'analytics', 'overview_metrics', 'conversion', 'handlungsempfehlung'],
+        });
+    }
+    if (unitsMetric && coerceNumber(unitsMetric.total) !== null) {
+        const units = coerceNumber(unitsMetric.total) || 0;
+        const percentChange = coerceNumber(unitsMetric.percentChange);
+        if (units >= 10 && percentChange !== null && percentChange <= -0.2) {
+            maybePushSignal(signals, {
+                id: 'asc_units_declining',
+                title: 'App Store downloads are down versus the previous comparable period',
+                area: 'acquisition',
+                priority: percentChange <= -0.4 ? 'high' : 'medium',
+                metric: 'asc_units',
+                current_value: units,
+                baseline_value: coerceNumber(unitsMetric.previousTotal),
+                delta_percent: round(percentChange * 100),
+                evidence: [
+                    `Units: ${units}`,
+                    `Previous units: ${coerceNumber(unitsMetric.previousTotal) ?? 'unknown'}`,
+                    `Change: ${formatPercent(percentChange)}`,
+                    redownloadsMetric ? `Redownloads: ${coerceNumber(redownloadsMetric.total) ?? 0}` : null,
+                ].filter(Boolean),
+                suggested_actions: [
+                    'Compare the download drop with source traffic, store impressions, page views, ranking/search changes, and recent releases',
+                    'Segment the recommendation into ASO, web/referrer, browse, or app-referrer work based on the source mix',
+                ],
+                keywords: ['asc', 'units', 'downloads', 'acquisition', 'sources'],
+            });
+        }
+    }
+    if (conversionRateMetric && coerceNumber(conversionRateMetric.total) !== null) {
+        const conversionRate = coerceNumber(conversionRateMetric.total) || 0;
+        const percentChange = coerceNumber(conversionRateMetric.percentChange);
+        if (percentChange !== null && percentChange <= -0.1) {
+            maybePushSignal(signals, {
+                id: 'asc_conversion_rate_declining',
+                title: 'App Store conversion rate is declining',
+                area: 'conversion',
+                priority: percentChange <= -0.25 ? 'high' : 'medium',
+                metric: 'asc_conversion_rate',
+                current_value: round(conversionRate),
+                baseline_value: coerceNumber(conversionRateMetric.previousTotal),
+                delta_percent: round(percentChange * 100),
+                evidence: [
+                    `Conversion rate: ${round(conversionRate)}`,
+                    `Previous conversion rate: ${coerceNumber(conversionRateMetric.previousTotal) ?? 'unknown'}`,
+                    `Change: ${formatPercent(percentChange)}`,
+                    topSource ? `Top source by unique product page views: ${topSource.title} (${topSource.pageViewUnique})` : null,
+                ].filter(Boolean),
+                suggested_actions: [
+                    'Review store listing screenshots, subtitle, keywords, and price/paywall promise for the source that changed most',
+                    'Compare ASC conversion movement with AnalyticsCLI onboarding and paywall conversion before changing app code',
+                ],
+                keywords: ['asc', 'conversion', 'store_listing', 'sources', 'aso'],
+            });
+        }
+    }
+    if (topSource && totalSourcePageViews > 0) {
+        const share = topSource.pageViewUnique / totalSourcePageViews;
+        if (share >= 0.5 || sourceBreakdown.length >= 2) {
+            maybePushSignal(signals, {
+                id: 'asc_source_mix_available',
+                title: 'ASC source traffic is available for acquisition recommendations',
+                area: 'acquisition',
+                priority: share >= 0.7 ? 'medium' : 'low',
+                metric: 'asc_source_page_view_unique',
+                current_value: topSource.pageViewUnique,
+                baseline_value: totalSourcePageViews,
+                delta_percent: round(share * 100),
+                evidence: [
+                    `Top source: ${topSource.title} (${topSource.pageViewUnique} unique product page views)`,
+                    `Source mix: ${sourceBreakdown
+                        .slice(0, 5)
+                        .map((source) => `${source.title} ${source.pageViewUnique}`)
+                        .join(', ')}`,
+                    'ASC sources are product page views by unique devices, not source-level download units',
+                ],
+                suggested_actions: [
+                    'Turn the dominant source into a specific Handlungsempfehlung: Search -> ASO/keywords, Web Referrer -> landing pages/UTMs, Browse -> creative/category positioning, App Referrer -> cross-promo/deep links',
+                    'Compare source movement with units, redownloads, conversion rate, AnalyticsCLI activation, and Sentry crashes before recommending more spend or traffic',
+                ],
+                keywords: ['asc', 'sources', 'traffic', 'page_views', 'handlungsempfehlung'],
+            });
+        }
+    }
     return {
         project: `app-store-connect:${appId}`,
         window: 'latest',
@@ -554,6 +886,44 @@ export function buildAscSummary(input) {
             appId,
             ratingCount: ratingCount ?? 0,
             feedbackTextCount: reviewTexts.length,
+            analyticsWindow: input?.analyticsWindow || null,
+            analyticsAvailability,
+            analyticsWarnings,
+            analytics: {
+                units: unitsMetric
+                    ? {
+                        total: coerceNumber(unitsMetric.total) ?? 0,
+                        previousTotal: coerceNumber(unitsMetric.previousTotal),
+                        percentChange: coerceNumber(unitsMetric.percentChange),
+                    }
+                    : null,
+                redownloads: redownloadsMetric
+                    ? {
+                        total: coerceNumber(redownloadsMetric.total) ?? 0,
+                        previousTotal: coerceNumber(redownloadsMetric.previousTotal),
+                        percentChange: coerceNumber(redownloadsMetric.percentChange),
+                    }
+                    : null,
+                conversionRate: conversionRateMetric
+                    ? {
+                        total: coerceNumber(conversionRateMetric.total) ?? 0,
+                        previousTotal: coerceNumber(conversionRateMetric.previousTotal),
+                        percentChange: coerceNumber(conversionRateMetric.percentChange),
+                    }
+                    : null,
+                crashRate: crashRateMetric
+                    ? {
+                        total: coerceNumber(crashRateMetric.total) ?? 0,
+                        previousTotal: coerceNumber(crashRateMetric.previousTotal),
+                        percentChange: coerceNumber(crashRateMetric.percentChange),
+                        nonZeroDays: nonZeroCrashRateDays,
+                    }
+                    : null,
+                totalCrashes,
+                crashBreakdown,
+                sourceBreakdown,
+                overviewMetricCatalog,
+            },
         },
     };
 }
