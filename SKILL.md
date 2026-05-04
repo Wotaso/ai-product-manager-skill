@@ -3,7 +3,7 @@ name: openclaw-growth-engineer
 description: OpenClaw-first growth autopilot for mobile apps. Correlate analytics, crashes, billing, feedback, store signals, and repo context into proposal drafts that can flow into OpenClaw chat, GitHub issues, or draft pull requests.
 license: MIT
 homepage: https://github.com/wotaso/analyticscli-skills
-metadata: {"author":"wotaso","version":"1.0.50","analyticscli-target":"@analyticscli/cli","analyticscli-supported-range":">=0.1.2-preview.0 <0.2.0","openclaw":{"emoji":"🚀","homepage":"https://github.com/wotaso/analyticscli-skills","requires":{"bins":["node","analyticscli"]},"install":[{"id":"analyticscli-cli","kind":"node","package":"@analyticscli/cli@preview","bins":["analyticscli"],"label":"Install/update AnalyticsCLI CLI (npm package @analyticscli/cli@preview)"}]}}
+metadata: {"author":"wotaso","version":"1.0.51","analyticscli-target":"@analyticscli/cli","analyticscli-supported-range":">=0.1.2-preview.0 <0.2.0","openclaw":{"emoji":"🚀","homepage":"https://github.com/wotaso/analyticscli-skills","requires":{"bins":["node","analyticscli"]},"install":[{"id":"analyticscli-cli","kind":"node","package":"@analyticscli/cli@preview","bins":["analyticscli"],"label":"Install/update AnalyticsCLI CLI (npm package @analyticscli/cli@preview)"}]}}
 ---
 
 # OpenClaw Growth Engineer
@@ -112,6 +112,7 @@ Production crash and ASC growth monitoring:
 - Any non-zero production crash count should trigger a short OpenClaw user notification through the configured OpenClaw chat/social delivery channel. The notification should name the app, date range, total crash count, affected app version when available, Sentry issue count/users when connected, and the recommended next action.
 - If GitHub issue/PR write access is configured through OpenClaw's GitHub API connection, automatically create the tracking GitHub issue or implementation PR for production crashes and high-confidence growth findings. Only skip GitHub artifact creation when `actions.disableAutoCreateGitHubArtifacts = true`, GitHub write access is unavailable, or the finding is too low-confidence to be useful.
 - Correlate ASC total crashes with Sentry production data before recommending growth pushes: app version/build, release date, top Sentry issue, affected users/events, funnel step, paywall/purchase path, and recent code changes. If ASC and Sentry disagree, report both and say which connector is more complete for the app.
+- Sentry/GlitchTip is multi-account. Do not assume one global Sentry org/project. Support `sources.sentry.accounts[]` with separate `baseUrl`, `tokenEnv`, `org`, `projects[]`, and `environment` entries, for example Sentry Cloud plus a self-hosted GlitchTip instance with different projects.
 - Daily ASC acquisition check: collect all available ASC overview metrics, including but not limited to `units`, `redownloads`, `conversionRate`, `crashRate`, source page views, app usage, updates, app opens, subscription state, and total crashes. Treat ASC source data as source-level product page views, not source-level download units unless the CLI exposes a true source-download measure.
 - If ASC web analytics is not logged in or the user-owned web session expired, tell the OpenClaw user exactly how to refresh it: run `asc web auth login`, then verify with `asc web auth status --output json --pretty`, then rerun OpenClaw Growth. Do not confuse this with API-key ASC auth.
 - Weekly growth review: compare units/downloads, redownloads, conversion rate, source mix, AnalyticsCLI activation/funnels/retention, Sentry stability, RevenueCat monetization, reviews, and recent releases. Turn the strongest cross-source pattern into one implementation-ready Handlungsempfehlung.
@@ -426,6 +427,7 @@ Sentry setup guidance:
 - Ask: "Soll Sentry fuer Crash-, Error- und Performance-Signale verbunden werden?"
 - Use the direct Sentry API exporter as the canonical growth source: `node scripts/export-sentry-summary.mjs`.
 - The wizard should ask for `SENTRY_AUTH_TOKEN`, `SENTRY_ORG`, `SENTRY_PROJECT`, `SENTRY_ENVIRONMENT`, and optional `SENTRY_BASE_URL` for self-hosted Sentry.
+- For multiple crash accounts, configure `sources.sentry.accounts[]` instead of overwriting one global account. Each account can define its own `baseUrl`, `tokenEnv`, `org`, `projects[]`, and `environment`.
 - Tell the user to create a Sentry auth token at https://sentry.io/settings/account/api/auth-tokens/ with read-only API scopes `org:read`, `project:read`, and `event:read`.
 - Configure optional Sentry MCP through `@sentry/mcp-server@latest` when `npx` and `SENTRY_AUTH_TOKEN` are available, but do not ask for broader write scopes unless the user explicitly wants Sentry mutation workflows.
 - Mark Sentry connected only after the auth check and exporter smoke test pass. Do not infer Sentry access from a token being present.

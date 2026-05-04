@@ -239,3 +239,36 @@ test('buildSentrySummary emits crash issues and signals from unresolved issues',
   assert.equal(summary.signals[0].area, 'crash');
   assert(summary.signals[0].evidence.some((entry) => entry.includes('FLASHES-1')));
 });
+
+test('buildSentrySummary combines multiple Sentry-compatible accounts', () => {
+  const summary = buildSentrySummary({
+    accounts: [
+      {
+        id: 'sentry_cloud_ios',
+        label: 'Sentry Cloud iOS',
+        org: 'wotaso',
+        project: 'flashes-ios',
+        environment: 'production',
+        issuesPayload: [{ id: 'ios-1', title: 'Fatal iOS crash', level: 'fatal', count: 3, userCount: 2 }],
+      },
+      {
+        id: 'glitchtip_api',
+        label: 'GlitchTip API',
+        org: 'wotaso',
+        project: 'flashes-api',
+        environment: 'production',
+        issuesPayload: [{ id: 'api-1', title: 'Webhook error', level: 'error', count: 30, userCount: 9 }],
+      },
+    ],
+    last: '7d',
+    maxSignals: 5,
+  });
+
+  assert.equal(summary.project, 'sentry:multiple');
+  assert.equal(summary.meta.multiAccount, true);
+  assert.equal(summary.meta.accountCount, 2);
+  assert.equal(summary.issues.length, 2);
+  assert(summary.signals.some((signal) => signal.id.startsWith('sentry_cloud_ios:')));
+  assert(summary.signals.some((signal) => signal.id.startsWith('glitchtip_api:')));
+  assert(summary.signals.every((signal) => signal.evidence.some((entry) => entry.startsWith('Sentry account:'))));
+});

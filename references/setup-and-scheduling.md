@@ -121,6 +121,7 @@ Sentry setup:
 - Use read-only Sentry API scopes: `org:read`, `project:read`, and `event:read`.
 - The direct source command is `node scripts/export-sentry-summary.mjs`; optional MCP config uses `@sentry/mcp-server@latest` when `npx` is available.
 - Treat Sentry as connected only after auth and exporter smoke tests pass.
+- Multiple Sentry-compatible accounts are supported. Put them under `sources.sentry.accounts[]` with a separate `baseUrl`, `tokenEnv`, `org`, `projects[]`, and `environment` for each account. Use this for setups such as Sentry Cloud plus self-hosted GlitchTip where the projects and tokens differ.
 - For production crash monitoring, compare Sentry issue/event/user counts with ASC total crashes and app-version crash breakdowns. ASC `crashRate` is supporting context; total crashes and affected users are the daily alert trigger.
 
 ## 5) Store Secrets

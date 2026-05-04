@@ -819,6 +819,7 @@ async function guideSentryConnector(rl, secrets: Record<string, string>) {
     'Use read-only API scopes: `org:read`, `project:read`, and `event:read`.',
     'Paste the token into this terminal; the wizard stores it locally as SENTRY_AUTH_TOKEN.',
     'Copy the Sentry organization slug and the project slug for the app OpenClaw should analyze.',
+    'For multiple accounts, edit sources.sentry.accounts[] afterward and give each Sentry/GlitchTip account its own tokenEnv, baseUrl, org, projects[], and environment.',
     'Use the production environment name your app sends to Sentry, usually `production`.',
     'The wizard enables the direct Sentry API exporter and writes optional MCP client config when possible.',
   ]);

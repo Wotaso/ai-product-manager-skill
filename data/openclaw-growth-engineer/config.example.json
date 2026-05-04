@@ -23,7 +23,27 @@
     "sentry": {
       "enabled": false,
       "mode": "command",
-      "command": "node scripts/export-sentry-summary.mjs"
+      "command": "node scripts/export-sentry-summary.mjs --config data/openclaw-growth-engineer/config.json",
+      "accounts": [
+        {
+          "id": "sentry_cloud",
+          "label": "Sentry Cloud",
+          "baseUrl": "https://sentry.io",
+          "tokenEnv": "SENTRY_AUTH_TOKEN",
+          "org": "owner-org",
+          "projects": ["ios-app"],
+          "environment": "production"
+        },
+        {
+          "id": "glitchtip_selfhosted",
+          "label": "GlitchTip self-hosted",
+          "baseUrl": "https://glitchtip.example.com",
+          "tokenEnv": "GLITCHTIP_AUTH_TOKEN",
+          "org": "owner-org",
+          "projects": ["backend-api", "web-app"],
+          "environment": "production"
+        }
+      ]
     },
     "feedback": {
       "enabled": true,

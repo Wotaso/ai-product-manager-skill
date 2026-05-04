@@ -216,8 +216,29 @@ function summarizeSentry(preflight, config) {
     if (!isEnabled(config?.sources?.sentry)) {
         return connector('not_enabled', 'Sentry source is disabled');
     }
+    const accountConnections = checksByPrefix(preflight, 'connection:sentry:');
     const connection = checkByName(preflight, 'connection:sentry');
     const command = checkByName(preflight, 'connection:sentry-command');
+    if (accountConnections.length > 0) {
+        const failed = accountConnections.filter((entry) => entry.status !== 'pass');
+        const accounts = accountConnections.map((entry) => ({
+            id: String(entry.name || '').replace(/^connection:sentry:/, ''),
+            status: entry.status === 'pass' ? 'connected' : 'blocked',
+            detail: entry.detail,
+        }));
+        if (failed.length === 0 && (!command || command.status === 'pass')) {
+            return connector('connected', `Sentry API checks passed for ${accountConnections.length} account(s)`, { accounts });
+        }
+        if (failed.length === 0 && command?.status !== 'pass') {
+            return connector('partial', command?.detail || 'Sentry API checks passed, exporter smoke test did not pass', {
+                accounts,
+            });
+        }
+        return connector('blocked', failed[0]?.detail || 'One or more Sentry accounts failed connection checks', {
+            accounts,
+            nextAction: 'Verify each sources.sentry.accounts[] tokenEnv/baseUrl/org/projects entry, then rerun status.',
+        });
+    }
     if (connection?.status === 'pass' && (!command || command.status === 'pass')) {
         return connector('connected', command ? 'Sentry API and exporter smoke test passed' : 'Sentry API auth check passed');
     }

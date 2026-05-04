@@ -1208,7 +1208,73 @@ function normalizeSentryEvidence(issue, environment) {
   ].filter(Boolean);
 }
 
+function buildCombinedSentrySummary(input) {
+  const accounts = Array.isArray(input?.accounts) ? input.accounts : [];
+  const maxSignals = Math.max(1, Number(input?.maxSignals) || 5);
+  const summaries = accounts
+    .filter((account) => account && typeof account === 'object')
+    .map((account, index) => {
+      const accountId = String(account.id || account.key || account.label || `sentry_${index + 1}`).trim();
+      const label = String(account.label || accountId).trim();
+      const summary = buildSentrySummary({
+        ...account,
+        accounts: undefined,
+        maxSignals: account.maxSignals || maxSignals,
+      });
+      return { accountId, label, summary };
+    });
+  const issues = summaries.flatMap(({ accountId, label, summary }) =>
+    (Array.isArray(summary.issues) ? summary.issues : []).map((issue) => ({
+      ...issue,
+      id: `${accountId}:${issue.id}`,
+      accountId,
+      accountLabel: label,
+      sourceProject: summary.project,
+    })),
+  );
+  const signals = summaries
+    .flatMap(({ accountId, label, summary }) =>
+      (Array.isArray(summary.signals) ? summary.signals : []).map((signal) => ({
+        ...signal,
+        id: `${accountId}:${signal.id}`,
+        evidence: [`Sentry account: ${label}`, `Sentry project: ${summary.project}`, ...(signal.evidence || [])],
+        keywords: [accountId, ...(signal.keywords || [])],
+      })),
+    )
+    .sort((a, b) => {
+      const priorityDelta = priorityRank(b.priority) - priorityRank(a.priority);
+      if (priorityDelta !== 0) return priorityDelta;
+      return (Number(b.current_value) || 0) - (Number(a.current_value) || 0);
+    })
+    .slice(0, maxSignals);
+
+  return {
+    project: 'sentry:multiple',
+    window: normalizeWindow(input?.last || input?.window || '24h'),
+    issues,
+    signals,
+    meta: {
+      generatedAt: new Date().toISOString(),
+      source: 'sentry',
+      multiAccount: true,
+      accountCount: summaries.length,
+      accounts: summaries.map(({ accountId, label, summary }) => ({
+        id: accountId,
+        label,
+        project: summary.project,
+        issuesReturned: summary.meta?.issuesReturned ?? 0,
+        environment: summary.meta?.environment ?? null,
+      })),
+      issuesReturned: issues.length,
+    },
+  };
+}
+
 export function buildSentrySummary(input) {
+  if (Array.isArray(input?.accounts)) {
+    return buildCombinedSentrySummary(input);
+  }
+
   const issues = Array.isArray(input?.issuesPayload)
     ? input.issuesPayload
     : Array.isArray(input?.issues)

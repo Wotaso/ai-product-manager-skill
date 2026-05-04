@@ -1,8 +1,11 @@
 #!/usr/bin/env node
 
+import { promises as fs } from 'node:fs';
+import path from 'node:path';
 import { writeJsonOutput, buildSentrySummary } from './openclaw-exporters-lib.mjs';
 
 const DEFAULT_BASE_URL = 'https://sentry.io';
+const DEFAULT_CONFIG_PATH = 'data/openclaw-growth-engineer/config.json';
 
 function printHelpAndExit(exitCode, reason = null) {
   if (reason) {
@@ -25,6 +28,8 @@ Options:
   --limit <n>            Max Sentry issues to fetch, capped at 50 (default: 20)
   --max-signals <n>      Max normalized signals/issues to emit (default: 5)
   --base-url <url>       Sentry base URL for self-hosted instances (default: SENTRY_BASE_URL or ${DEFAULT_BASE_URL})
+  --config <file>        OpenClaw config with sources.sentry.accounts[] (default: ${DEFAULT_CONFIG_PATH} when present)
+  --accounts-file <file> JSON file containing an accounts[] array or array
   --out <file>           Write JSON to file instead of stdout
   --help, -h             Show help
 `);
@@ -41,6 +46,8 @@ function parseArgs(argv) {
     limit: 20,
     maxSignals: 5,
     baseUrl: String(process.env.SENTRY_BASE_URL || DEFAULT_BASE_URL).trim(),
+    config: '',
+    accountsFile: '',
     out: '',
   };
 
@@ -73,6 +80,12 @@ function parseArgs(argv) {
     } else if (token === '--base-url') {
       args.baseUrl = String(next || '').trim();
       index += 1;
+    } else if (token === '--config') {
+      args.config = String(next || '').trim();
+      index += 1;
+    } else if (token === '--accounts-file') {
+      args.accountsFile = String(next || '').trim();
+      index += 1;
     } else if (token === '--out') {
       args.out = String(next || '').trim();
       index += 1;
@@ -84,6 +97,81 @@ function parseArgs(argv) {
   }
 
   return args;
+}
+
+async function readJsonIfPresent(filePath, required = false) {
+  const normalized = String(filePath || '').trim();
+  if (!normalized) return null;
+  try {
+    return JSON.parse(await fs.readFile(path.resolve(normalized), 'utf8'));
+  } catch (error) {
+    if (!required && error && typeof error === 'object' && (error as any).code === 'ENOENT') return null;
+    throw error;
+  }
+}
+
+function normalizeArray(value) {
+  if (Array.isArray(value)) return value;
+  if (Array.isArray(value?.accounts)) return value.accounts;
+  return [];
+}
+
+function normalizeProjectEntries(account) {
+  const projects = Array.isArray(account?.projects) ? account.projects : account?.project ? [account.project] : [];
+  return projects
+    .map((entry) => (typeof entry === 'string' ? { project: entry } : entry))
+    .filter((entry) => entry && typeof entry === 'object' && String(entry.project || entry.slug || '').trim())
+    .map((entry) => ({
+      project: String(entry.project || entry.slug || '').trim(),
+      org: String(entry.org || entry.organization || account.org || account.organization || '').trim(),
+      environment: String(entry.environment || account.environment || process.env.SENTRY_ENVIRONMENT || 'production').trim(),
+      last: String(entry.last || account.last || '').trim(),
+      query: String(entry.query || account.query || '').trim(),
+      limit: entry.limit || account.limit,
+    }));
+}
+
+function normalizeAccountConfigs(rawAccounts, args) {
+  return rawAccounts.flatMap((account, index) => {
+    if (!account || typeof account !== 'object') return [];
+    const id = String(account.id || account.key || account.label || `sentry_${index + 1}`).trim();
+    const baseUrl = String(account.baseUrl || account.base_url || account.url || args.baseUrl || DEFAULT_BASE_URL).trim();
+    const tokenEnv = String(account.tokenEnv || account.token_env || account.secretEnv || 'SENTRY_AUTH_TOKEN').trim();
+    return normalizeProjectEntries(account).map((projectEntry) => ({
+      ...projectEntry,
+      id: `${id}_${projectEntry.project}`.replace(/[^a-zA-Z0-9._-]+/g, '_'),
+      accountId: id,
+      label: String(account.label || account.name || id).trim(),
+      baseUrl,
+      tokenEnv,
+      maxSignals: args.maxSignals,
+    }));
+  });
+}
+
+async function loadConfiguredAccounts(args) {
+  const accountPayload = args.accountsFile ? await readJsonIfPresent(args.accountsFile, true) : null;
+  const accountsFromFile = normalizeArray(accountPayload);
+  if (accountsFromFile.length > 0) return normalizeAccountConfigs(accountsFromFile, args);
+
+  const configPath = args.config || DEFAULT_CONFIG_PATH;
+  const config = await readJsonIfPresent(configPath, Boolean(args.config));
+  const accountsFromConfig = normalizeArray(config?.sources?.sentry);
+  if (accountsFromConfig.length > 0) return normalizeAccountConfigs(accountsFromConfig, args);
+
+  const singleAccount = {
+    id: 'sentry',
+    label: 'Sentry',
+    baseUrl: args.baseUrl,
+    tokenEnv: 'SENTRY_AUTH_TOKEN',
+    org: args.org,
+    project: args.project,
+    environment: args.environment,
+    last: args.last,
+    query: args.query,
+    limit: args.limit,
+  };
+  return normalizeProjectEntries(singleAccount).length > 0 ? normalizeAccountConfigs([singleAccount], args) : [];
 }
 
 function normalizeInteger(value, label, min, max) {
@@ -147,14 +235,14 @@ function redactData(value) {
   return value;
 }
 
-async function listIssues(args, token) {
-  const org = encodeURIComponent(requireValue(args.org, 'SENTRY_ORG'));
-  const project = encodeURIComponent(requireValue(args.project, 'SENTRY_PROJECT'));
-  const url = buildUrl(args.baseUrl || DEFAULT_BASE_URL, `/api/0/projects/${org}/${project}/issues/`, {
-    statsPeriod: args.last,
-    environment: args.environment,
-    query: args.query,
-    per_page: args.limit,
+async function listIssues(account, token) {
+  const org = encodeURIComponent(requireValue(account.org, 'SENTRY_ORG'));
+  const project = encodeURIComponent(requireValue(account.project, 'SENTRY_PROJECT'));
+  const url = buildUrl(account.baseUrl || DEFAULT_BASE_URL, `/api/0/projects/${org}/${project}/issues/`, {
+    statsPeriod: account.last,
+    environment: account.environment,
+    query: account.query,
+    per_page: account.limit,
   });
   const payload = await sentryFetchJson(url, token);
   return Array.isArray(payload) ? payload : [];
@@ -162,16 +250,31 @@ async function listIssues(args, token) {
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
-  const token = requireValue(process.env.SENTRY_AUTH_TOKEN, 'SENTRY_AUTH_TOKEN');
-  const issuesPayload = redactData(await listIssues(args, token));
-  const summary = buildSentrySummary({
-    org: args.org,
-    project: args.project,
-    environment: args.environment,
-    last: args.last,
-    issuesPayload,
-    maxSignals: args.maxSignals,
-  });
+  const accounts = await loadConfiguredAccounts(args);
+  if (accounts.length === 0) {
+    throw new Error(
+      `No Sentry projects configured. Set SENTRY_ORG/SENTRY_PROJECT, pass --org/--project, or add sources.sentry.accounts[] in ${args.config || DEFAULT_CONFIG_PATH}.`,
+    );
+  }
+  const summaries = [];
+  for (const account of accounts) {
+    const token = requireValue(process.env[account.tokenEnv], account.tokenEnv);
+    const issuesPayload = redactData(await listIssues(account, token));
+    summaries.push({
+      id: account.id,
+      label: account.label,
+      org: account.org,
+      project: account.project,
+      environment: account.environment,
+      last: account.last || args.last,
+      issuesPayload,
+      maxSignals: args.maxSignals,
+    });
+  }
+  const summary =
+    summaries.length === 1
+      ? buildSentrySummary(summaries[0])
+      : buildSentrySummary({ accounts: summaries, last: args.last, maxSignals: args.maxSignals });
   await writeJsonOutput(args.out, summary);
 }
 

@@ -472,6 +472,28 @@ async function testSentryConnection(sentryToken, timeoutMs, baseUrl = 'https://s
         };
     }
 }
+function normalizeSentryAccounts(config, sentryTokenEnv) {
+    const sentrySource = config?.sources?.sentry;
+    const accounts = Array.isArray(sentrySource?.accounts) ? sentrySource.accounts : [];
+    if (accounts.length > 0) {
+        return accounts.map((account, index) => ({
+            key: String(account?.id || account?.key || account?.label || `sentry_${index + 1}`)
+                .trim()
+                .replace(/[^a-zA-Z0-9._-]+/g, '_'),
+            label: String(account?.label || account?.name || account?.id || `Sentry ${index + 1}`).trim(),
+            tokenEnv: String(account?.tokenEnv || account?.token_env || account?.secretEnv || sentryTokenEnv).trim(),
+            baseUrl: String(account?.baseUrl || account?.base_url || account?.url || 'https://sentry.io').trim(),
+        }));
+    }
+    return [
+        {
+            key: 'sentry',
+            label: 'Sentry',
+            tokenEnv: sentryTokenEnv,
+            baseUrl: String(process.env.SENTRY_BASE_URL || 'https://sentry.io').trim(),
+        },
+    ];
+}
 async function testGitHubConnection(githubToken, githubRepo, timeoutMs, actionMode) {
     if (!githubToken) {
         return {
@@ -571,7 +593,6 @@ async function runConnectionChecks({ checks, config, timeoutMs }) {
     const analyticsTokenEnv = getSecretName(config, 'analyticsTokenEnv', 'ANALYTICSCLI_ACCESS_TOKEN');
     const revenuecatTokenEnv = getSecretName(config, 'revenuecatTokenEnv', 'REVENUECAT_API_KEY');
     const sentryTokenEnv = getSecretName(config, 'sentryTokenEnv', 'SENTRY_AUTH_TOKEN');
-    const sentryBaseUrl = process.env.SENTRY_BASE_URL || 'https://sentry.io';
     const feedbackTokenEnv = getSecretName(config, 'feedbackTokenEnv', 'FEEDBACK_API_TOKEN');
     const githubTokenEnv = getSecretName(config, 'githubTokenEnv', 'GITHUB_TOKEN');
     const githubRepo = isConfiguredGitHubRepo(config?.project?.githubRepo)
@@ -622,15 +643,18 @@ async function runConnectionChecks({ checks, config, timeoutMs }) {
     }
     const sentrySource = config.sources?.sentry;
     if (sourceEnabled(config, 'sentry')) {
-        const token = process.env[sentryTokenEnv] || '';
-        if (!token) {
-            addCheck(checks, `connection:sentry`, false, `${sentryTokenEnv} missing (required for live Sentry API test)`, sentrySource?.mode === 'command' ? 'fail' : 'warn');
-        }
-        else {
-            const sentryConnection = await testSentryConnection(token, timeoutMs, sentryBaseUrl);
-            addCheck(checks, 'connection:sentry', sentryConnection.ok, sentryConnection.ok
-                ? `Sentry auth check passed (${sentryConnection.detail})`
-                : `Sentry auth check failed (${sentryConnection.detail})`);
+        const sentryAccounts = normalizeSentryAccounts(config, sentryTokenEnv);
+        for (const account of sentryAccounts) {
+            const token = process.env[account.tokenEnv] || '';
+            const checkName = sentryAccounts.length > 1 ? `connection:sentry:${account.key}` : 'connection:sentry';
+            if (!token) {
+                addCheck(checks, checkName, false, `${account.tokenEnv} missing (required for live Sentry API test for ${account.label})`, sentrySource?.mode === 'command' ? 'fail' : 'warn');
+                continue;
+            }
+            const sentryConnection = await testSentryConnection(token, timeoutMs, account.baseUrl);
+            addCheck(checks, checkName, sentryConnection.ok, sentryConnection.ok
+                ? `${account.label} auth check passed (${sentryConnection.detail})`
+                : `${account.label} auth check failed (${sentryConnection.detail})`);
         }
         if (sentrySource?.mode === 'command') {
             const command = String(sentrySource.command || '').trim();
@@ -802,8 +826,12 @@ async function main() {
                 }
                 if (sourceName === 'sentry') {
                     const sentryTokenEnv = getSecretName(config, 'sentryTokenEnv', 'SENTRY_AUTH_TOKEN');
-                    const hasSentryToken = Boolean(process.env[sentryTokenEnv]);
-                    addCheck(checks, `secret:${sentryTokenEnv}`, hasSentryToken, hasSentryToken ? 'set (required for Sentry command mode)' : 'missing (required for Sentry command mode)');
+                    for (const account of normalizeSentryAccounts(config, sentryTokenEnv)) {
+                        const hasSentryToken = Boolean(process.env[account.tokenEnv]);
+                        addCheck(checks, `secret:${account.tokenEnv}`, hasSentryToken, hasSentryToken
+                            ? `set (required for ${account.label} Sentry command mode)`
+                            : `missing (required for ${account.label} Sentry command mode)`);
+                    }
                 }
                 if (!source.builtIn && source.secretEnv) {
                     const hasConnectorToken = Boolean(process.env[source.secretEnv]);

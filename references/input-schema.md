@@ -160,3 +160,46 @@ Rules for recommendations:
 - inspect `overviewMetricCatalog` so recommendations use all available ASC metrics, not only units/conversion/source traffic
 - treat ASC sources as unique product page views by source, not download units by source
 - turn source mix into Handlungsempfehlungen only after comparing units/downloads and conversion
+
+## Multiple Sentry-Compatible Accounts
+
+Use `sources.sentry.accounts[]` when an app has more than one Sentry-compatible crash source, for example Sentry Cloud plus a self-hosted GlitchTip instance:
+
+```json
+{
+  "sources": {
+    "sentry": {
+      "enabled": true,
+      "mode": "command",
+      "command": "node scripts/export-sentry-summary.mjs --config data/openclaw-growth-engineer/config.json",
+      "accounts": [
+        {
+          "id": "sentry_cloud",
+          "label": "Sentry Cloud",
+          "baseUrl": "https://sentry.io",
+          "tokenEnv": "SENTRY_AUTH_TOKEN",
+          "org": "owner-org",
+          "projects": ["ios-app"],
+          "environment": "production"
+        },
+        {
+          "id": "glitchtip_selfhosted",
+          "label": "GlitchTip self-hosted",
+          "baseUrl": "https://glitchtip.example.com",
+          "tokenEnv": "GLITCHTIP_AUTH_TOKEN",
+          "org": "owner-org",
+          "projects": ["backend-api", "web-app"],
+          "environment": "production"
+        }
+      ]
+    }
+  }
+}
+```
+
+Rules:
+
+- keep tokens in environment variables or the OpenClaw secret file, not in config
+- set one `tokenEnv` per account when Sentry Cloud and GlitchTip use different credentials
+- use `projects[]` for all projects in that account that can affect the same product/app
+- the exporter emits one combined `sentry:multiple` summary when more than one account/project is configured
