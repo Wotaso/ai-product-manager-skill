@@ -96,7 +96,7 @@ function runJsonCommand(command, commandArgs) {
 
       try {
         resolve(JSON.parse(stdout));
-      } catch (error) {
+      } catch {
         reject(new Error(`${command} returned non-JSON output`));
       }
     });

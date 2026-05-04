@@ -539,6 +539,8 @@ async function maybePromptSecret(rl, label, envName) {
 
 const ASC_PRIVATE_KEY_BEGIN = '-----BEGIN PRIVATE KEY-----';
 const ASC_PRIVATE_KEY_END = '-----END PRIVATE KEY-----';
+const BRACKETED_PASTE_START = new RegExp(`${String.fromCharCode(27)}\\[200~`, 'g');
+const BRACKETED_PASTE_END = new RegExp(`${String.fromCharCode(27)}\\[201~`, 'g');
 
 function formatPemBase64(value) {
   return String(value || '').match(/.{1,64}/g)?.join('\n') || '';
@@ -546,8 +548,8 @@ function formatPemBase64(value) {
 
 function normalizeAscPrivateKeyContent(value) {
   const raw = String(value || '')
-    .replace(/\x1b\[200~/g, '')
-    .replace(/\x1b\[201~/g, '')
+    .replace(BRACKETED_PASTE_START, '')
+    .replace(BRACKETED_PASTE_END, '')
     .replace(/\r\n/g, '\n')
     .trim();
   if (!raw) {

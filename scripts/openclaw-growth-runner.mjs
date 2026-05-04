@@ -2,7 +2,6 @@
 import { existsSync, promises as fs } from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
-import os from 'node:os';
 import { createHash } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { getActionMode, getAllSourceEntries, getGitHubRequirementText, shouldAutoCreateGitHubArtifact, } from './openclaw-growth-shared.mjs';
@@ -84,36 +83,6 @@ function sleep(ms) {
 async function commandExists(commandName) {
     const result = await runShellCommand(`command -v ${quote(commandName)} >/dev/null 2>&1`, 10_000);
     return result.ok;
-}
-async function fileExists(filePath) {
-    try {
-        await fs.access(filePath);
-        return true;
-    }
-    catch {
-        return false;
-    }
-}
-function resolveAnalyticsSkillCandidates(config) {
-    const repoRoot = path.resolve(String(config?.project?.repoRoot || '.'));
-    const home = os.homedir();
-    return [
-        path.join(repoRoot, 'skills/analyticscli-cli/SKILL.md'),
-        path.join(repoRoot, 'agent/skills/analyticscli-cli-skill.md'),
-        path.join(process.cwd(), 'skills/analyticscli-cli/SKILL.md'),
-        path.join(process.cwd(), 'agent/skills/analyticscli-cli-skill.md'),
-        path.join(home, '.openclaw/skills/analyticscli-cli/SKILL.md'),
-        path.join(home, '.codex/skills/analyticscli-cli/SKILL.md'),
-    ];
-}
-async function findAnalyticsSkillPath(config) {
-    const candidates = resolveAnalyticsSkillCandidates(config);
-    for (const candidate of candidates) {
-        if (await fileExists(candidate)) {
-            return { path: candidate, checked: candidates };
-        }
-    }
-    return { path: null, checked: candidates };
 }
 function resolveShellCommand() {
     const candidates = [
@@ -202,31 +171,6 @@ async function assertHardRequirements(config) {
 function getProjectCommandCwd(config) {
     const repoRoot = String(config?.project?.repoRoot || '').trim();
     return repoRoot ? path.resolve(repoRoot) : process.cwd();
-}
-async function resolveSourcePayload(sourceConfig, sourceName, commandCwd = process.cwd()) {
-    if (!sourceConfig || sourceConfig.enabled === false) {
-        return null;
-    }
-    if (sourceConfig.mode === 'command') {
-        if (!sourceConfig.command) {
-            throw new Error(`Source "${sourceName}" has mode=command but no command configured.`);
-        }
-        const result = await runShellCommand(String(sourceConfig.command), 120_000, { cwd: commandCwd });
-        if (!result.ok) {
-            throw new Error(`Source "${sourceName}" command failed: ${result.stderr || `exit ${result.code}`}`);
-        }
-        try {
-            return JSON.parse(result.stdout);
-        }
-        catch (error) {
-            throw new Error(`Source "${sourceName}" returned non-JSON output.`);
-        }
-    }
-    if (!sourceConfig.path) {
-        throw new Error(`Source "${sourceName}" has mode=file but no path configured.`);
-    }
-    const payload = await readJson(path.resolve(String(sourceConfig.path)));
-    return payload;
 }
 function buildIssueFingerprint(issuesPayload) {
     const titles = Array.isArray(issuesPayload?.issues)
@@ -405,7 +349,7 @@ async function resolveSourcePayloadWithCursor(sourceConfig, sourceName, cursorSt
                 resolvedCommand,
             };
         }
-        catch (error) {
+        catch {
             throw new Error(`Source "${sourceName}" returned non-JSON output.`);
         }
     }
