@@ -18,7 +18,6 @@ import { loadOpenClawGrowthSecrets } from './openclaw-growth-env.mjs';
 const DEFAULT_CONFIG_PATH = 'data/openclaw-growth-engineer/config.json';
 const CONNECTOR_KEYS = ['analytics', 'github', 'revenuecat', 'sentry', 'asc'] as const;
 type ConnectorKey = (typeof CONNECTOR_KEYS)[number];
-const REQUIRED_CONNECTOR_KEYS = new Set<ConnectorKey>(['analytics']);
 type ConnectorDefinition = {
   key: ConnectorKey;
   label: string;
@@ -156,8 +155,30 @@ function parseConnectorList(value): ConnectorKey[] {
   return [...selected];
 }
 
-function withRequiredAnalyticsConnector(selected: ConnectorKey[]): ConnectorKey[] {
-  return selected.includes('analytics') ? orderConnectors(selected) : orderConnectors(['analytics', ...selected]);
+function isConnectorLocallyConfigured(key: ConnectorKey) {
+  if (key === 'analytics') {
+    return Boolean(process.env.ANALYTICSCLI_ACCESS_TOKEN?.trim() || process.env.ANALYTICSCLI_READONLY_TOKEN?.trim());
+  }
+  if (key === 'github') return Boolean(process.env.GITHUB_TOKEN?.trim());
+  if (key === 'revenuecat') return Boolean(process.env.REVENUECAT_API_KEY?.trim());
+  if (key === 'sentry') return Boolean(process.env.SENTRY_AUTH_TOKEN?.trim());
+  if (key === 'asc') {
+    return Boolean(
+      process.env.ASC_KEY_ID?.trim() &&
+      process.env.ASC_ISSUER_ID?.trim() &&
+      (process.env.ASC_PRIVATE_KEY_PATH?.trim() || process.env.ASC_PRIVATE_KEY?.trim()),
+    );
+  }
+  return false;
+}
+
+function getRequiredConnectorKeys() {
+  return new Set<ConnectorKey>(isConnectorLocallyConfigured('analytics') ? [] : ['analytics']);
+}
+
+function withMissingRequiredAnalyticsConnector(selected: ConnectorKey[]): ConnectorKey[] {
+  if (isConnectorLocallyConfigured('analytics') || selected.includes('analytics')) return orderConnectors(selected);
+  return orderConnectors(['analytics', ...selected]);
 }
 
 async function askConnectorSelection(rl): Promise<ConnectorKey[]> {
@@ -214,23 +235,29 @@ function connectorLabel(key: ConnectorKey) {
   return CONNECTOR_DEFINITIONS.find((connector) => connector.key === key)?.label ?? key;
 }
 
-function renderConnectorPicker(cursorIndex: number, selected: Set<ConnectorKey>, warning = '') {
+function renderConnectorPicker(cursorIndex: number, selected: Set<ConnectorKey>, required: Set<ConnectorKey>, warning = '') {
   process.stdout.write('\x1b[2J\x1b[H');
   printConnectorIntro();
-  process.stdout.write(`${ANSI.bold}Select connectors${ANSI.reset}\n`);
+  process.stdout.write(`${ANSI.bold}Select connectors to set up or overwrite now${ANSI.reset}\n`);
   process.stdout.write(`${ANSI.dim}Use Up/Down to move, Space to toggle optional connectors, A to toggle all optional connectors, Enter to continue.${ANSI.reset}\n\n`);
 
   CONNECTOR_DEFINITIONS.forEach((connector, index) => {
     const active = index === cursorIndex;
-    const required = REQUIRED_CONNECTOR_KEYS.has(connector.key);
-    const checked = required || selected.has(connector.key);
+    const isRequired = required.has(connector.key);
+    const configured = isConnectorLocallyConfigured(connector.key);
+    const checked = isRequired || selected.has(connector.key);
     const pointer = active ? `${ANSI.cyan}>${ANSI.reset}` : ' ';
     const box = checked ? `${ANSI.green}[x]${ANSI.reset}` : '[ ]';
-    const label = required ? `${connector.label} (required baseline)` : connector.label;
+    const suffix = isRequired ? ' (required baseline, missing)' : configured ? ' (already configured)' : '';
+    const label = `${connector.label}${suffix}`;
     const title = active ? `${ANSI.bold}${label}${ANSI.reset}` : label;
     process.stdout.write(`${pointer} ${box} ${title}\n`);
     process.stdout.write(`    ${connector.summary}\n`);
-    process.stdout.write(`    ${ANSI.dim}Needs: ${connector.needs}${ANSI.reset}\n\n`);
+    process.stdout.write(`    ${ANSI.dim}Needs: ${connector.needs}${ANSI.reset}\n`);
+    if (configured && !checked) {
+      process.stdout.write(`    ${ANSI.dim}Local values detected; unchecked keeps them unchanged.${ANSI.reset}\n`);
+    }
+    process.stdout.write('\n');
   });
 
   if (warning) {
@@ -246,7 +273,10 @@ async function askConnectorSelectionByKeys(): Promise<ConnectorKey[]> {
   process.stdin.resume();
 
   let cursorIndex = 0;
-  const selected = new Set<ConnectorKey>(CONNECTOR_KEYS);
+  const required = getRequiredConnectorKeys();
+  const selected = new Set<ConnectorKey>(
+    CONNECTOR_KEYS.filter((key) => required.has(key) || !isConnectorLocallyConfigured(key)),
+  );
   let warning = '';
 
   return await new Promise<ConnectorKey[]>((resolve, reject) => {
@@ -257,7 +287,12 @@ async function askConnectorSelectionByKeys(): Promise<ConnectorKey[]> {
     };
 
     const finish = () => {
-      REQUIRED_CONNECTOR_KEYS.forEach((key) => selected.add(key));
+      required.forEach((key) => selected.add(key));
+      if (selected.size === 0) {
+        warning = 'No connectors selected. Select a connector to update or press Esc to cancel.';
+        renderConnectorPicker(cursorIndex, selected, required, warning);
+        return;
+      }
       cleanup();
       process.stdout.write('\x1b[2J\x1b[H');
       resolve(orderConnectors([...selected]));
@@ -271,9 +306,9 @@ async function askConnectorSelectionByKeys(): Promise<ConnectorKey[]> {
 
     const toggleCurrent = () => {
       const key = CONNECTOR_DEFINITIONS[cursorIndex].key;
-      if (REQUIRED_CONNECTOR_KEYS.has(key)) {
+      if (required.has(key)) {
         selected.add(key);
-        warning = 'AnalyticsCLI is the required Growth Engineer baseline and stays enabled.';
+        warning = 'AnalyticsCLI is missing and required for the Growth Engineer baseline.';
         return;
       }
       if (selected.has(key)) selected.delete(key);
@@ -282,11 +317,11 @@ async function askConnectorSelectionByKeys(): Promise<ConnectorKey[]> {
     };
 
     const toggleAll = () => {
-      const optionalKeys = CONNECTOR_KEYS.filter((key) => !REQUIRED_CONNECTOR_KEYS.has(key));
+      const optionalKeys = CONNECTOR_KEYS.filter((key) => !required.has(key));
       const allOptionalSelected = optionalKeys.every((key) => selected.has(key));
       if (allOptionalSelected) optionalKeys.forEach((key) => selected.delete(key));
       else optionalKeys.forEach((key) => selected.add(key));
-      REQUIRED_CONNECTOR_KEYS.forEach((key) => selected.add(key));
+      required.forEach((key) => selected.add(key));
       warning = '';
     };
 
@@ -317,9 +352,9 @@ async function askConnectorSelectionByKeys(): Promise<ConnectorKey[]> {
         const connector = CONNECTOR_DEFINITIONS[index];
         if (connector) {
           cursorIndex = index;
-          if (REQUIRED_CONNECTOR_KEYS.has(connector.key)) {
+          if (required.has(connector.key)) {
             selected.add(connector.key);
-            warning = 'AnalyticsCLI is the required Growth Engineer baseline and stays enabled.';
+            warning = 'AnalyticsCLI is missing and required for the Growth Engineer baseline.';
           } else {
             if (selected.has(connector.key)) selected.delete(connector.key);
             else selected.add(connector.key);
@@ -327,12 +362,12 @@ async function askConnectorSelectionByKeys(): Promise<ConnectorKey[]> {
           }
         }
       }
-      renderConnectorPicker(cursorIndex, selected, warning);
+      renderConnectorPicker(cursorIndex, selected, required, warning);
     };
 
     process.stdin.on('keypress', onKeypress);
     process.stdout.write(ANSI.hideCursor);
-    renderConnectorPicker(cursorIndex, selected, warning);
+    renderConnectorPicker(cursorIndex, selected, required, warning);
   });
 }
 
@@ -905,7 +940,7 @@ async function runConnectorSetupWizard(args) {
 
   const rl = createInterface({ input: process.stdin, output: process.stdout });
   try {
-    const selected = withRequiredAnalyticsConnector(
+    const selected = withMissingRequiredAnalyticsConnector(
       args.connectors ? parseConnectorList(args.connectors) : await askConnectorSelection(rl),
     );
     if (selected.length === 0) {
