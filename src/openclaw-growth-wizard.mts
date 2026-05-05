@@ -18,6 +18,7 @@ import { loadOpenClawGrowthSecrets } from './openclaw-growth-env.mjs';
 const DEFAULT_CONFIG_PATH = 'data/openclaw-growth-engineer/config.json';
 const CONNECTOR_KEYS = ['analytics', 'github', 'revenuecat', 'sentry', 'asc'] as const;
 type ConnectorKey = (typeof CONNECTOR_KEYS)[number];
+const REQUIRED_CONNECTOR_KEYS = new Set<ConnectorKey>(['analytics']);
 type ConnectorDefinition = {
   key: ConnectorKey;
   label: string;
@@ -217,14 +218,16 @@ function renderConnectorPicker(cursorIndex: number, selected: Set<ConnectorKey>,
   process.stdout.write('\x1b[2J\x1b[H');
   printConnectorIntro();
   process.stdout.write(`${ANSI.bold}Select connectors${ANSI.reset}\n`);
-  process.stdout.write(`${ANSI.dim}Use Up/Down to move, Space to toggle, A to toggle all, Enter to continue.${ANSI.reset}\n\n`);
+  process.stdout.write(`${ANSI.dim}Use Up/Down to move, Space to toggle optional connectors, A to toggle all optional connectors, Enter to continue.${ANSI.reset}\n\n`);
 
   CONNECTOR_DEFINITIONS.forEach((connector, index) => {
     const active = index === cursorIndex;
-    const checked = selected.has(connector.key);
+    const required = REQUIRED_CONNECTOR_KEYS.has(connector.key);
+    const checked = required || selected.has(connector.key);
     const pointer = active ? `${ANSI.cyan}>${ANSI.reset}` : ' ';
     const box = checked ? `${ANSI.green}[x]${ANSI.reset}` : '[ ]';
-    const title = active ? `${ANSI.bold}${connector.label}${ANSI.reset}` : connector.label;
+    const label = required ? `${connector.label} (required baseline)` : connector.label;
+    const title = active ? `${ANSI.bold}${label}${ANSI.reset}` : label;
     process.stdout.write(`${pointer} ${box} ${title}\n`);
     process.stdout.write(`    ${connector.summary}\n`);
     process.stdout.write(`    ${ANSI.dim}Needs: ${connector.needs}${ANSI.reset}\n\n`);
@@ -254,11 +257,7 @@ async function askConnectorSelectionByKeys(): Promise<ConnectorKey[]> {
     };
 
     const finish = () => {
-      if (selected.size === 0) {
-        warning = 'Choose at least one connector before continuing.';
-        renderConnectorPicker(cursorIndex, selected, warning);
-        return;
-      }
+      REQUIRED_CONNECTOR_KEYS.forEach((key) => selected.add(key));
       cleanup();
       process.stdout.write('\x1b[2J\x1b[H');
       resolve(orderConnectors([...selected]));
@@ -272,14 +271,22 @@ async function askConnectorSelectionByKeys(): Promise<ConnectorKey[]> {
 
     const toggleCurrent = () => {
       const key = CONNECTOR_DEFINITIONS[cursorIndex].key;
+      if (REQUIRED_CONNECTOR_KEYS.has(key)) {
+        selected.add(key);
+        warning = 'AnalyticsCLI is the required Growth Engineer baseline and stays enabled.';
+        return;
+      }
       if (selected.has(key)) selected.delete(key);
       else selected.add(key);
       warning = '';
     };
 
     const toggleAll = () => {
-      if (selected.size === CONNECTOR_KEYS.length) selected.clear();
-      else CONNECTOR_KEYS.forEach((key) => selected.add(key));
+      const optionalKeys = CONNECTOR_KEYS.filter((key) => !REQUIRED_CONNECTOR_KEYS.has(key));
+      const allOptionalSelected = optionalKeys.every((key) => selected.has(key));
+      if (allOptionalSelected) optionalKeys.forEach((key) => selected.delete(key));
+      else optionalKeys.forEach((key) => selected.add(key));
+      REQUIRED_CONNECTOR_KEYS.forEach((key) => selected.add(key));
       warning = '';
     };
 
@@ -309,10 +316,15 @@ async function askConnectorSelectionByKeys(): Promise<ConnectorKey[]> {
         const index = Number(_text) - 1;
         const connector = CONNECTOR_DEFINITIONS[index];
         if (connector) {
-          if (selected.has(connector.key)) selected.delete(connector.key);
-          else selected.add(connector.key);
           cursorIndex = index;
-          warning = '';
+          if (REQUIRED_CONNECTOR_KEYS.has(connector.key)) {
+            selected.add(connector.key);
+            warning = 'AnalyticsCLI is the required Growth Engineer baseline and stays enabled.';
+          } else {
+            if (selected.has(connector.key)) selected.delete(connector.key);
+            else selected.add(connector.key);
+            warning = '';
+          }
         }
       }
       renderConnectorPicker(cursorIndex, selected, warning);
@@ -532,9 +544,15 @@ async function writeSecretsFile(filePath, nextValues: Record<string, string>) {
 
 async function maybePromptSecret(rl, label, envName) {
   const existing = process.env[envName]?.trim();
-  const suffix = existing ? 'already set in current environment' : 'leave empty to skip';
+  const suffix = existing ? 'already set in current environment; press Enter to keep' : 'leave empty to skip';
   const value = await ask(rl, `${label} (${suffix})`, '');
-  return value.trim();
+  const trimmed = value.trim();
+  if (trimmed) return trimmed;
+  if (existing) {
+    process.stdout.write(`Keeping existing ${envName} from the local environment.\n`);
+    return existing;
+  }
+  return '';
 }
 
 const ASC_PRIVATE_KEY_BEGIN = '-----BEGIN PRIVATE KEY-----';
