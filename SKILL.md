@@ -3,7 +3,7 @@ name: openclaw-growth-engineer
 description: OpenClaw-first growth autopilot for mobile apps. Correlate analytics, crashes, billing, feedback, store signals, and repo context into proposal drafts that can flow into OpenClaw chat, GitHub issues, or draft pull requests.
 license: MIT
 homepage: https://github.com/wotaso/analyticscli-skills
-metadata: {"author":"wotaso","version":"1.0.51","analyticscli-target":"@analyticscli/cli","analyticscli-supported-range":">=0.1.2-preview.0 <0.2.0","openclaw":{"emoji":"🚀","homepage":"https://github.com/wotaso/analyticscli-skills","requires":{"bins":["node","analyticscli"]},"install":[{"id":"analyticscli-cli","kind":"node","package":"@analyticscli/cli@preview","bins":["analyticscli"],"label":"Install/update AnalyticsCLI CLI (npm package @analyticscli/cli@preview)"}]}}
+metadata: {"author":"wotaso","version":"1.0.52","analyticscli-target":"@analyticscli/cli","analyticscli-supported-range":">=0.1.2-preview.0 <0.2.0","openclaw":{"emoji":"🚀","homepage":"https://github.com/wotaso/analyticscli-skills","requires":{"bins":["node","analyticscli"]},"install":[{"id":"analyticscli-cli","kind":"node","package":"@analyticscli/cli@preview","bins":["analyticscli"],"label":"Install/update AnalyticsCLI CLI (npm package @analyticscli/cli@preview)"}]}}
 ---
 
 # OpenClaw Growth Engineer
@@ -11,7 +11,7 @@ metadata: {"author":"wotaso","version":"1.0.51","analyticscli-target":"@analytic
 ## Use This Skill When
 
 - you want OpenClaw to turn product signals into execution-ready backlog work
-- you need one mobile-first workflow across analytics, RevenueCat, Sentry/GlitchTip, ASC CLI, app reviews, support feedback, and repo context
+- you need one mobile-first workflow across AnalyticsCLI product analytics/feedback, RevenueCat, Sentry-compatible crash monitoring including GlitchTip, ASC/App Store Connect, app reviews, and repo context
 - you want the deterministic work to live in a standalone CLI and OpenClaw to stay the AI/chat layer
 - you want proposal delivery to be configurable between OpenClaw chat handoff, GitHub issues, and draft pull requests
 
@@ -112,7 +112,7 @@ Production crash and ASC growth monitoring:
 - Any non-zero production crash count should trigger a short OpenClaw user notification through the configured OpenClaw chat/social delivery channel. The notification should name the app, date range, total crash count, affected app version when available, Sentry issue count/users when connected, and the recommended next action.
 - If GitHub issue/PR write access is configured through OpenClaw's GitHub API connection, automatically create the tracking GitHub issue or implementation PR for production crashes and high-confidence growth findings. Only skip GitHub artifact creation when `actions.disableAutoCreateGitHubArtifacts = true`, GitHub write access is unavailable, or the finding is too low-confidence to be useful.
 - Correlate ASC total crashes with Sentry production data before recommending growth pushes: app version/build, release date, top Sentry issue, affected users/events, funnel step, paywall/purchase path, and recent code changes. If ASC and Sentry disagree, report both and say which connector is more complete for the app.
-- Sentry/GlitchTip is multi-account. Do not assume one global Sentry org/project. Support `sources.sentry.accounts[]` with separate `baseUrl`, `tokenEnv`, `org`, `projects[]`, and `environment` entries, for example Sentry Cloud plus a self-hosted GlitchTip instance with different projects.
+- Sentry-compatible crash monitoring is multi-account. Do not assume one global Sentry org/project. Support `sources.sentry.accounts[]` with separate `baseUrl`, `tokenEnv`, `org`, `projects[]`, and `environment` entries, for example Sentry Cloud plus a self-hosted GlitchTip instance with different projects.
 - Daily ASC acquisition check: collect all available ASC overview metrics, including but not limited to `units`, `redownloads`, `conversionRate`, `crashRate`, source page views, app usage, updates, app opens, subscription state, and total crashes. Treat ASC source data as source-level product page views, not source-level download units unless the CLI exposes a true source-download measure.
 - If ASC web analytics is not logged in or the user-owned web session expired, tell the OpenClaw user exactly how to refresh it: run `asc web auth login`, then verify with `asc web auth status --output json --pretty`, then rerun OpenClaw Growth. Do not confuse this with API-key ASC auth.
 - Weekly growth review: compare units/downloads, redownloads, conversion rate, source mix, AnalyticsCLI activation/funnels/retention, Sentry stability, RevenueCat monetization, reviews, and recent releases. Turn the strongest cross-source pattern into one implementation-ready Handlungsempfehlung.
@@ -135,11 +135,11 @@ Answer only with this shape:
 
 ```text
 AI Growth Engineer connectors:
-- AnalyticsCLI product analytics
-- GitHub code access
-- RevenueCat monetization data
-- Sentry crashes and performance
-- App Store Connect CLI
+- AnalyticsCLI baseline: product analytics plus built-in feedback summaries
+- GitHub code access: repo context and issue/PR delivery
+- RevenueCat monetization: subscriptions, trials, revenue, and churn
+- Sentry-compatible crash monitoring: Sentry Cloud and/or self-hosted GlitchTip via multi-account Sentry config
+- ASC / App Store Connect CLI: store analytics, reviews/ratings, builds/TestFlight/release context, downloads/units, conversion, source traffic, app usage, subscriptions, purchases, and crash totals when configured
 
 Run the wizard on the VPS:
 ```
@@ -152,18 +152,18 @@ cd /home/lo/.openclaw/workspace && \
 
 Then add only: "Select the connectors in the wizard. Secrets stay in the terminal."
 
-Do not list Discord, Telegram, WhatsApp, Slack, Matrix, OpenAI service connectors, MCP servers, browser connectors, feedback endpoints, raw environment variables, token scopes, verification commands, or provider URLs in the initial answer. Those details belong inside the wizard or in a direct follow-up answer.
+Do not list Discord, Telegram, WhatsApp, Slack, Matrix, OpenAI service connectors, MCP servers, browser connectors, feedback endpoints, raw environment variables, token scopes, verification commands, or provider URLs in the initial answer. Do not list GlitchTip as a separate connector; it is a Sentry-compatible account under Sentry. Do not list Feedback as a separate primary connector; feedback is part of AnalyticsCLI when available or a custom extra source when explicitly configured. Do not present ASC as optional/partial after it is connected; when configured, use every available read-only App Store Connect signal. Those details belong inside the wizard or in a direct follow-up answer.
 
 
 If the user asks a broad question such as "how do I setup everything", answer with only:
 
 ```text
 Available connectors:
-- AnalyticsCLI product analytics
-- GitHub code access
-- RevenueCat monetization data
-- Sentry crashes and performance
-- App Store Connect CLI
+- AnalyticsCLI baseline: product analytics plus built-in feedback summaries
+- GitHub code access: repo context and issue/PR delivery
+- RevenueCat monetization: subscriptions, trials, revenue, and churn
+- Sentry-compatible crash monitoring: Sentry Cloud and/or self-hosted GlitchTip via multi-account Sentry config
+- ASC / App Store Connect CLI: store analytics, reviews/ratings, builds/TestFlight/release context, downloads/units, conversion, source traffic, app usage, subscriptions, purchases, and crash totals when configured
 
 Run the wizard from the OpenClaw workspace:
 ```
@@ -176,7 +176,7 @@ cd /home/lo/.openclaw/workspace && \
 
 Then add one sentence: "The wizard will ask for the selected connectors and any secrets in the local terminal only."
 
-If the user asks which connectors exist, list only the connector names and one short purpose each. Do not include setup URLs, permissions, token scopes, status history, or validation output in that initial answer.
+If the user asks which connectors exist, list only the connector names and one short purpose each. Treat Sentry Cloud and GlitchTip as Sentry-compatible accounts under one Sentry connector. Treat AnalyticsCLI feedback as part of AnalyticsCLI unless the user asks for custom extra sources. Do not include setup URLs, permissions, token scopes, status history, or validation output in that initial answer.
 
 If the user already names specific connectors, still prefer the checkbox wizard unless they explicitly ask for a non-interactive command. For explicit connector setup, use one copy-paste command with `cd` first:
 
@@ -393,8 +393,8 @@ For iOS/macOS products, explicitly ask whether the user wants to connect the `as
 Never abbreviate this as just "analytics" in status messages, because it is easy to confuse with AnalyticsCLI.
 Say "ASC / App Store Connect" when referring to `asc`, and "AnalyticsCLI baseline" when referring to the AnalyticsCLI project.
 An AnalyticsCLI auth check, selected AnalyticsCLI project, or successful PM run does not prove that ASC is connected.
-Only say ASC is connected after `asc` auth is configured, the App Store Connect app id is known, and a read-only ASC command/export has succeeded.
-Frame ASC as an App Store Connect connector, not as a synonym for analytics. AnalyticsCLI remains the product analytics baseline; App Store Connect reports can optionally add discovery, downloads, usage, purchase, subscription, ratings, reviews, release, build, and TestFlight context.
+Only say ASC is connected after `asc` auth is configured, accessible App Store Connect apps are discovered or an explicit app filter is set, and a read-only ASC command/export has succeeded.
+Frame ASC as an App Store Connect connector, not as a synonym for analytics. AnalyticsCLI remains the product analytics baseline; when ASC is configured, App Store Connect reports are fully used for discovery, downloads/units, redownloads, conversion, source traffic, app usage, purchases, subscriptions, ratings, reviews, release, build, TestFlight, and crash-total context when those surfaces are available.
 Do not request ASC permissions for release management, TestFlight management, pricing changes, user management, or other write/admin workflows when the user only selected read-only App Store Connect reporting.
 Reference the ASC skill pack as the canonical companion skills for `asc`: `rorkai/app-store-connect-cli-skills` (`https://github.com/rorkai/app-store-connect-cli-skills`).
 Use it for `asc` command syntax, auth, pagination, ID resolution, and App Store Connect workflows; for read-only App Store Connect reporting prefer the least invasive skills such as `asc-cli-usage` and `asc-id-resolver`, not release/submission/signing skills.
@@ -426,24 +426,23 @@ Sentry setup guidance:
 
 - Ask: "Soll Sentry fuer Crash-, Error- und Performance-Signale verbunden werden?"
 - Use the direct Sentry API exporter as the canonical growth source: `node scripts/export-sentry-summary.mjs`.
-- The wizard should ask for `SENTRY_AUTH_TOKEN`, `SENTRY_ORG`, `SENTRY_PROJECT`, `SENTRY_ENVIRONMENT`, and optional `SENTRY_BASE_URL` for self-hosted Sentry.
+- The wizard should ask for one Sentry-compatible account by default: `SENTRY_AUTH_TOKEN`, `SENTRY_ORG`, `SENTRY_PROJECT`, `SENTRY_ENVIRONMENT`, and optional `SENTRY_BASE_URL` for self-hosted Sentry. When the user has multiple Sentry-compatible accounts, configure `sources.sentry.accounts[]` with separate `baseUrl`, `tokenEnv`, `org`, `projects[]`, and `environment` values for each account, for example Sentry Cloud plus self-hosted GlitchTip.
 - For multiple crash accounts, configure `sources.sentry.accounts[]` instead of overwriting one global account. Each account can define its own `baseUrl`, `tokenEnv`, `org`, `projects[]`, and `environment`.
 - Tell the user to create a Sentry auth token at https://sentry.io/settings/account/api/auth-tokens/ with read-only API scopes `org:read`, `project:read`, and `event:read`.
 - Configure optional Sentry MCP through `@sentry/mcp-server@latest` when `npx` and `SENTRY_AUTH_TOKEN` are available, but do not ask for broader write scopes unless the user explicitly wants Sentry mutation workflows.
 - Mark Sentry connected only after the auth check and exporter smoke test pass. Do not infer Sentry access from a token being present.
-- When Sentry is connected, always correlate top crashes/errors with AnalyticsCLI funnel steps, RevenueCat purchase/churn movement, ASC release/build metadata, and GitHub production code version before recommending growth experiments.
-- Store it as `REVENUECAT_API_KEY` in the wizard-managed env file, OpenClaw secret storage, or runtime env; never put it in client code, config JSON, issues, or PR bodies. RevenueCat setup must enable command mode with `node scripts/export-revenuecat-summary.mjs`, not a sample JSON file.
+- When Sentry is connected, always correlate top crashes/errors across every configured Sentry-compatible account with AnalyticsCLI funnel steps, RevenueCat purchase/churn movement, ASC release/build metadata, and GitHub production code version before recommending growth experiments.
 
-Mobile-focused examples:
+Mobile-focused extra source examples:
 
-- `glitchtip`
 - `firebase-crashlytics`
-- `asc-cli`
 - `app-store-reviews`
 - `play-console`
 - `stripe`
 - `adapty`
 - `superwall`
+
+Do not list GlitchTip or ASC CLI as mobile extras in setup answers. GlitchTip belongs under the Sentry-compatible connector when it exposes the Sentry API; ASC CLI is the App Store Connect connector.
 
 ## Feedback Rules
 

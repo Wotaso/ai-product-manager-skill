@@ -48,12 +48,12 @@ openclaw start --config openclaw.config.json
 ```
 
 Setup should guide the developer through each missing piece. When something is blocked, the agent should explain what was detected, why the missing value matters, where to get it, and the minimum permission needed instead of returning a generic failure.
-Before requesting optional credentials, ask which connections the user wants to set up: AnalyticsCLI, GitHub code access, ASC CLI for App Store Connect Analytics data, RevenueCat, Sentry/GlitchTip, Feedback/App Reviews, or skip.
+Before requesting optional credentials, ask which connections the user wants to set up: AnalyticsCLI baseline with feedback summaries, GitHub code access, ASC / App Store Connect CLI, RevenueCat, Sentry-compatible crash monitoring including Sentry Cloud and GlitchTip accounts, or skip.
 
 ## What It Does
 
-- Reads analytics by default and can add RevenueCat, Sentry/GlitchTip, feedback, store/release connectors, Slack, and generic webhooks.
-- For iOS/macOS apps, setup should ask whether to connect the `asc` CLI and App Store Connect skill for production App Store Connect Analytics: units/downloads, redownloads, conversion, source page views, and crash totals.
+- Reads analytics by default and can add RevenueCat, Sentry-compatible crash monitoring, AnalyticsCLI feedback summaries, store/release connectors, Slack, and generic webhooks.
+- For iOS/macOS apps, setup should ask whether to connect the `asc` CLI and App Store Connect skill for all available read-only App Store Connect signals: units/downloads, redownloads, conversion, source page views, app usage, purchases, subscriptions, reviews/ratings, builds/releases, and crash totals.
 - Runs a daily production health pass when scheduled: non-zero production crash totals should notify the OpenClaw user through configured chat/social delivery, then create a GitHub issue or implementation PR automatically when GitHub API write access is configured.
 - Checks whether ASC web analytics access is usable. If the user-owned web session expired, it tells the user to run `asc web auth login` and verify with `asc web auth status --output json --pretty`.
 - Uses `analyticscli feedback summary --format json` as the built-in feedback source instead of a separate duplicate feedback definition.

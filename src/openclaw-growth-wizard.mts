@@ -46,14 +46,14 @@ const CONNECTOR_DEFINITIONS: ConnectorDefinition[] = [
   },
   {
     key: 'sentry',
-    label: 'Sentry crashes and performance',
+    label: 'Sentry-compatible crash monitoring',
     summary: 'Read unresolved crashes, regressions, affected users, releases, and production stability signals.',
-    needs: 'A Sentry auth token plus the org/project slugs to analyze.',
+    needs: 'A Sentry or GlitchTip-compatible auth token plus the org/project slugs to analyze.',
   },
   {
     key: 'asc',
-    label: 'App Store Connect CLI',
-    summary: 'Read app, build, review, rating, TestFlight, and store metadata signals.',
+    label: 'ASC / App Store Connect CLI',
+    summary: 'Read App Store analytics, reviews/ratings, builds/TestFlight/release context, subscriptions, purchases, and crash totals.',
     needs: 'ASC_KEY_ID, ASC_ISSUER_ID, and the AuthKey_XXXX.p8 content or path.',
   },
 ];
@@ -813,15 +813,15 @@ async function guideRevenueCatConnector(rl, secrets: Record<string, string>) {
 }
 
 async function guideSentryConnector(rl, secrets: Record<string, string>) {
-  printSection('Sentry crashes and performance', [
+  printSection('Sentry-compatible crash monitoring', [
     'Use this when OpenClaw should connect production errors, crashes, releases, and affected users back to growth impact.',
   ]);
   process.stdout.write('\nCreate a Sentry auth token here:\n  https://sentry.io/settings/account/api/auth-tokens/\n\n');
   printBullets([
     'Use read-only API scopes: `org:read`, `project:read`, and `event:read`.',
     'Paste the token into this terminal; the wizard stores it locally as SENTRY_AUTH_TOKEN.',
-    'Copy the Sentry organization slug and the project slug for the app OpenClaw should analyze.',
-    'For multiple accounts, edit sources.sentry.accounts[] afterward and give each Sentry/GlitchTip account its own tokenEnv, baseUrl, org, projects[], and environment.',
+    'Copy the Sentry-compatible organization slug and the project slug for the app OpenClaw should analyze.',
+    'For multiple accounts, edit sources.sentry.accounts[] afterward and give each Sentry Cloud or GlitchTip account its own tokenEnv, baseUrl, org, projects[], and environment.',
     'Use the production environment name your app sends to Sentry, usually `production`.',
     'The wizard enables the direct Sentry API exporter and writes optional MCP client config when possible.',
   ]);
@@ -1092,7 +1092,7 @@ async function main() {
     );
     const extraSourcesRaw = await ask(
       rl,
-      'Extra connectors (comma-separated, e.g. glitchtip,asc-cli,app-store-reviews)',
+      'Extra connectors (comma-separated, e.g. firebase-crashlytics,app-store-reviews,play-console)',
       '',
     );
     const extraSources = extraSourcesRaw

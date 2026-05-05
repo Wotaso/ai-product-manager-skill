@@ -19,17 +19,16 @@ Default path:
 
 ## Connector Overrides
 
-- Built-in sources are `analytics`, `revenuecat`, `sentry`, and `feedback`.
+- Built-in source keys are `analytics`, `revenuecat`, `sentry`, and `feedback`; `feedback` is part of the AnalyticsCLI/custom feedback source, not a separate primary setup connector.
 - Extra mobile connectors go into `sources.extra[]`.
 - Prefer `mode=file` for maximum stability.
 - Use `mode=command` when the command deterministically returns JSON.
+- Put Sentry Cloud and self-hosted GlitchTip accounts under `sources.sentry.accounts[]` when they expose the Sentry-compatible API. Treat ASC CLI as the ASC / App Store Connect connector, not as a generic extra.
 
 Useful extras:
 
-- `asc-cli`
 - `app-store-reviews`
 - `play-console`
-- `glitchtip`
 - `firebase-crashlytics`
 
 ## Delivery Modes

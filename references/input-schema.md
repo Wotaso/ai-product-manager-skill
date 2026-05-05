@@ -92,10 +92,11 @@ For `sources.extra[]`, the connector key becomes the source label in generated o
 
 Examples:
 
-- `glitchtip`
-- `asc_cli`
+- `firebase_crashlytics`
 - `app_store_reviews`
 - `play_console`
+
+Do not model GlitchTip as an extra connector when it exposes the Sentry-compatible API; use `sources.sentry.accounts[]`. Do not model ASC CLI as an extra connector in setup answers; it is the ASC / App Store Connect connector.
 
 If your connector can already emit shared `signals[]`, use that shape. It is the least ambiguous path.
 

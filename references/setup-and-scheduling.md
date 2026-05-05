@@ -42,7 +42,7 @@ The setup flow should be developer-friendly:
 - ask for the minimum missing secret or permission, not a broad token
 - show a status checklist after setup: configured, optional, blocked, and next command
 - hand off weak or missing app instrumentation to the `analyticscli-ts-sdk` skill with concrete SDK setup steps
-- ask exactly which optional connections the user wants to set up before requesting credentials: AnalyticsCLI, GitHub code access, ASC CLI for App Store Connect Analytics data, RevenueCat, Sentry/GlitchTip, Feedback/App Reviews, or skip
+- ask exactly which optional connections the user wants to set up before requesting credentials: AnalyticsCLI baseline with feedback summaries, GitHub code access, ASC / App Store Connect CLI, RevenueCat, Sentry-compatible crash monitoring including Sentry Cloud and GlitchTip accounts, or skip
 
 For GitHub, RevenueCat, Sentry, and App Store Connect connector setup, use the connector wizard instead of asking the user to compose setup commands manually:
 
@@ -78,12 +78,14 @@ PR mode creates proposal branches and draft PRs with `.openclaw/proposals/...md`
 
 ## 4) Configure Connectors
 
-Built-in sources:
+Built-in source keys:
 
 - `analytics`
 - `revenuecat`
 - `sentry`
 - `feedback`
+
+Treat `feedback` as an AnalyticsCLI/custom feedback source key, not as a separate primary connector in high-level setup answers.
 
 Extra sources:
 
@@ -93,14 +95,14 @@ Extra sources:
 
 Recommended mobile extras:
 
-- `glitchtip`
-- `asc-cli`
 - `app-store-reviews`
 - `play-console`
 
-For Apple-platform apps, ask whether to connect the `asc` CLI plus the App Store Connect agent skill for App Store Connect Analytics data only.
-Use it for production App Store analytics, crash totals, source traffic, and monthly analytics reports, not TestFlight/pricing/admin workflows unless the user explicitly asks.
-Recommended least privilege: Sales/Sales and Reports style access for generated analytics reports; Admin only temporarily if a new report type must be requested first.
+Do not configure GlitchTip as a separate extra connector when it exposes the Sentry-compatible API. Put Sentry Cloud and GlitchTip instances under `sources.sentry.accounts[]` so crash monitoring remains one Sentry-compatible connector. ASC is a first-class App Store Connect connector, not an extra analytics alias.
+
+For Apple-platform apps, ask whether to connect the `asc` CLI plus the App Store Connect agent skill for read-only App Store Connect reporting.
+When configured, use every available read-only ASC surface: App Analytics, Sales and Trends, downloads/units, redownloads, conversion, source traffic, app usage, purchases, subscriptions, ratings/reviews, build/TestFlight/release context, and crash totals. Do not describe ASC as partial or analytics-only once it is connected.
+Recommended least privilege: Sales for analytics/sales reports, Customer Support for review text, Developer for builds/TestFlight context, and App Manager only when app metadata or release settings are explicitly needed. Avoid Admin unless a one-off App Store Connect permission requires it.
 
 ASC key locations:
 
@@ -116,8 +118,9 @@ RevenueCat setup:
 
 Sentry setup:
 
-- Ask whether to connect Sentry for crash, error, release, and performance signals.
-- Use the wizard to collect `SENTRY_AUTH_TOKEN`, `SENTRY_ORG`, `SENTRY_PROJECT`, `SENTRY_ENVIRONMENT`, and optional `SENTRY_BASE_URL`.
+- Ask whether to connect Sentry-compatible crash monitoring for crash, error, release, and performance signals.
+- Use the wizard to collect one account by default: `SENTRY_AUTH_TOKEN`, `SENTRY_ORG`, `SENTRY_PROJECT`, `SENTRY_ENVIRONMENT`, and optional `SENTRY_BASE_URL`.
+- For multiple Sentry-compatible accounts, configure `sources.sentry.accounts[]` with separate `baseUrl`, `tokenEnv`, `org`, `projects[]`, and `environment` values for each account, for example Sentry Cloud plus self-hosted GlitchTip with different projects.
 - Use read-only Sentry API scopes: `org:read`, `project:read`, and `event:read`.
 - The direct source command is `node scripts/export-sentry-summary.mjs`; optional MCP config uses `@sentry/mcp-server@latest` when `npx` is available.
 - Treat Sentry as connected only after auth and exporter smoke tests pass.
