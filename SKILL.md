@@ -3,10 +3,16 @@ name: openclaw-growth-engineer
 description: OpenClaw-first growth autopilot for mobile apps. Correlate analytics, crashes, billing, feedback, store signals, and repo context into proposal drafts that can flow into OpenClaw chat, GitHub issues, or draft pull requests.
 license: MIT
 homepage: https://github.com/wotaso/analyticscli-skills
-metadata: {"author":"wotaso","version":"1.0.56","analyticscli-target":"@analyticscli/cli","analyticscli-supported-range":">=0.1.2-preview.0 <0.2.0","openclaw":{"emoji":"🚀","homepage":"https://github.com/wotaso/analyticscli-skills","requires":{"bins":["node","analyticscli"]},"install":[{"id":"analyticscli-cli","kind":"node","package":"@analyticscli/cli@preview","bins":["analyticscli"],"label":"Install/update AnalyticsCLI CLI (npm package @analyticscli/cli@preview)"}]}}
+metadata: {"author":"wotaso","version":"1.0.57","analyticscli-target":"@analyticscli/cli","analyticscli-supported-range":">=0.1.2-preview.0 <0.2.0","openclaw":{"emoji":"🚀","homepage":"https://github.com/wotaso/analyticscli-skills","requires":{"bins":["node","analyticscli"]},"install":[{"id":"analyticscli-cli","kind":"node","package":"@analyticscli/cli@preview","bins":["analyticscli"],"label":"Install/update AnalyticsCLI CLI (npm package @analyticscli/cli@preview)"}]}}
 ---
 
 # OpenClaw Growth Engineer
+
+## Canonical Skill Identity
+
+`openclaw-growth-engineer` is the single canonical skill for OpenClaw product and growth work.
+The old `ai-product-manager` / `product-manager-skill` package is deprecated and should be used only as a migration alias for existing installs.
+Do not recommend installing or loading both skills.
 
 ## Use This Skill When
 
@@ -146,7 +152,7 @@ Run the wizard on the VPS:
 
 ```bash
 cd /home/lo/.openclaw/workspace && \
-  bash skills/ai-product-manager/scripts/bootstrap-openclaw-workspace.sh && \
+  bash skills/openclaw-growth-engineer/scripts/bootstrap-openclaw-workspace.sh && \
   node scripts/openclaw-growth-wizard.mjs --connectors
 ```
 
@@ -170,7 +176,7 @@ Run the wizard from the OpenClaw workspace:
 
 ```bash
 cd /home/lo/.openclaw/workspace && \
-  bash skills/ai-product-manager/scripts/bootstrap-openclaw-workspace.sh && \
+  bash skills/openclaw-growth-engineer/scripts/bootstrap-openclaw-workspace.sh && \
   node scripts/openclaw-growth-wizard.mjs --connectors
 ```
 
@@ -182,7 +188,7 @@ If the user already names specific connectors, still prefer the checkbox wizard 
 
 ```bash
 cd /home/lo/.openclaw/workspace && \
-  bash skills/ai-product-manager/scripts/bootstrap-openclaw-workspace.sh && \
+  bash skills/openclaw-growth-engineer/scripts/bootstrap-openclaw-workspace.sh && \
   node scripts/openclaw-growth-wizard.mjs --connectors analytics,github,revenuecat,sentry,asc
 ```
 
@@ -274,7 +280,7 @@ Child processes cannot mutate the PATH of an already-open parent terminal.
 
 1. Refresh this ClawHub skill:
    ```bash
-   npx -y clawhub install ai-product-manager
+   npx -y clawhub install openclaw-growth-engineer
    ```
 2. Refresh the AnalyticsCLI agent skill only when it can run non-interactively:
    ```bash

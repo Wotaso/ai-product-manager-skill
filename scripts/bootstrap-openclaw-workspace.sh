@@ -16,7 +16,7 @@ SKILL_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 skill_slug="$(basename "${SKILL_ROOT}")"
 if [[ "${skill_slug}" != "product-manager-skill" && "${skill_slug}" != "ai-product-manager" && "${skill_slug}" != "openclaw-growth-engineer" ]]; then
-  echo "bootstrap-openclaw-workspace.sh: expected to live under skills/ai-product-manager/scripts/, skills/product-manager-skill/scripts/, or skills/openclaw-growth-engineer/scripts/ (ClawHub install)." >&2
+  echo "bootstrap-openclaw-workspace.sh: expected to live under skills/openclaw-growth-engineer/scripts/ or a legacy ai-product-manager/product-manager-skill alias (ClawHub install)." >&2
   echo "In the Agentic Analytics monorepo, scripts already live at repo root; nothing to copy." >&2
   exit 0
 fi
