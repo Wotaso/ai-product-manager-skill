@@ -33,7 +33,7 @@ const CONNECTOR_DEFINITIONS = [
         key: 'sentry',
         label: 'Sentry-compatible crash monitoring',
         summary: 'Read unresolved crashes, regressions, affected users, releases, and production stability signals.',
-        needs: 'A Sentry or GlitchTip-compatible auth token plus the org/project slugs to analyze.',
+        needs: 'A Sentry or GlitchTip-compatible auth token plus the org slug. Project scope is inferred later from app context or config.',
     },
     {
         key: 'asc',
@@ -821,8 +821,9 @@ async function guideSentryConnector(rl, secrets) {
     printBullets([
         'Use read-only API scopes: `org:read`, `project:read`, and `event:read`.',
         'Paste the token into this terminal; the wizard stores it locally as SENTRY_AUTH_TOKEN.',
-        'Copy the Sentry-compatible organization slug and the project slug for the app OpenClaw should analyze.',
-        'For multiple accounts, edit sources.sentry.accounts[] afterward and give each Sentry Cloud or GlitchTip account its own tokenEnv, baseUrl, org, projects[], and environment.',
+        'Copy only the Sentry-compatible organization slug. Do not hardcode a project in setup.',
+        'Project scope is resolved later from app/repo/release context, or explicitly in sources.sentry.accounts[] when a product needs fixed account-project mapping.',
+        'For multiple accounts, edit sources.sentry.accounts[] afterward and give each Sentry Cloud or GlitchTip account its own tokenEnv, baseUrl, org, projects[], and environment when project mapping is known.',
         'Use the production environment name your app sends to Sentry, usually `production`.',
         'The wizard enables the direct Sentry API exporter and writes optional MCP client config when possible.',
     ]);
@@ -830,13 +831,10 @@ async function guideSentryConnector(rl, secrets) {
     if (token)
         secrets.SENTRY_AUTH_TOKEN = token;
     const org = await ask(rl, 'SENTRY_ORG slug (leave empty to skip)', process.env.SENTRY_ORG || '');
-    const project = await ask(rl, 'SENTRY_PROJECT slug (leave empty to skip)', process.env.SENTRY_PROJECT || '');
     const environment = await ask(rl, 'SENTRY_ENVIRONMENT', process.env.SENTRY_ENVIRONMENT || 'production');
     const host = await ask(rl, 'SENTRY_BASE_URL (SaaS default)', process.env.SENTRY_BASE_URL || 'https://sentry.io');
     if (org.trim())
         secrets.SENTRY_ORG = org.trim();
-    if (project.trim())
-        secrets.SENTRY_PROJECT = project.trim();
     if (environment.trim())
         secrets.SENTRY_ENVIRONMENT = environment.trim();
     if (host.trim() && host.trim() !== 'https://sentry.io')

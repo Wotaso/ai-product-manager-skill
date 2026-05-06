@@ -1311,7 +1311,7 @@ async function main() {
                         : entry.connector === 'asc'
                             ? 'Install the ASC CLI and provide ASC_KEY_ID, ASC_ISSUER_ID, and ASC_PRIVATE_KEY_PATH or ASC_PRIVATE_KEY. Resolve the app after auth succeeds.'
                             : entry.connector === 'sentry'
-                                ? 'Set SENTRY_AUTH_TOKEN plus SENTRY_ORG and SENTRY_PROJECT in the connector wizard, then rerun setup.'
+                                ? 'Set SENTRY_AUTH_TOKEN plus SENTRY_ORG in the connector wizard. Defer project scope to app/repo context, or configure sources.sentry.accounts[].projects[] only when a fixed mapping is known.'
                                 : 'Set REVENUECAT_API_KEY and rerun connector setup to write RevenueCat MCP config.',
             })),
         }, null, 2)}\n`);
