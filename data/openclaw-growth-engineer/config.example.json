@@ -54,15 +54,6 @@
     },
     "extra": [
       {
-        "key": "glitchtip",
-        "label": "glitchtip",
-        "service": "glitchtip",
-        "enabled": false,
-        "mode": "file",
-        "path": "data/openclaw-growth-engineer/glitchtip_summary.json",
-        "secretEnv": "GLITCHTIP_API_TOKEN"
-      },
-      {
         "key": "asc_cli",
         "label": "asc-cli",
         "service": "asc-cli",

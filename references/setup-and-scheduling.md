@@ -119,8 +119,8 @@ RevenueCat setup:
 Sentry setup:
 
 - Ask whether to connect Sentry-compatible crash monitoring for crash, error, release, and performance signals.
-- Use the wizard to collect one account by default: `SENTRY_AUTH_TOKEN`, `SENTRY_ORG`, `SENTRY_ENVIRONMENT`, and optional `SENTRY_BASE_URL`.
-- Do not ask for `SENTRY_PROJECT` in the setup wizard. Defer Sentry project selection to app/repo/release context, or set `sources.sentry.accounts[].projects[]` only when a product has a known fixed mapping.
+- Use the wizard to collect one or more accounts directly. For each account, collect label, `baseUrl`, `tokenEnv`, token, `org`, `environment`, and optional comma-separated `projects[]`.
+- Do not ask for one global `SENTRY_PROJECT` in the setup wizard. Defer Sentry project selection to app/repo/release context, or set account-specific `sources.sentry.accounts[].projects[]` only when a product has a known fixed mapping.
 - For multiple Sentry-compatible accounts, configure `sources.sentry.accounts[]` with separate `baseUrl`, `tokenEnv`, `org`, `projects[]`, and `environment` values for each account, for example Sentry Cloud plus self-hosted GlitchTip with different projects.
 - Use read-only Sentry API scopes: `org:read`, `project:read`, and `event:read`.
 - The direct source command is `node scripts/export-sentry-summary.mjs`; optional MCP config uses `@sentry/mcp-server@latest` when `npx` is available.

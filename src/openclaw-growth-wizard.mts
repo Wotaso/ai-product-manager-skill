@@ -72,6 +72,24 @@ async function ensureDirForFile(filePath) {
   await fs.mkdir(path.dirname(filePath), { recursive: true });
 }
 
+async function fileExists(filePath) {
+  try {
+    await fs.access(filePath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function readJsonFile(filePath) {
+  return JSON.parse(await fs.readFile(filePath, 'utf8'));
+}
+
+async function writeJsonFile(filePath, value) {
+  await ensureDirForFile(filePath);
+  await fs.writeFile(filePath, `${JSON.stringify(value, null, 2)}\n`, 'utf8');
+}
+
 function parseArgs(argv) {
   const args = {
     config: DEFAULT_CONFIG_PATH,
@@ -233,6 +251,23 @@ function printConnectorIntro() {
 
 function connectorLabel(key: ConnectorKey) {
   return CONNECTOR_DEFINITIONS.find((connector) => connector.key === key)?.label ?? key;
+}
+
+function toConfigId(value, fallback) {
+  return String(value || fallback)
+    .trim()
+    .toLowerCase()
+    .replace(/https?:\/\//g, '')
+    .replace(/[^a-zA-Z0-9._-]+/g, '_')
+    .replace(/^_+|_+$/g, '') || fallback;
+}
+
+function toEnvName(value, fallback) {
+  return String(value || fallback)
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '') || fallback;
 }
 
 function renderConnectorPicker(cursorIndex: number, selected: Set<ConnectorKey>, required: Set<ConnectorKey>, warning = '') {
@@ -590,6 +625,53 @@ async function maybePromptSecret(rl, label, envName) {
   return '';
 }
 
+function defaultSentryTokenEnv({ index, label, baseUrl }) {
+  const value = `${label || ''} ${baseUrl || ''}`.toLowerCase();
+  if (index === 0 && !value.includes('glitchtip')) return 'SENTRY_AUTH_TOKEN';
+  if (value.includes('glitchtip')) return 'GLITCHTIP_AUTH_TOKEN';
+  return `${toEnvName(label || `SENTRY_${index + 1}`, `SENTRY_${index + 1}`)}_AUTH_TOKEN`;
+}
+
+function parseCommaList(value) {
+  return String(value || '')
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}
+
+async function upsertSentryAccountsConfig(configPath, accounts) {
+  if (!accounts.length || !(await fileExists(configPath))) return false;
+  const config = await readJsonFile(configPath);
+  const existingAccounts = Array.isArray(config?.sources?.sentry?.accounts)
+    ? config.sources.sentry.accounts
+    : [];
+  const merged = new Map();
+  for (const account of existingAccounts) {
+    const id = String(account?.id || account?.key || account?.label || '').trim();
+    if (id) merged.set(id, account);
+  }
+  for (const account of accounts) {
+    merged.set(account.id, {
+      ...(merged.get(account.id) || {}),
+      ...account,
+    });
+  }
+
+  config.sources = {
+    ...(config.sources || {}),
+    sentry: {
+      ...(config.sources?.sentry || {}),
+      enabled: true,
+      mode: 'command',
+      command: getDefaultSourceCommand('sentry'),
+      accounts: [...merged.values()],
+    },
+  };
+
+  await writeJsonFile(configPath, config);
+  return true;
+}
+
 const ASC_PRIVATE_KEY_BEGIN = '-----BEGIN PRIVATE KEY-----';
 const ASC_PRIVATE_KEY_END = '-----END PRIVATE KEY-----';
 const BRACKETED_PASTE_START = new RegExp(`${String.fromCharCode(27)}\\[200~`, 'g');
@@ -872,24 +954,74 @@ async function guideSentryConnector(rl, secrets: Record<string, string>) {
   process.stdout.write('\nCreate a Sentry auth token here:\n  https://sentry.io/settings/account/api/auth-tokens/\n\n');
   printBullets([
     'Use read-only API scopes: `org:read`, `project:read`, and `event:read`.',
-    'Paste the token into this terminal; the wizard stores it locally as SENTRY_AUTH_TOKEN.',
-    'Copy only the Sentry-compatible organization slug. Do not hardcode a project in setup.',
+    'The wizard can configure multiple Sentry-compatible accounts now, including Sentry Cloud and self-hosted GlitchTip.',
+    'Each account gets its own tokenEnv, baseUrl, org, environment, and optional projects[] list.',
+    'Copy only the Sentry-compatible organization slug for setup. Do not hardcode a project unless this account has a known fixed project mapping.',
     'Project scope is resolved later from app/repo/release context, or explicitly in sources.sentry.accounts[] when a product needs fixed account-project mapping.',
-    'For multiple accounts, edit sources.sentry.accounts[] afterward and give each Sentry Cloud or GlitchTip account its own tokenEnv, baseUrl, org, projects[], and environment when project mapping is known.',
     'Use the production environment name your app sends to Sentry, usually `production`.',
     'The wizard enables the direct Sentry API exporter and writes optional MCP client config when possible.',
   ]);
 
-  const token = await maybePromptSecret(rl, 'Paste SENTRY_AUTH_TOKEN into this local terminal', 'SENTRY_AUTH_TOKEN');
-  if (token) secrets.SENTRY_AUTH_TOKEN = token;
+  const accounts = [];
+  let index = 0;
+  while (true) {
+    const defaultLabel = index === 0 ? 'Sentry Cloud' : `Sentry Account ${index + 1}`;
+    const label = await ask(rl, `Sentry account ${index + 1} label`, defaultLabel);
+    const baseUrl = await ask(
+      rl,
+      `Sentry account ${index + 1} base URL`,
+      index === 0 ? process.env.SENTRY_BASE_URL || 'https://sentry.io' : 'https://sentry.io',
+    );
+    const id = toConfigId(label || baseUrl, `sentry_${index + 1}`);
+    const tokenEnv = await ask(
+      rl,
+      `Token env var for ${label}`,
+      defaultSentryTokenEnv({ index, label, baseUrl }),
+    );
+    const token = await maybePromptSecret(rl, `Paste ${tokenEnv} into this local terminal`, tokenEnv);
+    if (token) secrets[tokenEnv] = token;
 
-  const org = await ask(rl, 'SENTRY_ORG slug (leave empty to skip)', process.env.SENTRY_ORG || '');
-  const environment = await ask(rl, 'SENTRY_ENVIRONMENT', process.env.SENTRY_ENVIRONMENT || 'production');
-  const host = await ask(rl, 'SENTRY_BASE_URL (SaaS default)', process.env.SENTRY_BASE_URL || 'https://sentry.io');
+    const org = await ask(
+      rl,
+      `Sentry org slug for ${label} (leave empty to defer)`,
+      index === 0 ? process.env.SENTRY_ORG || '' : '',
+    );
+    const environment = await ask(
+      rl,
+      `Sentry environment for ${label}`,
+      index === 0 ? process.env.SENTRY_ENVIRONMENT || 'production' : 'production',
+    );
+    const projects = parseCommaList(
+      await ask(
+        rl,
+        `Known Sentry projects for ${label} (comma-separated, leave empty to defer)`,
+        '',
+      ),
+    );
 
-  if (org.trim()) secrets.SENTRY_ORG = org.trim();
-  if (environment.trim()) secrets.SENTRY_ENVIRONMENT = environment.trim();
-  if (host.trim() && host.trim() !== 'https://sentry.io') secrets.SENTRY_BASE_URL = host.trim();
+    accounts.push({
+      id,
+      label,
+      baseUrl,
+      tokenEnv,
+      ...(org.trim() ? { org: org.trim() } : {}),
+      ...(projects.length > 0 ? { projects } : {}),
+      ...(environment.trim() ? { environment: environment.trim() } : {}),
+    });
+
+    if (index === 0) {
+      if (tokenEnv === 'SENTRY_AUTH_TOKEN' && token) secrets.SENTRY_AUTH_TOKEN = token;
+      if (org.trim()) secrets.SENTRY_ORG = org.trim();
+      if (environment.trim()) secrets.SENTRY_ENVIRONMENT = environment.trim();
+      if (baseUrl.trim() && baseUrl.trim() !== 'https://sentry.io') secrets.SENTRY_BASE_URL = baseUrl.trim();
+    }
+
+    const addAnother = await askYesNo(rl, 'Add another Sentry-compatible account now?', false);
+    if (!addAnother) break;
+    index += 1;
+  }
+
+  return accounts;
 }
 
 async function guideAscConnector(rl, secrets: Record<string, string>) {
@@ -954,10 +1086,11 @@ async function runConnectorSetupWizard(args) {
     process.stdout.write('\n');
 
     const secrets: Record<string, string> = {};
+    let sentryAccounts: any[] = [];
     if (selected.includes('analytics')) await guideAnalyticsConnector(rl, secrets);
     if (selected.includes('github')) await guideGitHubConnector(rl, secrets);
     if (selected.includes('revenuecat')) await guideRevenueCatConnector(rl, secrets);
-    if (selected.includes('sentry')) await guideSentryConnector(rl, secrets);
+    if (selected.includes('sentry')) sentryAccounts = await guideSentryConnector(rl, secrets);
     if (selected.includes('asc')) await guideAscConnector(rl, secrets);
 
     const secretsFile = resolveSecretsFile();
@@ -969,6 +1102,10 @@ async function runConnectorSetupWizard(args) {
       process.stdout.write('\nNo new secrets were written.\n');
     }
 
+    if (sentryAccounts.length > 0 && await upsertSentryAccountsConfig(args.config, sentryAccounts)) {
+      process.stdout.write(`Configured ${sentryAccounts.length} Sentry-compatible account(s) in ${args.config}.\n`);
+    }
+
     const runSetup = await askYesNo(rl, 'Run helper installation/config enablement now?', true);
     if (runSetup) {
       const env = {
@@ -978,6 +1115,10 @@ async function runConnectorSetupWizard(args) {
       const command = `node scripts/openclaw-growth-start.mjs --config ${quote(args.config)} --setup-only --connectors ${quote(selected.join(','))}`;
       process.stdout.write(`\nRunning: ${command}\n`);
       await runInteractiveCommand(command, { env });
+    }
+
+    if (sentryAccounts.length > 0 && await upsertSentryAccountsConfig(args.config, sentryAccounts)) {
+      process.stdout.write(`Sentry-compatible account config is up to date in ${args.config}.\n`);
     }
 
     if (wroteSecrets) {
