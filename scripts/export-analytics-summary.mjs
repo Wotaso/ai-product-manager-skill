@@ -72,10 +72,11 @@ function parseArgs(argv) {
     return args;
 }
 function runJsonCommand(command, commandArgs) {
+    const token = String(process.env.ANALYTICSCLI_ACCESS_TOKEN || process.env.ANALYTICSCLI_READONLY_TOKEN || '').trim();
     return new Promise((resolve, reject) => {
         const child = spawn(command, commandArgs, {
             stdio: ['ignore', 'pipe', 'pipe'],
-            env: process.env,
+            env: token ? { ...process.env, ANALYTICSCLI_ACCESS_TOKEN: token } : process.env,
         });
         let stdout = '';
         let stderr = '';
@@ -102,10 +103,6 @@ function runJsonCommand(command, commandArgs) {
 }
 function buildBaseArgs(input) {
     const args = [];
-    const token = String(process.env.ANALYTICSCLI_ACCESS_TOKEN || process.env.ANALYTICSCLI_READONLY_TOKEN || '').trim();
-    if (token) {
-        args.push('--readonly-token', token);
-    }
     args.push('--format', 'json');
     if (input.project) {
         args.push('--project', input.project);

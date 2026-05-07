@@ -3,7 +3,7 @@ name: openclaw-growth-engineer
 description: OpenClaw-first growth autopilot for mobile apps. Correlate analytics, crashes, billing, feedback, store signals, and repo context into proposal drafts that can flow into OpenClaw chat, GitHub issues, or draft pull requests.
 license: MIT
 homepage: https://github.com/wotaso/analyticscli-skills
-metadata: {"author":"wotaso","version":"1.0.57","analyticscli-target":"@analyticscli/cli","analyticscli-supported-range":">=0.1.2-preview.0 <0.2.0","openclaw":{"emoji":"🚀","homepage":"https://github.com/wotaso/analyticscli-skills","requires":{"bins":["node","analyticscli"]},"install":[{"id":"analyticscli-cli","kind":"node","package":"@analyticscli/cli@preview","bins":["analyticscli"],"label":"Install/update AnalyticsCLI CLI (npm package @analyticscli/cli@preview)"}]}}
+metadata: {"author":"wotaso","version":"1.0.65","analyticscli-target":"@analyticscli/cli","analyticscli-supported-range":">=0.1.2-preview.0 <0.2.0","openclaw":{"emoji":"🚀","homepage":"https://github.com/wotaso/analyticscli-skills","requires":{"bins":["node","analyticscli"]},"install":[{"id":"analyticscli-cli","kind":"node","package":"@analyticscli/cli@preview","bins":["analyticscli"],"label":"Install/update AnalyticsCLI CLI (npm package @analyticscli/cli@preview)"}]}}
 ---
 
 # OpenClaw Growth Engineer
@@ -26,6 +26,16 @@ Do not recommend installing or loading both skills.
 - Primary focus: mobile apps
 - Works well with: React Native, Expo, native iOS/Android, mobile growth loops, paywalls, store reviews, crashes, release readiness
 - Still valid for SaaS/web products when your connectors export the same summary JSON shape
+
+## Private Repo / Minimal Input Rule
+
+Treat this as a private-repo-first skill. The setup and connector wizards should ask the user for as little information as possible.
+
+- Do not require `project.githubRepo` during connector setup. Defer repo selection until GitHub delivery or code mapping actually needs it.
+- When the agent has permission to list repos, projects, apps, or Sentry/GlitchTip projects, discover them automatically and persist the best available mapping.
+- Sentry/GlitchTip project lists are not required input. If org + token are configured, the exporter should discover visible projects at runtime and let OpenClaw choose the relevant project from app/release context.
+- If there are multiple plausible targets, use app/release/config context first; ask the user only when the choice is genuinely ambiguous.
+- Keep GitHub issue/PR creation disabled unless explicitly requested or clearly configured. Missing repo context should be a deferred state, not a setup blocker.
 
 ## Preferred Runtime
 

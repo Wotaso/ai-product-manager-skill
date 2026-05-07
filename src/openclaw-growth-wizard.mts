@@ -85,6 +85,11 @@ async function readJsonFile(filePath) {
   return JSON.parse(await fs.readFile(filePath, 'utf8'));
 }
 
+async function readJsonIfPresent(filePath) {
+  if (!(await fileExists(filePath))) return null;
+  return readJsonFile(filePath);
+}
+
 async function writeJsonFile(filePath, value) {
   await ensureDirForFile(filePath);
   await fs.writeFile(filePath, `${JSON.stringify(value, null, 2)}\n`, 'utf8');
@@ -446,6 +451,340 @@ async function runCommandCapture(command, options: { env?: NodeJS.ProcessEnv } =
   });
 }
 
+function truncate(value, maxLength = 900) {
+  const text = String(value || '').trim();
+  if (text.length <= maxLength) return text;
+  return `${text.slice(0, maxLength - 1)}...`;
+}
+
+function parseJsonFromStdout(stdout) {
+  const raw = String(stdout || '').trim();
+  if (!raw) return null;
+  const firstBrace = raw.indexOf('{');
+  const firstBracket = raw.indexOf('[');
+  const starts = [firstBrace, firstBracket].filter((index) => index >= 0);
+  if (starts.length === 0) return null;
+  try {
+    return JSON.parse(raw.slice(Math.min(...starts)));
+  } catch {
+    return null;
+  }
+}
+
+function clearTerminal() {
+  if (process.stdout.isTTY) {
+    process.stdout.write('\x1b[2J\x1b[H');
+  }
+}
+
+function printConnectorSetupProgress(payload) {
+  const connectorSetup = Array.isArray(payload?.connectorSetup) ? payload.connectorSetup : [];
+  const okConnectors = connectorSetup.filter((entry) => entry?.ok).map((entry) => entry.connector).filter(Boolean);
+  if (okConnectors.length > 0) {
+    process.stdout.write(`Connected: ${okConnectors.join(', ')}.\n`);
+  }
+}
+
+async function askAnalyticsProjectFromSetupPayload(rl, payload) {
+  const projects = Array.isArray(payload?.projects) ? payload.projects : [];
+  if (projects.length === 0) return '';
+
+  process.stdout.write('\nSetup needs one AnalyticsCLI project before it can finish.\n');
+  projects.forEach((project, index) => {
+    const label = project.label || project.name || project.slug || project.id;
+    process.stdout.write(`  ${index + 1}) ${label} (${project.id})\n`);
+  });
+
+  while (true) {
+    const answer = await ask(rl, 'AnalyticsCLI project number or ID', projects.length === 1 ? projects[0].id : '');
+    const numericIndex = Number.parseInt(answer, 10);
+    if (Number.isInteger(numericIndex) && projects[numericIndex - 1]?.id) {
+      return projects[numericIndex - 1].id;
+    }
+    const matchingProject = projects.find((project) => project.id === answer || project.name === answer || project.slug === answer);
+    if (matchingProject?.id) return matchingProject.id;
+    process.stdout.write('Choose one of the listed project numbers, or paste the exact project ID.\n');
+  }
+}
+
+function printSetupFailure({ result, payload, command }) {
+  process.stdout.write('\nFAILED: Connector setup needs attention.\n');
+  printConnectorSetupProgress(payload);
+
+  const blockers = Array.isArray(payload?.blockers) ? payload.blockers : [];
+  if (blockers.length > 0) {
+    process.stdout.write('\nNext steps:\n');
+    blockers.forEach((blocker, index) => {
+      process.stdout.write(`${index + 1}. ${blocker.detail || blocker.check || 'Configuration check failed'}\n`);
+      if (blocker.remediation) {
+        process.stdout.write(`   Fix: ${blocker.remediation}\n`);
+      }
+    });
+    process.stdout.write(`\nAfter fixing the configuration, rerun: ${command}\n`);
+    return;
+  }
+
+  const reason = result.code === null ? 'setup command did not report an exit code' : `setup command exited with code ${result.code}`;
+  process.stdout.write(`Reason: ${reason}.\n`);
+  const output = truncate(result.stderr || result.stdout);
+  if (output) {
+    process.stdout.write(`Details: ${output}\n`);
+  }
+  process.stdout.write(`Run manually for full output: ${command}\n`);
+}
+
+function printSetupSuccess(payload) {
+  process.stdout.write('\nSUCCESS: Connector setup finished.\n');
+  printConnectorSetupProgress(payload);
+  if (payload?.message) {
+    process.stdout.write(`${payload.message}\n`);
+  }
+}
+
+function healthCheckFailures(payload) {
+  return Array.isArray(payload?.checks)
+    ? payload.checks.filter((check) => check?.status === 'fail')
+    : [];
+}
+
+function connectorFromCheckName(name) {
+  const value = String(name || '');
+  if (value.includes('analytics') || value.includes('ANALYTICSCLI')) return 'analytics';
+  if (value.includes('github') || value.includes('GITHUB')) return 'github';
+  if (value.includes('revenuecat') || value.includes('REVENUECAT')) return 'revenuecat';
+  if (value.includes('sentry') || value.includes('SENTRY') || value.includes('GLITCHTIP')) return 'sentry';
+  if (value.includes('asc') || value.includes('ASC_')) return 'asc';
+  return null;
+}
+
+function connectorTitle(key) {
+  return CONNECTOR_DEFINITIONS.find((connector) => connector.key === key)?.label || key || 'General setup';
+}
+
+function compactJsonError(value) {
+  const text = String(value || '');
+  const jsonStart = text.indexOf('{"error"');
+  if (jsonStart < 0) return '';
+  try {
+    const payload = JSON.parse(text.slice(jsonStart).replace(/\)+\s*$/g, '').trim());
+    const error = payload?.error || payload;
+    const parts = [
+      error.code ? `code=${error.code}` : '',
+      error.message ? `message=${error.message}` : '',
+      error.details?.reason ? `reason=${error.details.reason}` : '',
+    ].filter(Boolean);
+    return parts.join(', ');
+  } catch {
+    return '';
+  }
+}
+
+function cleanHealthDetail(detail) {
+  const raw = String(detail || '').replace(/\s+/g, ' ').trim();
+  const compactError = compactJsonError(raw);
+
+  if (/project\.githubRepo is required/i.test(raw)) {
+    return 'No GitHub repo is configured yet. This is optional unless you want GitHub issue/PR delivery now.';
+  }
+  if (/project\.githubRepo is missing/i.test(raw)) {
+    return 'GitHub repo access test is deferred until a repo is known.';
+  }
+  if (/invalid token|unauthorized|token has been revoked/i.test(raw)) {
+    return `AnalyticsCLI token is invalid${compactError ? ` (${compactError})` : ''}.`;
+  }
+  if (/No Sentry projects configured/i.test(raw)) {
+    return 'Sentry project scope is deferred; the AI can discover visible projects from org + token.';
+  }
+  if (/smoke test failed/i.test(raw)) {
+    const withoutWrappedJson = raw.replace(/\{"error".*$/, '').replace(/\s*\(+\s*$/, '').trim();
+    return withoutWrappedJson || raw;
+  }
+  return truncate(raw, 180);
+}
+
+function actionForHealthFailure(failure, configPath) {
+  const name = String(failure?.name || '');
+  const detail = String(failure?.detail || '');
+  if (name === 'project:github-repo' || /project\.githubRepo/i.test(detail)) {
+    return `No action required for Sentry setup. Set project.githubRepo in ${configPath} only if you want GitHub issue/PR delivery now.`;
+  }
+  if (name.includes('analytics') || /ANALYTICSCLI|analytics/i.test(detail)) {
+    return 'Paste a fresh AnalyticsCLI readonly token, then let the wizard retest AnalyticsCLI.';
+  }
+  if (name.includes('sentry') || /Sentry|GlitchTip/i.test(detail)) {
+    return 'Only fix this if token, org, or base URL is missing or invalid.';
+  }
+  if (name.includes('github')) {
+    return 'Configure GitHub token/repo access, or leave GitHub delivery disabled.';
+  }
+  if (name.includes('revenuecat')) {
+    return 'Paste a RevenueCat v2 secret API key with read-only project permissions.';
+  }
+  if (name.includes('asc')) {
+    return 'Paste ASC API key details or rerun ASC setup when ready.';
+  }
+  return 'Use the connector setup flow below to refresh this configuration.';
+}
+
+function isDeferredGitHubFailure(failure) {
+  const name = String(failure?.name || '');
+  const detail = String(failure?.detail || '');
+  return (
+    name === 'project:github-repo' ||
+    (name === 'connection:github' && /project\.githubRepo|repo is missing|repo is not configured/i.test(detail))
+  );
+}
+
+function isDeferredSentryProjectFailure(failure) {
+  const name = String(failure?.name || '');
+  const detail = String(failure?.detail || '');
+  return name.includes('sentry') && /No Sentry projects configured/i.test(detail);
+}
+
+function summarizeHealthFailure(failure, configPath) {
+  const name = String(failure?.name || '');
+  const detail = String(failure?.detail || '');
+  const connector = connectorFromCheckName(`${name} ${detail}`) || 'setup';
+  if (connector === 'analytics' && /invalid token|unauthorized|token has been revoked/i.test(detail)) {
+    return {
+      connector,
+      status: 'token invalid or expired',
+      action: 'paste a fresh readonly token',
+    };
+  }
+  if (connector === 'sentry' && /No Sentry projects configured/i.test(detail)) {
+    return {
+      connector,
+      status: 'project scope deferred',
+      action: 'no user action; OpenClaw discovers visible projects from org + token',
+    };
+  }
+  if (connector === 'github' && isDeferredGitHubFailure(failure)) {
+    return {
+      connector,
+      status: 'repo not known yet',
+      action: `optional; set project.githubRepo in ${configPath} only for GitHub delivery`,
+    };
+  }
+  return {
+    connector,
+    status: cleanHealthDetail(detail),
+    action: actionForHealthFailure(failure, configPath),
+  };
+}
+
+function printHealthFailures(failures, configPath) {
+  const summarized = [];
+  const seen = new Set();
+  for (const failure of failures) {
+    if (isDeferredGitHubFailure(failure)) continue;
+    if (isDeferredSentryProjectFailure(failure)) continue;
+    const summary = summarizeHealthFailure(failure, configPath);
+    const key = `${summary.connector}:${summary.status}:${summary.action}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    summarized.push(summary);
+  }
+
+  if (summarized.length === 0) {
+    process.stdout.write('\nOnly deferred optional checks remain.\n\n');
+    return;
+  }
+
+  process.stdout.write('\nNeeds attention\n');
+  process.stdout.write('---------------\n');
+  for (const summary of summarized) {
+    process.stdout.write(`- ${connectorTitle(summary.connector)}: ${summary.status}\n`);
+    process.stdout.write(`  Next: ${summary.action}\n`);
+  }
+  process.stdout.write('\n');
+}
+
+function inferConnectorsFromHealthFailures(failures) {
+  const inferred = new Set<ConnectorKey>();
+  for (const failure of failures) {
+    if (isDeferredGitHubFailure(failure)) continue;
+    if (isDeferredSentryProjectFailure(failure)) continue;
+    const connector = connectorFromCheckName(`${failure?.name || ''} ${failure?.detail || ''}`);
+    if (connector) inferred.add(connector);
+  }
+  return orderConnectors([...inferred]);
+}
+
+async function getHealthCheckPlan(configPath, selected: ConnectorKey[]) {
+  const config = await readJsonIfPresent(configPath).catch(() => null);
+  const lines = [];
+  const selectedSet = new Set(selected);
+  const hasAnalytics =
+    selectedSet.has('analytics') ||
+    Boolean(process.env.ANALYTICSCLI_ACCESS_TOKEN?.trim() || process.env.ANALYTICSCLI_READONLY_TOKEN?.trim()) ||
+    (config?.sources?.analytics && config.sources.analytics.enabled !== false);
+  const sentryAccounts = Array.isArray(config?.sources?.sentry?.accounts) ? config.sources.sentry.accounts : [];
+  const hasSentry =
+    selectedSet.has('sentry') ||
+    sentryAccounts.length > 0 ||
+    Boolean(process.env.SENTRY_AUTH_TOKEN?.trim() || process.env.GLITCHTIP_AUTH_TOKEN?.trim());
+  const hasRevenueCat =
+    selectedSet.has('revenuecat') ||
+    Boolean(process.env.REVENUECAT_API_KEY?.trim()) ||
+    (config?.sources?.revenuecat && config.sources.revenuecat.enabled !== false);
+  const hasAsc =
+    selectedSet.has('asc') ||
+    Boolean(process.env.ASC_KEY_ID?.trim() && process.env.ASC_ISSUER_ID?.trim()) ||
+    (config?.sources?.asc && config.sources.asc.enabled !== false);
+  const githubRepo = String(config?.project?.githubRepo || '').trim();
+  const hasGitHub = selectedSet.has('github') || Boolean(process.env.GITHUB_TOKEN?.trim()) || Boolean(githubRepo);
+
+  if (hasAnalytics) lines.push('AnalyticsCLI: token auth + readonly query');
+  if (hasSentry) lines.push('Sentry / GlitchTip: token/org API + project discovery');
+  if (hasRevenueCat) lines.push('RevenueCat: API key auth + project read');
+  if (hasAsc) lines.push('ASC: API key auth + App Store Connect read');
+  if (hasGitHub && githubRepo) lines.push(`GitHub: repo access (${githubRepo})`);
+  if (hasGitHub && !githubRepo) lines.push('GitHub: skipped until repo is known');
+  return lines.length > 0 ? lines : ['Configured connectors: preflight checks'];
+}
+
+async function offerConfiguredConnectionFixes(rl, configPath, selected) {
+  if (!(await fileExists(configPath))) return selected;
+
+  clearTerminal();
+  process.stdout.write('Health check\n');
+  process.stdout.write('------------\n');
+  const plan = await getHealthCheckPlan(configPath, selected);
+  for (const line of plan) {
+    process.stdout.write(`Testing ${line}\n`);
+  }
+  const command = `node scripts/openclaw-growth-preflight.mjs --config ${quote(configPath)} --test-connections`;
+  const result = await runCommandCapture(command);
+  process.stdout.write('Done.\n');
+  const payload = parseJsonFromStdout(result.stdout);
+  const failures = healthCheckFailures(payload).filter(
+    (failure) => !isDeferredGitHubFailure(failure) && !isDeferredSentryProjectFailure(failure),
+  );
+
+  if (payload?.ok === true || failures.length === 0) {
+    process.stdout.write('Configured connectors look healthy.\n\n');
+    return selected;
+  }
+
+  printHealthFailures(failures, configPath);
+
+  const inferred = inferConnectorsFromHealthFailures(failures);
+  if (inferred.length === 0) {
+    process.stdout.write('Continuing with the connector(s) you selected.\n\n');
+    return selected;
+  }
+
+  const fixNow = await askYesNo(rl, `Fix now (${inferred.join(', ')})?`, true);
+  clearTerminal();
+  if (!fixNow) {
+    process.stdout.write('Continuing with selected connector(s).\n\n');
+    return selected;
+  }
+
+  return orderConnectors([...new Set([...selected, ...inferred])]);
+}
+
 function getUserLocalBinDir() {
   return process.env.HOME ? path.join(process.env.HOME, '.local', 'bin') : null;
 }
@@ -632,11 +971,63 @@ function defaultSentryTokenEnv({ index, label, baseUrl }) {
   return `${toEnvName(label || `SENTRY_${index + 1}`, `SENTRY_${index + 1}`)}_AUTH_TOKEN`;
 }
 
+function defaultSentryAccountLabel({ index, baseUrl }) {
+  const value = String(baseUrl || '').toLowerCase();
+  if (value.includes('glitchtip')) return 'GlitchTip';
+  if (index === 0) return 'Sentry Cloud';
+  return `Sentry Account ${index + 1}`;
+}
+
 function parseCommaList(value) {
   return String(value || '')
     .split(',')
     .map((entry) => entry.trim())
     .filter(Boolean);
+}
+
+function buildUrl(baseUrl, pathname, params: Record<string, string | number | boolean | null | undefined> = {}) {
+  const url = new URL(pathname, `${String(baseUrl || 'https://sentry.io').replace(/\/$/, '')}/`);
+  for (const [key, value] of Object.entries(params)) {
+    if (value === undefined || value === null || value === '') continue;
+    url.searchParams.set(key, String(value));
+  }
+  return url;
+}
+
+async function discoverSentryProjects({ baseUrl, token, org }) {
+  const normalizedOrg = String(org || '').trim();
+  const normalizedToken = String(token || '').trim();
+  if (!normalizedOrg || !normalizedToken) {
+    return { ok: false, projects: [], detail: 'missing org or token' };
+  }
+
+  try {
+    const response = await fetch(buildUrl(baseUrl, `/api/0/organizations/${encodeURIComponent(normalizedOrg)}/projects/`, {
+      per_page: 100,
+    }), {
+      method: 'GET',
+      headers: {
+        Accept: 'application/json',
+        Authorization: `Bearer ${normalizedToken}`,
+        'User-Agent': 'openclaw-growth-wizard',
+      },
+    });
+    const body = await response.text();
+    if (!response.ok) {
+      return { ok: false, projects: [], detail: `HTTP ${response.status}: ${truncate(body, 500)}` };
+    }
+    const payload = body ? JSON.parse(body) : [];
+    const projects = (Array.isArray(payload) ? payload : [])
+      .map((project) => String(project?.slug || project?.name || '').trim())
+      .filter(Boolean);
+    return { ok: true, projects: [...new Set(projects)], detail: `found ${projects.length} project(s)` };
+  } catch (error) {
+    return {
+      ok: false,
+      projects: [],
+      detail: error instanceof Error ? error.message : String(error),
+    };
+  }
 }
 
 async function upsertSentryAccountsConfig(configPath, accounts) {
@@ -910,15 +1301,9 @@ async function guideGitHubConnector(rl, secrets: Record<string, string>) {
 }
 
 async function guideAnalyticsConnector(rl, secrets: Record<string, string>) {
-  printSection('AnalyticsCLI product analytics', [
-    'Required baseline for OpenClaw Growth Engineer: product events, funnels, retention, users, and feedback.',
-  ]);
-  process.stdout.write('\nCreate or copy a readonly AnalyticsCLI token here:\n  https://dash.analyticscli.com/\n\n');
-  printBullets([
-    'Open your project, then API Keys.',
-    'Create/copy a readonly token.',
-    'Paste it into this terminal; the wizard stores it locally as ANALYTICSCLI_ACCESS_TOKEN.',
-    'If multiple AnalyticsCLI projects exist, setup will list them and ask which one to use.',
+  printSection('AnalyticsCLI', [
+    'Paste a readonly token. The setup step will validate it and select a project when needed.',
+    'Token page: https://dash.analyticscli.com/',
   ]);
   const token = await maybePromptSecret(
     rl,
@@ -948,36 +1333,27 @@ async function guideRevenueCatConnector(rl, secrets: Record<string, string>) {
 }
 
 async function guideSentryConnector(rl, secrets: Record<string, string>) {
-  printSection('Sentry-compatible crash monitoring', [
-    'Use this when OpenClaw should connect production errors, crashes, releases, and affected users back to growth impact.',
+  printSection('Sentry / GlitchTip', [
+    'Paste token, org, and base URL. Projects are discovered automatically.',
+    'Token page: https://sentry.io/settings/account/api/auth-tokens/',
   ]);
-  process.stdout.write('\nCreate a Sentry auth token here:\n  https://sentry.io/settings/account/api/auth-tokens/\n\n');
   printBullets([
     'Use read-only API scopes: `org:read`, `project:read`, and `event:read`.',
-    'The wizard can configure multiple Sentry-compatible accounts now, including Sentry Cloud and self-hosted GlitchTip.',
-    'Each account gets its own tokenEnv, baseUrl, org, environment, and optional projects[] list.',
-    'Copy only the Sentry-compatible organization slug for setup. Do not hardcode a project unless this account has a known fixed project mapping.',
-    'Project scope is resolved later from app/repo/release context, or explicitly in sources.sentry.accounts[] when a product needs fixed account-project mapping.',
-    'Use the production environment name your app sends to Sentry, usually `production`.',
-    'The wizard enables the direct Sentry API exporter and writes optional MCP client config when possible.',
+    'Use `https://sentry.io` for Sentry Cloud or your GlitchTip/self-hosted base URL.',
   ]);
 
   const accounts = [];
   let index = 0;
   while (true) {
-    const defaultLabel = index === 0 ? 'Sentry Cloud' : `Sentry Account ${index + 1}`;
-    const label = await ask(rl, `Sentry account ${index + 1} label`, defaultLabel);
     const baseUrl = await ask(
       rl,
       `Sentry account ${index + 1} base URL`,
       index === 0 ? process.env.SENTRY_BASE_URL || 'https://sentry.io' : 'https://sentry.io',
     );
+    const defaultLabel = defaultSentryAccountLabel({ index, baseUrl });
+    const label = await ask(rl, `Sentry account ${index + 1} label`, defaultLabel);
     const id = toConfigId(label || baseUrl, `sentry_${index + 1}`);
-    const tokenEnv = await ask(
-      rl,
-      `Token env var for ${label}`,
-      defaultSentryTokenEnv({ index, label, baseUrl }),
-    );
+    const tokenEnv = defaultSentryTokenEnv({ index, label, baseUrl });
     const token = await maybePromptSecret(rl, `Paste ${tokenEnv} into this local terminal`, tokenEnv);
     if (token) secrets[tokenEnv] = token;
 
@@ -991,13 +1367,24 @@ async function guideSentryConnector(rl, secrets: Record<string, string>) {
       `Sentry environment for ${label}`,
       index === 0 ? process.env.SENTRY_ENVIRONMENT || 'production' : 'production',
     );
-    const projects = parseCommaList(
-      await ask(
-        rl,
-        `Known Sentry projects for ${label} (comma-separated, leave empty to defer)`,
-        '',
-      ),
-    );
+
+    let projects = [];
+    if (org.trim() && token) {
+      process.stdout.write(`Discovering Sentry projects for ${label}...\n`);
+      const discovery = await discoverSentryProjects({ baseUrl, token, org });
+      if (discovery.ok && discovery.projects.length > 0) {
+        projects = discovery.projects;
+        process.stdout.write(
+          `Configured ${projects.length} project(s): ${projects.slice(0, 8).join(', ')}${projects.length > 8 ? ', ...' : ''}\n`,
+        );
+      } else {
+        process.stdout.write(`Could not discover projects automatically (${discovery.detail}).\n`);
+        const manualProjects = parseCommaList(await ask(rl, `Project slugs for ${label} (comma-separated, leave empty to let app context decide)`, ''));
+        projects = manualProjects;
+      }
+    } else {
+      process.stdout.write('Project discovery needs both a token and org slug. Project scope will be resolved from app context later.\n');
+    }
 
     accounts.push({
       id,
@@ -1016,7 +1403,11 @@ async function guideSentryConnector(rl, secrets: Record<string, string>) {
       if (baseUrl.trim() && baseUrl.trim() !== 'https://sentry.io') secrets.SENTRY_BASE_URL = baseUrl.trim();
     }
 
-    const addAnother = await askYesNo(rl, 'Add another Sentry-compatible account now?', false);
+    const addAnother = await askYesNo(
+      rl,
+      'Configure another Sentry-compatible account now, for example on another base URL?',
+      false,
+    );
     if (!addAnother) break;
     index += 1;
   }
@@ -1071,13 +1462,16 @@ async function runConnectorSetupWizard(args) {
 
   const rl = createInterface({ input: process.stdin, output: process.stdout });
   try {
-    const selected = withMissingRequiredAnalyticsConnector(
+    let selected = withMissingRequiredAnalyticsConnector(
       args.connectors ? parseConnectorList(args.connectors) : await askConnectorSelection(rl),
     );
     if (selected.length === 0) {
       throw new Error('No supported connectors selected. Use analytics, github, revenuecat, sentry, asc, or all.');
     }
 
+    selected = await offerConfiguredConnectionFixes(rl, args.config, selected);
+
+    clearTerminal();
     printConnectorIntro();
     process.stdout.write(`${ANSI.bold}Selected connectors${ANSI.reset}\n`);
     for (const key of selected) {
@@ -1087,14 +1481,30 @@ async function runConnectorSetupWizard(args) {
 
     const secrets: Record<string, string> = {};
     let sentryAccounts: any[] = [];
-    if (selected.includes('analytics')) await guideAnalyticsConnector(rl, secrets);
-    if (selected.includes('github')) await guideGitHubConnector(rl, secrets);
-    if (selected.includes('revenuecat')) await guideRevenueCatConnector(rl, secrets);
-    if (selected.includes('sentry')) sentryAccounts = await guideSentryConnector(rl, secrets);
-    if (selected.includes('asc')) await guideAscConnector(rl, secrets);
+    if (selected.includes('analytics')) {
+      clearTerminal();
+      await guideAnalyticsConnector(rl, secrets);
+    }
+    if (selected.includes('github')) {
+      clearTerminal();
+      await guideGitHubConnector(rl, secrets);
+    }
+    if (selected.includes('revenuecat')) {
+      clearTerminal();
+      await guideRevenueCatConnector(rl, secrets);
+    }
+    if (selected.includes('sentry')) {
+      clearTerminal();
+      sentryAccounts = await guideSentryConnector(rl, secrets);
+    }
+    if (selected.includes('asc')) {
+      clearTerminal();
+      await guideAscConnector(rl, secrets);
+    }
 
     const secretsFile = resolveSecretsFile();
     const wroteSecrets = Object.keys(secrets).length > 0;
+    clearTerminal();
     if (wroteSecrets) {
       await writeSecretsFile(secretsFile, secrets);
       process.stdout.write(`\nSaved local secrets to ${secretsFile} with chmod 600.\n`);
@@ -1106,26 +1516,39 @@ async function runConnectorSetupWizard(args) {
       process.stdout.write(`Configured ${sentryAccounts.length} Sentry-compatible account(s) in ${args.config}.\n`);
     }
 
-    const runSetup = await askYesNo(rl, 'Run helper installation/config enablement now?', true);
-    if (runSetup) {
-      const env = {
-        ...process.env,
-        ...secrets,
-      };
-      const command = `node scripts/openclaw-growth-start.mjs --config ${quote(args.config)} --setup-only --connectors ${quote(selected.join(','))}`;
-      process.stdout.write(`\nRunning: ${command}\n`);
-      await runInteractiveCommand(command, { env });
+    const env = {
+      ...process.env,
+      ...secrets,
+    };
+    let command = `node scripts/openclaw-growth-start.mjs --config ${quote(args.config)} --setup-only --connectors ${quote(selected.join(','))}`;
+    process.stdout.write('\nTesting connector setup...\n');
+    let setupResult = await runCommandCapture(command, { env });
+    let setupPayload = parseJsonFromStdout(setupResult.stdout);
+
+    if (setupPayload?.needsUserInput && setupPayload.phase === 'analytics_project_selection_required') {
+      const projectId = await askAnalyticsProjectFromSetupPayload(rl, setupPayload);
+      if (projectId) {
+        command = `${command} --project ${quote(projectId)}`;
+        process.stdout.write('\nTesting connector setup with the selected AnalyticsCLI project...\n');
+        setupResult = await runCommandCapture(command, { env });
+        setupPayload = parseJsonFromStdout(setupResult.stdout);
+      }
     }
 
     if (sentryAccounts.length > 0 && await upsertSentryAccountsConfig(args.config, sentryAccounts)) {
       process.stdout.write(`Sentry-compatible account config is up to date in ${args.config}.\n`);
     }
 
-    if (wroteSecrets) {
-      process.stdout.write('\nFuture OpenClaw Growth commands load this secrets file automatically.\n');
-    } else {
-      process.stdout.write('\nRerun this wizard when you are ready to add connector secrets or run helper setup.\n');
+    if (setupResult.ok && setupPayload?.ok !== false) {
+      printSetupSuccess(setupPayload);
+      if (wroteSecrets) {
+        process.stdout.write('Future OpenClaw Growth commands load this secrets file automatically.\n');
+      }
+      return;
     }
+
+    printSetupFailure({ result: setupResult, payload: setupPayload, command });
+    process.exitCode = 1;
   } finally {
     rl.close();
   }
@@ -1228,13 +1651,12 @@ async function main() {
     process.stdout.write('OpenClaw Growth Engineer - Setup Wizard\n');
     process.stdout.write('This wizard writes non-secret config only.\n\n');
 
-    let githubRepo = '';
-    while (!githubRepo) {
-      githubRepo = await ask(rl, 'GitHub repo (owner/name, required)', '');
-      if (!githubRepo) {
-        process.stdout.write('GitHub repo is required for this workflow.\n');
-      }
-    }
+    const detectedRepo = await detectGitHubRepo();
+    const githubRepo = await ask(
+      rl,
+      'GitHub repo (owner/name, optional; leave empty to infer later)',
+      detectedRepo || '',
+    );
     const labelsRaw = await ask(rl, 'Issue labels (comma-separated)', 'ai-growth,autogenerated,product');
     const labels = labelsRaw
       .split(',')

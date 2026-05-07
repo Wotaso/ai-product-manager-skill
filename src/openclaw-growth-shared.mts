@@ -198,6 +198,10 @@ export function shouldAutoCreateGitHubArtifact(config) {
     return false;
   }
   const mode = getActionMode(config);
+  const hasRepo = Boolean(String(config?.project?.githubRepo || '').trim());
+  if (!hasRepo) {
+    return false;
+  }
   if (mode === 'pull_request') {
     return config?.actions?.autoCreatePullRequests === true;
   }
@@ -207,7 +211,6 @@ export function shouldAutoCreateGitHubArtifact(config) {
 
   const tokenEnv = String(config?.secrets?.githubTokenEnv || 'GITHUB_TOKEN').trim();
   const hasToken = Boolean(process.env[tokenEnv]);
-  const hasRepo = Boolean(String(config?.project?.githubRepo || '').trim());
   const autoCreateWhenWritable = config?.actions?.autoCreateWhenGitHubWriteAccess !== false;
   return autoCreateWhenWritable && hasToken && hasRepo;
 }

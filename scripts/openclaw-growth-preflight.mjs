@@ -99,6 +99,7 @@ function runShell(command, options = {}) {
         const child = spawn(resolveShellCommand(), ['-c', command], {
             stdio: ['ignore', 'pipe', 'pipe'],
             cwd: options.cwd,
+            env: options.env ? { ...process.env, ...options.env } : process.env,
         });
         let stdout = '';
         let stderr = '';
@@ -371,7 +372,7 @@ async function fetchWithTimeout(url, options, timeoutMs) {
         clearTimeout(timer);
     }
 }
-async function testAnalyticsConnection(analyticsToken) {
+async function testAnalyticsConnection(analyticsToken, analyticsTokenEnv) {
     const hasCli = await commandExists('analyticscli');
     if (!hasCli) {
         return {
@@ -379,11 +380,14 @@ async function testAnalyticsConnection(analyticsToken) {
             detail: 'analyticscli binary missing',
         };
     }
-    const rootTokenFlag = await resolveAnalyticsCliRootTokenFlag();
-    const command = analyticsToken
-        ? `analyticscli ${rootTokenFlag} ${shellQuote(analyticsToken)} projects list`
-        : 'analyticscli projects list';
-    const result = await runShell(command);
+    const result = await runShell('analyticscli projects list', {
+        env: analyticsToken
+            ? {
+                [analyticsTokenEnv]: analyticsToken,
+                ANALYTICSCLI_ACCESS_TOKEN: analyticsToken,
+            }
+            : undefined,
+    });
     if (!result.ok) {
         return {
             ok: false,
@@ -396,9 +400,6 @@ async function testAnalyticsConnection(analyticsToken) {
             ? 'analyticscli token auth check passed (`projects list`)'
             : 'analyticscli auth check passed (`projects list`)',
     };
-}
-async function resolveAnalyticsCliRootTokenFlag() {
-    return '--readonly-token';
 }
 async function testRevenueCatConnection(revenuecatToken, timeoutMs) {
     if (!revenuecatToken) {
@@ -435,7 +436,7 @@ async function testRevenueCatConnection(revenuecatToken, timeoutMs) {
 }
 function describeAnalyticsConnectionFailure(detail, analyticsTokenEnv, hasAnalyticsToken) {
     if (!hasAnalyticsToken) {
-        return `Nearly done: I only need \`${analyticsTokenEnv}\` from you to continue setup. Create or copy an AnalyticsCLI token in dash.analyticscli.com -> API Keys, then run \`analyticscli login --readonly-token <token>\` (current preview CLI) or set \`${analyticsTokenEnv}\`. Use \`--api-url <url>\` or \`ANALYTICSCLI_API_URL\` only for staging/local. Raw error: ${detail}`;
+        return `Nearly done: I only need AnalyticsCLI query access from you to continue setup. Create or copy a readonly CLI token in dash.analyticscli.com -> API Keys, then run \`analyticscli login\` and paste it when prompted, or set \`${analyticsTokenEnv}\` from a secret store. Use \`--api-url <url>\` or \`ANALYTICSCLI_API_URL\` only for staging/local. Raw error: ${detail}`;
     }
     return `AnalyticsCLI connection failed with \`${analyticsTokenEnv}\` set. Verify the token and selected project. If you are testing staging/local, also verify \`ANALYTICSCLI_API_URL\` or \`--api-url\`. Raw error: ${detail}`;
 }
@@ -605,7 +606,7 @@ async function runConnectionChecks({ checks, config, timeoutMs }) {
     if (sourceEnabled(config, 'analytics')) {
         const analyticsToken = process.env[analyticsTokenEnv] || process.env.ANALYTICSCLI_ACCESS_TOKEN || '';
         const hasAnalyticsToken = Boolean(analyticsToken);
-        const analyticsConnection = await testAnalyticsConnection(analyticsToken);
+        const analyticsConnection = await testAnalyticsConnection(analyticsToken, analyticsTokenEnv);
         addCheck(checks, 'connection:analytics', analyticsConnection.ok, analyticsConnection.ok
             ? analyticsConnection.detail
             : describeAnalyticsConnectionFailure(analyticsConnection.detail, analyticsTokenEnv, hasAnalyticsToken), analyticsConnection.ok ? 'pass' : analyticsSource?.mode === 'command' ? 'fail' : 'warn');
@@ -767,11 +768,9 @@ async function main() {
         const githubRepo = isConfiguredGitHubRepo(config.project?.githubRepo)
             ? String(config.project.githubRepo).trim()
             : '';
-        addCheck(checks, 'project:github-repo', Boolean(githubRepo) || !requiresGitHubDelivery, githubRepo
+        addCheck(checks, 'project:github-repo', true, githubRepo
             ? `configured (${githubRepo})`
-            : requiresGitHubDelivery
-                ? 'project.githubRepo is required'
-                : 'not configured (optional when GitHub delivery is disabled)', requiresGitHubDelivery ? 'fail' : 'warn');
+            : 'not configured; GitHub repo context/delivery will be inferred later when possible', 'warn');
         const githubTokenEnv = getSecretName(config, 'githubTokenEnv', 'GITHUB_TOKEN');
         const hasGithubToken = Boolean(process.env[githubTokenEnv]);
         addCheck(checks, `secret:${githubTokenEnv}`, hasGithubToken || !requiresGitHubDelivery, hasGithubToken

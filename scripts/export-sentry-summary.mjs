@@ -146,16 +146,57 @@ function normalizeAccountConfigs(rawAccounts, args) {
         const id = String(account.id || account.key || account.label || `sentry_${index + 1}`).trim();
         const baseUrl = String(account.baseUrl || account.base_url || account.url || args.baseUrl || DEFAULT_BASE_URL).trim();
         const tokenEnv = String(account.tokenEnv || account.token_env || account.secretEnv || 'SENTRY_AUTH_TOKEN').trim();
-        return normalizeProjectEntries(account).map((projectEntry) => ({
-            ...projectEntry,
-            id: `${id}_${projectEntry.project}`.replace(/[^a-zA-Z0-9._-]+/g, '_'),
-            accountId: id,
-            label: String(account.label || account.name || id).trim(),
-            baseUrl,
-            tokenEnv,
-            maxSignals: args.maxSignals,
-        }));
+        const projectEntries = normalizeProjectEntries(account);
+        if (projectEntries.length > 0) {
+            return projectEntries.map((projectEntry) => ({
+                ...projectEntry,
+                id: `${id}_${projectEntry.project}`.replace(/[^a-zA-Z0-9._-]+/g, '_'),
+                accountId: id,
+                label: String(account.label || account.name || id).trim(),
+                baseUrl,
+                tokenEnv,
+                maxSignals: args.maxSignals,
+            }));
+        }
+        const org = String(account.org || account.organization || args.org || '').trim();
+        if (!org)
+            return [];
+        return [{
+                id: id.replace(/[^a-zA-Z0-9._-]+/g, '_'),
+                accountId: id,
+                label: String(account.label || account.name || id).trim(),
+                baseUrl,
+                tokenEnv,
+                org,
+                project: '',
+                environment: String(account.environment || args.environment || process.env.SENTRY_ENVIRONMENT || 'production').trim(),
+                last: String(account.last || args.last || '').trim(),
+                query: String(account.query || args.query || '').trim(),
+                limit: account.limit || args.limit,
+                maxSignals: args.maxSignals,
+            }];
     });
+}
+async function expandDiscoveredProjects(account, token) {
+    if (String(account.project || '').trim())
+        return [account];
+    const org = requireValue(account.org, 'SENTRY_ORG');
+    const url = buildUrl(account.baseUrl || DEFAULT_BASE_URL, `/api/0/organizations/${encodeURIComponent(org)}/projects/`, {
+        per_page: 100,
+    });
+    const payload = await sentryFetchJson(url, token);
+    const projects = (Array.isArray(payload) ? payload : [])
+        .map((project) => String(project?.slug || project?.name || '').trim())
+        .filter(Boolean);
+    const uniqueProjects = [...new Set(projects)];
+    if (uniqueProjects.length === 0) {
+        throw new Error(`No Sentry projects are visible for org ${org}. Check token scopes org:read/project:read/event:read and org access.`);
+    }
+    return uniqueProjects.map((project) => ({
+        ...account,
+        project,
+        id: `${account.accountId || account.id}_${project}`.replace(/[^a-zA-Z0-9._-]+/g, '_'),
+    }));
 }
 async function loadConfiguredAccounts(args) {
     const accountPayload = args.accountsFile ? await readJsonIfPresent(args.accountsFile, true) : null;
@@ -251,9 +292,14 @@ async function listIssues(account, token) {
 }
 async function main() {
     const args = parseArgs(process.argv.slice(2));
-    const accounts = await loadConfiguredAccounts(args);
-    if (accounts.length === 0) {
-        throw new Error(`No Sentry projects configured. Set SENTRY_ORG/SENTRY_PROJECT, pass --org/--project, or add sources.sentry.accounts[] in ${args.config || DEFAULT_CONFIG_PATH}.`);
+    const configuredAccounts = await loadConfiguredAccounts(args);
+    if (configuredAccounts.length === 0) {
+        throw new Error(`No Sentry account configured. Set SENTRY_AUTH_TOKEN plus SENTRY_ORG, pass --org, or add sources.sentry.accounts[] in ${args.config || DEFAULT_CONFIG_PATH}.`);
+    }
+    const accounts = [];
+    for (const account of configuredAccounts) {
+        const token = requireValue(process.env[account.tokenEnv], account.tokenEnv);
+        accounts.push(...await expandDiscoveredProjects(account, token));
     }
     const summaries = [];
     for (const account of accounts) {

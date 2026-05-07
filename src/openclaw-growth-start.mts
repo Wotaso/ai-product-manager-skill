@@ -1297,7 +1297,7 @@ function remediationForCheck(checkName, configPath) {
     return 'Write `data/openclaw-growth-engineer/analytics_summary.json` via your analytics refresh step (API-key based source command/file generation).';
   }
   if (checkName === 'connection:analytics') {
-    return 'Nearly done: I only need `ANALYTICSCLI_ACCESS_TOKEN` from you to continue setup. Create or copy it in dash.analyticscli.com -> API Keys, then run `analyticscli login --readonly-token <token>` and `analyticscli projects select`. Use `--api-url <url>` only for staging/local.';
+    return 'Nearly done: I only need AnalyticsCLI query access from you to continue setup. Create or copy a readonly CLI token in dash.analyticscli.com -> API Keys, then run `analyticscli login`, paste it when prompted, and run `analyticscli projects select`. Use `ANALYTICSCLI_ACCESS_TOKEN` from a secret store for automation. Use `--api-url <url>` only for staging/local.';
   }
   if (checkName === 'connection:github') {
     return 'Verify `GITHUB_TOKEN` and repo access to `/repos/<owner>/<repo>` + issues API.';
