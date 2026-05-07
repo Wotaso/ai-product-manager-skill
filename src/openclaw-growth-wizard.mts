@@ -451,6 +451,55 @@ async function runCommandCapture(command, options: { env?: NodeJS.ProcessEnv } =
   });
 }
 
+async function runCommandCaptureWithProgress(
+  command,
+  onProgress,
+  options: { env?: NodeJS.ProcessEnv } = {},
+) {
+  return await new Promise<{ ok: boolean; stdout: string; stderr: string; code: number | null }>((resolve) => {
+    const child = spawn('/bin/sh', ['-lc', command], {
+      env: options.env ?? process.env,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let stdout = '';
+    let stderr = '';
+    let stderrBuffer = '';
+    child.stdout.on('data', (chunk) => {
+      stdout += String(chunk);
+    });
+    child.stderr.on('data', (chunk) => {
+      const text = String(chunk);
+      stderr += text;
+      stderrBuffer += text;
+      const lines = stderrBuffer.split(/\r?\n/);
+      stderrBuffer = lines.pop() || '';
+      for (const line of lines) {
+        const match = line.match(/^OPENCLAW_PROGRESS\s+(.+)$/);
+        if (!match) continue;
+        try {
+          onProgress(JSON.parse(match[1]));
+        } catch {
+          // Ignore malformed progress events; the final JSON result is authoritative.
+        }
+      }
+    });
+    child.on('error', (error) => {
+      resolve({ ok: false, stdout, stderr: error.message, code: null });
+    });
+    child.on('close', (code) => {
+      const match = stderrBuffer.match(/^OPENCLAW_PROGRESS\s+(.+)$/);
+      if (match) {
+        try {
+          onProgress(JSON.parse(match[1]));
+        } catch {
+          // Ignore malformed progress events; the final JSON result is authoritative.
+        }
+      }
+      resolve({ ok: code === 0, stdout, stderr, code });
+    });
+  });
+}
+
 function truncate(value, maxLength = 900) {
   const text = String(value || '').trim();
   if (text.length <= maxLength) return text;
@@ -713,7 +762,14 @@ function inferConnectorsFromHealthFailures(failures) {
 
 async function getHealthCheckPlan(configPath, selected: ConnectorKey[]) {
   const config = await readJsonIfPresent(configPath).catch(() => null);
-  const lines = [];
+  const items = [
+    {
+      key: 'preflight',
+      label: 'Local preflight',
+      detail: 'config, dependencies, source wiring',
+      status: 'pending',
+    },
+  ];
   const selectedSet = new Set(selected);
   const hasAnalytics =
     selectedSet.has('analytics') ||
@@ -728,35 +784,68 @@ async function getHealthCheckPlan(configPath, selected: ConnectorKey[]) {
     selectedSet.has('revenuecat') ||
     Boolean(process.env.REVENUECAT_API_KEY?.trim()) ||
     (config?.sources?.revenuecat && config.sources.revenuecat.enabled !== false);
-  const hasAsc =
-    selectedSet.has('asc') ||
-    Boolean(process.env.ASC_KEY_ID?.trim() && process.env.ASC_ISSUER_ID?.trim()) ||
-    (config?.sources?.asc && config.sources.asc.enabled !== false);
   const githubRepo = String(config?.project?.githubRepo || '').trim();
   const hasGitHub = selectedSet.has('github') || Boolean(process.env.GITHUB_TOKEN?.trim()) || Boolean(githubRepo);
 
-  if (hasAnalytics) lines.push('AnalyticsCLI: token auth + readonly query');
-  if (hasSentry) lines.push('Sentry / GlitchTip: token/org API + project discovery');
-  if (hasRevenueCat) lines.push('RevenueCat: API key auth + project read');
-  if (hasAsc) lines.push('ASC: API key auth + App Store Connect read');
-  if (hasGitHub && githubRepo) lines.push(`GitHub: repo access (${githubRepo})`);
-  if (hasGitHub && !githubRepo) lines.push('GitHub: skipped until repo is known');
-  return lines.length > 0 ? lines : ['Configured connectors: preflight checks'];
+  if (hasAnalytics) items.push({ key: 'analytics', label: 'AnalyticsCLI', detail: 'token auth + readonly query', status: 'pending' });
+  if (hasSentry) items.push({ key: 'sentry', label: 'Sentry / GlitchTip', detail: 'token/org API + project discovery', status: 'pending' });
+  if (hasRevenueCat) items.push({ key: 'revenuecat', label: 'RevenueCat', detail: 'API key auth + project read', status: 'pending' });
+  if (hasGitHub && githubRepo) items.push({ key: 'github', label: 'GitHub', detail: `repo access (${githubRepo})`, status: 'pending' });
+  if (hasGitHub && !githubRepo) items.push({ key: 'github', label: 'GitHub', detail: 'skipped until repo is known', status: 'pending' });
+  return items;
+}
+
+function healthStatusLabel(status) {
+  if (status === 'running') return 'running';
+  if (status === 'pass') return 'done';
+  if (status === 'warn') return 'needs attention';
+  if (status === 'fail') return 'needs attention';
+  if (status === 'deferred') return 'deferred';
+  return 'pending';
+}
+
+function renderHealthProgress(items, message = 'Live checks running...') {
+  if (process.stdout.isTTY) clearTerminal();
+  process.stdout.write('Health check\n');
+  process.stdout.write('------------\n');
+  process.stdout.write(`${message}\n\n`);
+  for (const item of items) {
+    process.stdout.write(`[${healthStatusLabel(item.status)}] ${item.label}: ${item.detail}\n`);
+  }
+}
+
+function updateHealthProgress(items, event) {
+  const key = String(event?.key || '');
+  const item = items.find((entry) => entry.key === key);
+  if (!item) return false;
+  if (event.phase === 'start') {
+    item.status = 'running';
+    if (event.detail) item.detail = String(event.detail);
+    if (event.label) item.label = String(event.label);
+    return true;
+  }
+  if (event.phase === 'finish') {
+    item.status = event.status || 'pass';
+    if (event.detail) item.detail = String(event.detail);
+    if (event.label) item.label = String(event.label);
+    return true;
+  }
+  return false;
 }
 
 async function offerConfiguredConnectionFixes(rl, configPath, selected) {
   if (!(await fileExists(configPath))) return selected;
 
   clearTerminal();
-  process.stdout.write('Health check\n');
-  process.stdout.write('------------\n');
   const plan = await getHealthCheckPlan(configPath, selected);
-  for (const line of plan) {
-    process.stdout.write(`Testing ${line}\n`);
-  }
-  const command = `node scripts/openclaw-growth-preflight.mjs --config ${quote(configPath)} --test-connections`;
-  const result = await runCommandCapture(command);
-  process.stdout.write('Done.\n');
+  renderHealthProgress(plan, 'Starting live checks...');
+  const command = `node scripts/openclaw-growth-preflight.mjs --config ${quote(configPath)} --test-connections --progress-json`;
+  const result = await runCommandCaptureWithProgress(command, (event) => {
+    if (updateHealthProgress(plan, event)) {
+      renderHealthProgress(plan);
+    }
+  });
+  renderHealthProgress(plan, 'Checks finished.');
   const payload = parseJsonFromStdout(result.stdout);
   const failures = healthCheckFailures(payload).filter(
     (failure) => !isDeferredGitHubFailure(failure) && !isDeferredSentryProjectFailure(failure),

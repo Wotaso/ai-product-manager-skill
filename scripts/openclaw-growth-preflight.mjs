@@ -26,6 +26,7 @@ Options:
   --config <file>        Config path (default: ${DEFAULT_CONFIG_PATH})
   --test-connections     Run live API/connector smoke checks for enabled channels
   --timeout-ms <ms>      Connection test timeout in milliseconds (default: ${DEFAULT_CONNECTION_TIMEOUT_MS})
+  --progress-json        Emit machine-readable progress events on stderr
   --json                 Print JSON only (default)
   --help, -h             Show help
 `);
@@ -35,6 +36,7 @@ function parseArgs(argv) {
     const args = {
         config: DEFAULT_CONFIG_PATH,
         json: true,
+        progressJson: false,
         testConnections: false,
         timeoutMs: DEFAULT_CONNECTION_TIMEOUT_MS,
     };
@@ -50,6 +52,9 @@ function parseArgs(argv) {
         }
         else if (token === '--test-connections') {
             args.testConnections = true;
+        }
+        else if (token === '--progress-json') {
+            args.progressJson = true;
         }
         else if (token === '--timeout-ms') {
             const parsed = Number.parseInt(String(next || ''), 10);
@@ -346,6 +351,35 @@ function addCheck(checks, name, ok, detail, severity = 'fail') {
         detail,
     });
 }
+function emitProgress(enabled, event) {
+    if (!enabled)
+        return;
+    process.stderr.write(`OPENCLAW_PROGRESS ${JSON.stringify(event)}\n`);
+}
+function checkSliceStatus(checks, startIndex) {
+    const slice = checks.slice(startIndex);
+    if (slice.some((check) => check.status === 'fail'))
+        return 'fail';
+    if (slice.some((check) => check.status === 'warn'))
+        return 'warn';
+    return 'pass';
+}
+async function runProgressGroup({ checks, progressJson, key, label, detail, run }) {
+    emitProgress(progressJson, { phase: 'start', key, label, detail });
+    const startIndex = checks.length;
+    try {
+        await run();
+    }
+    finally {
+        emitProgress(progressJson, {
+            phase: 'finish',
+            key,
+            label,
+            detail,
+            status: checkSliceStatus(checks, startIndex),
+        });
+    }
+}
 function getSecretName(config, key, fallback) {
     const value = config?.secrets?.[key];
     return typeof value === 'string' && value.trim() ? value.trim() : fallback;
@@ -590,7 +624,7 @@ async function testCommandSourceJson(command, cwd = process.cwd()) {
         detail: 'command returned JSON',
     };
 }
-async function runConnectionChecks({ checks, config, timeoutMs }) {
+async function runConnectionChecks({ checks, config, timeoutMs, progressJson = false }) {
     const analyticsTokenEnv = getSecretName(config, 'analyticsTokenEnv', 'ANALYTICSCLI_ACCESS_TOKEN');
     const revenuecatTokenEnv = getSecretName(config, 'revenuecatTokenEnv', 'REVENUECAT_API_KEY');
     const sentryTokenEnv = getSecretName(config, 'sentryTokenEnv', 'SENTRY_AUTH_TOKEN');
@@ -603,76 +637,103 @@ async function runConnectionChecks({ checks, config, timeoutMs }) {
     const requiresGitHubDelivery = shouldAutoCreateGitHubArtifact(config);
     const commandCwd = getProjectCommandCwd(config);
     const analyticsSource = config.sources?.analytics;
-    if (sourceEnabled(config, 'analytics')) {
-        const analyticsToken = process.env[analyticsTokenEnv] || process.env.ANALYTICSCLI_ACCESS_TOKEN || '';
-        const hasAnalyticsToken = Boolean(analyticsToken);
-        const analyticsConnection = await testAnalyticsConnection(analyticsToken, analyticsTokenEnv);
-        addCheck(checks, 'connection:analytics', analyticsConnection.ok, analyticsConnection.ok
-            ? analyticsConnection.detail
-            : describeAnalyticsConnectionFailure(analyticsConnection.detail, analyticsTokenEnv, hasAnalyticsToken), analyticsConnection.ok ? 'pass' : analyticsSource?.mode === 'command' ? 'fail' : 'warn');
-        if (analyticsSource?.mode === 'command') {
-            const command = String(analyticsSource.command || '').trim();
-            if (!command) {
-                addCheck(checks, 'connection:analytics-command', false, 'analytics source uses command mode but no command configured');
+    await runProgressGroup({
+        checks,
+        progressJson,
+        key: 'analytics',
+        label: 'AnalyticsCLI',
+        detail: 'token auth + readonly query',
+        run: async () => {
+            if (sourceEnabled(config, 'analytics')) {
+                const analyticsToken = process.env[analyticsTokenEnv] || process.env.ANALYTICSCLI_ACCESS_TOKEN || '';
+                const hasAnalyticsToken = Boolean(analyticsToken);
+                const analyticsConnection = await testAnalyticsConnection(analyticsToken, analyticsTokenEnv);
+                addCheck(checks, 'connection:analytics', analyticsConnection.ok, analyticsConnection.ok
+                    ? analyticsConnection.detail
+                    : describeAnalyticsConnectionFailure(analyticsConnection.detail, analyticsTokenEnv, hasAnalyticsToken), analyticsConnection.ok ? 'pass' : analyticsSource?.mode === 'command' ? 'fail' : 'warn');
+                if (analyticsSource?.mode === 'command') {
+                    const command = String(analyticsSource.command || '').trim();
+                    if (!command) {
+                        addCheck(checks, 'connection:analytics-command', false, 'analytics source uses command mode but no command configured');
+                    }
+                    else {
+                        const commandCheck = await testCommandSourceJson(command, commandCwd);
+                        addCheck(checks, 'connection:analytics-command', commandCheck.ok, commandCheck.ok
+                            ? 'analytics command smoke test passed'
+                            : `analytics command smoke test failed (${commandCheck.detail})`);
+                    }
+                }
             }
             else {
-                const commandCheck = await testCommandSourceJson(command, commandCwd);
-                addCheck(checks, 'connection:analytics-command', commandCheck.ok, commandCheck.ok
-                    ? 'analytics command smoke test passed'
-                    : `analytics command smoke test failed (${commandCheck.detail})`);
+                addCheck(checks, 'connection:analytics', true, 'source disabled');
             }
-        }
-    }
-    else {
-        addCheck(checks, 'connection:analytics', true, 'source disabled');
-    }
+        },
+    });
     const revenuecatSource = config.sources?.revenuecat;
-    if (sourceEnabled(config, 'revenuecat')) {
-        const token = process.env[revenuecatTokenEnv] || '';
-        if (!token) {
-            addCheck(checks, `connection:revenuecat`, false, `${revenuecatTokenEnv} missing (required for live RevenueCat API test)`, revenuecatSource?.mode === 'command' ? 'fail' : 'warn');
-        }
-        else {
-            const revenuecatConnection = await testRevenueCatConnection(token, timeoutMs);
-            addCheck(checks, 'connection:revenuecat', revenuecatConnection.ok, revenuecatConnection.ok
-                ? `RevenueCat auth check passed (${revenuecatConnection.detail})`
-                : `RevenueCat auth check failed (${revenuecatConnection.detail})`);
-        }
-    }
-    else {
-        addCheck(checks, 'connection:revenuecat', true, 'source disabled');
-    }
-    const sentrySource = config.sources?.sentry;
-    if (sourceEnabled(config, 'sentry')) {
-        const sentryAccounts = normalizeSentryAccounts(config, sentryTokenEnv);
-        for (const account of sentryAccounts) {
-            const token = process.env[account.tokenEnv] || '';
-            const checkName = sentryAccounts.length > 1 ? `connection:sentry:${account.key}` : 'connection:sentry';
-            if (!token) {
-                addCheck(checks, checkName, false, `${account.tokenEnv} missing (required for live Sentry API test for ${account.label})`, sentrySource?.mode === 'command' ? 'fail' : 'warn');
-                continue;
-            }
-            const sentryConnection = await testSentryConnection(token, timeoutMs, account.baseUrl);
-            addCheck(checks, checkName, sentryConnection.ok, sentryConnection.ok
-                ? `${account.label} auth check passed (${sentryConnection.detail})`
-                : `${account.label} auth check failed (${sentryConnection.detail})`);
-        }
-        if (sentrySource?.mode === 'command') {
-            const command = String(sentrySource.command || '').trim();
-            if (!command) {
-                addCheck(checks, 'connection:sentry-command', false, 'sentry source uses command mode but no command configured');
+    await runProgressGroup({
+        checks,
+        progressJson,
+        key: 'revenuecat',
+        label: 'RevenueCat',
+        detail: 'API key auth + project read',
+        run: async () => {
+            if (sourceEnabled(config, 'revenuecat')) {
+                const token = process.env[revenuecatTokenEnv] || '';
+                if (!token) {
+                    addCheck(checks, `connection:revenuecat`, false, `${revenuecatTokenEnv} missing (required for live RevenueCat API test)`, revenuecatSource?.mode === 'command' ? 'fail' : 'warn');
+                }
+                else {
+                    const revenuecatConnection = await testRevenueCatConnection(token, timeoutMs);
+                    addCheck(checks, 'connection:revenuecat', revenuecatConnection.ok, revenuecatConnection.ok
+                        ? `RevenueCat auth check passed (${revenuecatConnection.detail})`
+                        : `RevenueCat auth check failed (${revenuecatConnection.detail})`);
+                }
             }
             else {
-                const commandCheck = await testCommandSourceJson(command, commandCwd);
-                addCheck(checks, 'connection:sentry-command', commandCheck.ok, commandCheck.ok
-                    ? 'Sentry command smoke test passed'
-                    : `Sentry command smoke test failed (${commandCheck.detail})`);
+                addCheck(checks, 'connection:revenuecat', true, 'source disabled');
             }
-        }
-    }
-    else {
-        addCheck(checks, 'connection:sentry', true, 'source disabled');
-    }
+        },
+    });
+    const sentrySource = config.sources?.sentry;
+    await runProgressGroup({
+        checks,
+        progressJson,
+        key: 'sentry',
+        label: 'Sentry / GlitchTip',
+        detail: 'token/org API + project discovery',
+        run: async () => {
+            if (sourceEnabled(config, 'sentry')) {
+                const sentryAccounts = normalizeSentryAccounts(config, sentryTokenEnv);
+                for (const account of sentryAccounts) {
+                    const token = process.env[account.tokenEnv] || '';
+                    const checkName = sentryAccounts.length > 1 ? `connection:sentry:${account.key}` : 'connection:sentry';
+                    if (!token) {
+                        addCheck(checks, checkName, false, `${account.tokenEnv} missing (required for live Sentry API test for ${account.label})`, sentrySource?.mode === 'command' ? 'fail' : 'warn');
+                        continue;
+                    }
+                    const sentryConnection = await testSentryConnection(token, timeoutMs, account.baseUrl);
+                    addCheck(checks, checkName, sentryConnection.ok, sentryConnection.ok
+                        ? `${account.label} auth check passed (${sentryConnection.detail})`
+                        : `${account.label} auth check failed (${sentryConnection.detail})`);
+                }
+                if (sentrySource?.mode === 'command') {
+                    const command = String(sentrySource.command || '').trim();
+                    if (!command) {
+                        addCheck(checks, 'connection:sentry-command', false, 'sentry source uses command mode but no command configured');
+                    }
+                    else {
+                        const commandCheck = await testCommandSourceJson(command, commandCwd);
+                        addCheck(checks, 'connection:sentry-command', commandCheck.ok, commandCheck.ok
+                            ? 'Sentry command smoke test passed'
+                            : `Sentry command smoke test failed (${commandCheck.detail})`);
+                    }
+                }
+            }
+            else {
+                addCheck(checks, 'connection:sentry', true, 'source disabled');
+            }
+        },
+    });
     const feedbackSource = config.sources?.feedback;
     if (sourceEnabled(config, 'feedback') && feedbackSource?.mode === 'command') {
         const command = String(feedbackSource.command || '').trim();
@@ -729,20 +790,29 @@ async function runConnectionChecks({ checks, config, timeoutMs }) {
     }
     const githubToken = process.env[githubTokenEnv] || '';
     const githubCheckName = actionMode === 'pull_request' ? 'connection:github-pull-requests' : 'connection:github';
-    if (!requiresGitHubDelivery && (!githubToken || !githubRepo)) {
-        addCheck(checks, githubCheckName, true, githubToken
-            ? 'skipped because project.githubRepo is not configured'
-            : 'skipped because GitHub artifact creation is disabled and no GITHUB_TOKEN is configured');
-    }
-    else if (!githubToken) {
-        addCheck(checks, githubCheckName, !requiresGitHubDelivery, `${githubTokenEnv} missing (required; ${getGitHubRequirementText(actionMode)})`, requiresGitHubDelivery ? 'fail' : 'warn');
-    }
-    else {
-        const githubConnection = await testGitHubConnection(githubToken, githubRepo, timeoutMs, actionMode);
-        addCheck(checks, githubCheckName, githubConnection.ok, githubConnection.ok
-            ? `GitHub auth check passed (${githubConnection.detail})`
-            : `GitHub auth check failed (${githubConnection.detail})`);
-    }
+    await runProgressGroup({
+        checks,
+        progressJson,
+        key: 'github',
+        label: 'GitHub',
+        detail: githubRepo ? `repo access (${githubRepo})` : 'repo access deferred until repo is known',
+        run: async () => {
+            if (!requiresGitHubDelivery && (!githubToken || !githubRepo)) {
+                addCheck(checks, githubCheckName, true, githubToken
+                    ? 'skipped because project.githubRepo is not configured'
+                    : 'skipped because GitHub artifact creation is disabled and no GITHUB_TOKEN is configured');
+            }
+            else if (!githubToken) {
+                addCheck(checks, githubCheckName, !requiresGitHubDelivery, `${githubTokenEnv} missing (required; ${getGitHubRequirementText(actionMode)})`, requiresGitHubDelivery ? 'fail' : 'warn');
+            }
+            else {
+                const githubConnection = await testGitHubConnection(githubToken, githubRepo, timeoutMs, actionMode);
+                addCheck(checks, githubCheckName, githubConnection.ok, githubConnection.ok
+                    ? `GitHub auth check passed (${githubConnection.detail})`
+                    : `GitHub auth check failed (${githubConnection.detail})`);
+            }
+        },
+    });
 }
 async function main() {
     await loadOpenClawGrowthSecrets();
@@ -759,6 +829,12 @@ async function main() {
         addCheck(checks, 'config-file', false, `Could not read config at ${configPath}: ${error instanceof Error ? error.message : String(error)}`);
     }
     if (config) {
+        emitProgress(args.progressJson, {
+            phase: 'start',
+            key: 'preflight',
+            label: 'Local preflight',
+            detail: 'config, dependencies, and source wiring',
+        });
         const actionMode = getActionMode(config);
         const requiresGitHubDelivery = shouldAutoCreateGitHubArtifact(config);
         const analyticsEnabled = sourceEnabled(config, 'analytics');
@@ -873,10 +949,18 @@ async function main() {
                 ? 'set (optional if analyticscli uses stored login)'
                 : `not set; analyticscli stored login is also supported and will be verified by the connection check`);
         }
+        emitProgress(args.progressJson, {
+            phase: 'finish',
+            key: 'preflight',
+            label: 'Local preflight',
+            detail: 'config, dependencies, and source wiring',
+            status: checkSliceStatus(checks, 0),
+        });
         if (args.testConnections) {
             await runConnectionChecks({
                 checks,
                 config,
+                progressJson: args.progressJson,
                 timeoutMs: args.timeoutMs,
             });
         }
