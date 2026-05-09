@@ -16,6 +16,7 @@ import { loadOpenClawGrowthSecrets } from './openclaw-growth-env.mjs';
 const DEFAULT_CONFIG_PATH = 'data/openclaw-growth-engineer/config.json';
 const DEFAULT_STATE_PATH = 'data/openclaw-growth-engineer/state.json';
 const DEFAULT_RUNTIME_DIR = 'data/openclaw-growth-engineer/runtime';
+const DEFAULT_CONNECTOR_HEALTH_INTERVAL_MINUTES = 1440;
 
 type ShellResult = {
   ok: boolean;
@@ -122,10 +123,10 @@ function resolveShellCommand(): string {
   return 'sh';
 }
 
-function runShellCommand(command, timeoutMs = 120_000, options: { cwd?: string } = {}): Promise<ShellResult> {
+function runShellCommand(command, timeoutMs = 120_000, options: { cwd?: string; input?: string } = {}): Promise<ShellResult> {
   return new Promise((resolve) => {
     const child = spawn(resolveShellCommand(), ['-c', command], {
-      stdio: ['ignore', 'pipe', 'pipe'],
+      stdio: options.input === undefined ? ['ignore', 'pipe', 'pipe'] : ['pipe', 'pipe', 'pipe'],
       cwd: options.cwd,
     });
     let stdout = '';
@@ -144,6 +145,9 @@ function runShellCommand(command, timeoutMs = 120_000, options: { cwd?: string }
     child.stderr.on('data', (chunk) => {
       stderr += String(chunk);
     });
+    if (options.input !== undefined) {
+      child.stdin.end(options.input);
+    }
     child.on('close', (code) => {
       if (settled) return;
       settled = true;
@@ -198,6 +202,358 @@ async function assertHardRequirements(config) {
 function getProjectCommandCwd(config) {
   const repoRoot = String(config?.project?.repoRoot || '').trim();
   return repoRoot ? path.resolve(repoRoot) : process.cwd();
+}
+
+function parseJsonFromStdout(stdout) {
+  const raw = String(stdout || '').trim();
+  if (!raw) return null;
+  const firstBrace = raw.indexOf('{');
+  const firstBracket = raw.indexOf('[');
+  const starts = [firstBrace, firstBracket].filter((index) => index >= 0);
+  if (starts.length === 0) return null;
+  try {
+    return JSON.parse(raw.slice(Math.min(...starts)));
+  } catch {
+    return null;
+  }
+}
+
+function getConnectorHealthIntervalMinutes(config) {
+  const configured = Number(config?.schedule?.connectorHealthCheckIntervalMinutes);
+  return Number.isFinite(configured) && configured > 0
+    ? configured
+    : DEFAULT_CONNECTOR_HEALTH_INTERVAL_MINUTES;
+}
+
+function isDue(lastCheckedAt, intervalMinutes) {
+  if (!lastCheckedAt) return true;
+  const last = Date.parse(String(lastCheckedAt));
+  if (!Number.isFinite(last)) return true;
+  return Date.now() - last >= intervalMinutes * 60_000;
+}
+
+function getConnectorEntries(statusPayload) {
+  return Object.entries(statusPayload?.connectors || {}).map(([key, value]: [string, any]) => ({
+    key,
+    status: String(value?.status || 'unknown'),
+    detail: String(value?.detail || ''),
+    nextAction: typeof value?.nextAction === 'string' ? value.nextAction : null,
+  }));
+}
+
+function getUnhealthyConfiguredConnectors(statusPayload) {
+  return getConnectorEntries(statusPayload).filter((entry) =>
+    ['blocked', 'partial', 'unknown'].includes(entry.status),
+  );
+}
+
+function getConnectedConnectorKeys(statusPayload) {
+  return getConnectorEntries(statusPayload)
+    .filter((entry) => entry.status === 'connected')
+    .map((entry) => entry.key)
+    .sort();
+}
+
+function buildConnectorHealthFingerprint(unhealthyConnectors) {
+  return sha256(
+    unhealthyConnectors
+      .map((entry) => `${entry.key}|${entry.status}|${entry.detail}|${entry.nextAction || ''}`)
+      .sort()
+      .join('\n'),
+  );
+}
+
+function humanConnectorName(key) {
+  if (key === 'analyticscli') return 'AnalyticsCLI';
+  if (key === 'appStoreConnect') return 'App Store Connect';
+  if (key === 'revenuecat') return 'RevenueCat';
+  if (key === 'sentry') return 'Sentry';
+  if (key === 'github') return 'GitHub';
+  return key;
+}
+
+function buildConnectorHealthAlert(statusPayload, unhealthyConnectors) {
+  const lines = [
+    `OpenClaw Growth connector health needs attention (${new Date().toISOString()}).`,
+    `Config: ${statusPayload?.configPath || DEFAULT_CONFIG_PATH}`,
+    '',
+    'Unhealthy connector(s):',
+  ];
+
+  for (const entry of unhealthyConnectors) {
+    lines.push(`- ${humanConnectorName(entry.key)}: ${entry.status} - ${entry.detail}`);
+    if (entry.nextAction) {
+      lines.push(`  Next: ${entry.nextAction}`);
+    }
+    if (entry.key === 'appStoreConnect' && entry.status === 'partial') {
+      lines.push(
+        '  Note: ASC web analytics uses a user-owned web session. If Apple expires it after a few hours, refresh it with `asc web auth login`; API-key ASC auth cannot replace this web session.',
+      );
+    }
+  }
+
+  lines.push('');
+  lines.push('Do not send secrets through chat or social channels. Refresh credentials only in the host terminal or secret store.');
+  return `${lines.join('\n')}\n`;
+}
+
+async function writeConnectorHealthAlert(runtimeDir, message, statusPayload, unhealthyConnectors, fingerprint) {
+  const alertDir = path.join(runtimeDir, 'connector-health');
+  await ensureDir(alertDir);
+  const markdownPath = path.join(alertDir, 'latest.md');
+  const jsonPath = path.join(alertDir, 'latest.json');
+  await fs.writeFile(markdownPath, message, 'utf8');
+  await fs.writeFile(
+    jsonPath,
+    JSON.stringify(
+      {
+        generatedAt: new Date().toISOString(),
+        fingerprint,
+        unhealthyConnectors,
+        status: statusPayload,
+      },
+      null,
+      2,
+    ),
+    'utf8',
+  );
+  return { markdownPath, jsonPath };
+}
+
+function getConnectorHealthChannels(config) {
+  const configuredChannels = Array.isArray(config?.notifications?.connectorHealth?.channels)
+    ? config.notifications.connectorHealth.channels.filter((channel) => channel?.enabled !== false)
+    : [];
+  if (configuredChannels.length > 0) return configuredChannels;
+
+  const channels = [];
+  const deliveries = config?.deliveries || {};
+  if (deliveries.openclawChat?.enabled) {
+    channels.push({
+      type: 'openclaw-chat',
+      label: 'openclaw_chat',
+      markdownPath: deliveries.openclawChat.connectorHealthMarkdownPath || deliveries.openclawChat.markdownPath,
+      jsonPath: deliveries.openclawChat.connectorHealthJsonPath || deliveries.openclawChat.jsonPath,
+    });
+  }
+  if (deliveries.slack?.enabled) {
+    channels.push({
+      type: 'slack',
+      label: 'slack',
+      webhookEnv: deliveries.slack.webhookEnv || 'SLACK_WEBHOOK_URL',
+    });
+  }
+  if (deliveries.webhook?.enabled) {
+    channels.push({
+      type: 'webhook',
+      label: 'webhook',
+      urlEnv: deliveries.webhook.urlEnv || 'OPENCLAW_WEBHOOK_URL',
+      method: deliveries.webhook.method || 'POST',
+      headers: deliveries.webhook.headers || {},
+    });
+  }
+  if (deliveries.discord?.enabled) {
+    channels.push({
+      type: 'command',
+      label: 'discord',
+      command: deliveries.discord.command || 'node scripts/discord-openclaw-bridge.mjs send --stdin',
+    });
+  }
+  return channels;
+}
+
+async function writeConfiguredOpenClawChatAlert(configPath, channel, message, statusPayload, unhealthyConnectors, fingerprint) {
+  const baseDir = path.dirname(path.resolve(configPath));
+  const markdownPath = path.resolve(baseDir, channel.markdownPath || '.openclaw/chat/connector-health.md');
+  const jsonPath = path.resolve(baseDir, channel.jsonPath || '.openclaw/chat/connector-health.json');
+  await fs.mkdir(path.dirname(markdownPath), { recursive: true });
+  await fs.mkdir(path.dirname(jsonPath), { recursive: true });
+  await fs.writeFile(markdownPath, message, 'utf8');
+  await fs.writeFile(
+    jsonPath,
+    JSON.stringify(
+      {
+        channel: channel.label || 'openclaw_chat',
+        generatedAt: new Date().toISOString(),
+        fingerprint,
+        unhealthyConnectors,
+        status: statusPayload,
+      },
+      null,
+      2,
+    ),
+    'utf8',
+  );
+  return {
+    sent: true,
+    target: channel.label || 'openclaw_chat',
+    detail: `wrote ${markdownPath} and ${jsonPath}`,
+  };
+}
+
+async function sendSlackConnectorHealthAlert(channel, message) {
+  const webhookEnv = channel.webhookEnv || 'SLACK_WEBHOOK_URL';
+  const webhookUrl = process.env[webhookEnv];
+  if (!webhookUrl) {
+    return { sent: false, target: channel.label || 'slack', detail: `${webhookEnv} not set` };
+  }
+  const response = await fetch(webhookUrl, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ text: message }),
+  });
+  return {
+    sent: response.ok,
+    target: channel.label || 'slack',
+    detail: response.ok ? `HTTP ${response.status}` : `HTTP ${response.status}: ${await response.text()}`,
+  };
+}
+
+async function sendWebhookConnectorHealthAlert(channel, message, statusPayload, unhealthyConnectors, fingerprint) {
+  const urlEnv = channel.urlEnv || channel.webhookEnv || 'OPENCLAW_WEBHOOK_URL';
+  const webhookUrl = process.env[urlEnv];
+  if (!webhookUrl) {
+    return { sent: false, target: channel.label || 'webhook', detail: `${urlEnv} not set` };
+  }
+  const response = await fetch(webhookUrl, {
+    method: channel.method || 'POST',
+    headers: {
+      'content-type': 'application/json',
+      ...(channel.headers || {}),
+    },
+    body: JSON.stringify({
+      type: 'openclaw.connector_health',
+      generatedAt: new Date().toISOString(),
+      text: message,
+      fingerprint,
+      unhealthyConnectors,
+      status: statusPayload,
+    }),
+  });
+  return {
+    sent: response.ok,
+    target: channel.label || 'webhook',
+    detail: response.ok ? `HTTP ${response.status}` : `HTTP ${response.status}: ${await response.text()}`,
+  };
+}
+
+async function sendCommandConnectorHealthAlert(channel, message) {
+  if (!channel.command) {
+    return { sent: false, target: channel.label || 'command', detail: 'command not configured' };
+  }
+  const result = await runShellCommand(String(channel.command), 60_000, { input: message });
+  return {
+    sent: result.ok,
+    target: channel.label || 'command',
+    detail: result.ok ? result.stdout.trim() : result.stderr.trim() || result.stdout.trim() || `exit ${result.code}`,
+  };
+}
+
+async function deliverConnectorHealthAlert({ config, configPath, message, statusPayload, unhealthyConnectors, fingerprint }) {
+  const channels = getConnectorHealthChannels(config);
+  if (config?.notifications?.connectorHealth?.enabled === false) {
+    return [{ sent: false, target: 'notifications', detail: 'connector health notifications disabled' }];
+  }
+  if (channels.length === 0) {
+    return [{ sent: false, target: 'none', detail: 'no connector health notification channels configured' }];
+  }
+
+  const results = [];
+  for (const channel of channels) {
+    try {
+      if (channel.type === 'openclaw-chat') {
+        results.push(await writeConfiguredOpenClawChatAlert(configPath, channel, message, statusPayload, unhealthyConnectors, fingerprint));
+      } else if (channel.type === 'slack') {
+        results.push(await sendSlackConnectorHealthAlert(channel, message));
+      } else if (channel.type === 'webhook') {
+        results.push(await sendWebhookConnectorHealthAlert(channel, message, statusPayload, unhealthyConnectors, fingerprint));
+      } else if (channel.type === 'command') {
+        results.push(await sendCommandConnectorHealthAlert(channel, message));
+      } else {
+        results.push({ sent: false, target: channel.label || String(channel.type || 'unknown'), detail: 'unsupported channel type' });
+      }
+    } catch (error) {
+      results.push({
+        sent: false,
+        target: channel.label || String(channel.type || 'unknown'),
+        detail: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+  return results;
+}
+
+async function maybeRunConnectorHealthCheck({ config, configPath, state, statePath, runtimeDir }) {
+  const healthState = state?.connectorHealth || {};
+  const intervalMinutes = getConnectorHealthIntervalMinutes(config);
+  if (!isDue(healthState.lastCheckedAt, intervalMinutes)) {
+    return state;
+  }
+
+  await ensureDir(runtimeDir);
+  const statusCommand = [
+    'node',
+    'scripts/openclaw-growth-status.mjs',
+    '--config',
+    quote(configPath),
+    '--timeout-ms',
+    '15000',
+    '--json',
+  ].join(' ');
+  const checkedAt = new Date().toISOString();
+  const statusResult = await runShellCommand(statusCommand, 90_000);
+  const statusPayload = parseJsonFromStdout(statusResult.stdout);
+  if (!statusPayload) {
+    const nextState = {
+      ...state,
+      connectorHealth: {
+        ...healthState,
+        lastCheckedAt: checkedAt,
+        lastError: statusResult.stderr.trim() || statusResult.stdout.trim() || 'connector status returned no JSON',
+      },
+    };
+    await fs.mkdir(path.dirname(statePath), { recursive: true });
+    await fs.writeFile(statePath, JSON.stringify(nextState, null, 2), 'utf8');
+    return nextState;
+  }
+
+  const unhealthyConnectors = getUnhealthyConfiguredConnectors(statusPayload);
+  const connectedConnectors = getConnectedConnectorKeys(statusPayload);
+  const fingerprint = buildConnectorHealthFingerprint(unhealthyConnectors);
+  const nextHealthState: Record<string, any> = {
+    ...healthState,
+    lastCheckedAt: checkedAt,
+    lastStatusOk: unhealthyConnectors.length === 0,
+    lastFingerprint: fingerprint,
+    connectedConnectors,
+    lastError: null,
+  };
+
+  if (unhealthyConnectors.length > 0 && healthState.lastAlertedFingerprint !== fingerprint) {
+    const message = buildConnectorHealthAlert(statusPayload, unhealthyConnectors);
+    const paths = await writeConnectorHealthAlert(runtimeDir, message, statusPayload, unhealthyConnectors, fingerprint);
+    const deliveries = await deliverConnectorHealthAlert({
+      config,
+      configPath,
+      message,
+      statusPayload,
+      unhealthyConnectors,
+      fingerprint,
+    });
+    nextHealthState.lastAlertedAt = checkedAt;
+    nextHealthState.lastAlertedFingerprint = fingerprint;
+    nextHealthState.lastAlertMarkdownPath = paths.markdownPath;
+    nextHealthState.lastAlertJsonPath = paths.jsonPath;
+    nextHealthState.lastAlertDeliveries = deliveries;
+  }
+
+  const nextState = {
+    ...state,
+    connectorHealth: nextHealthState,
+  };
+  await fs.mkdir(path.dirname(statePath), { recursive: true });
+  await fs.writeFile(statePath, JSON.stringify(nextState, null, 2), 'utf8');
+  return nextState;
 }
 
 function buildIssueFingerprint(issuesPayload) {
@@ -482,10 +838,17 @@ async function runOnce(configPath, statePath) {
     sourceCursors: {},
   });
   const runtimeDir = path.resolve(DEFAULT_RUNTIME_DIR);
+  const stateAfterHealthCheck = await maybeRunConnectorHealthCheck({
+    config,
+    configPath,
+    state,
+    statePath,
+    runtimeDir,
+  });
 
-  const { payloads, sourceCursors } = await loadSourcePayloads(config, state);
+  const { payloads, sourceCursors } = await loadSourcePayloads(config, stateAfterHealthCheck);
   const currentHashes = computeSourceHashes(payloads);
-  const changed = hasSourceChanges(state.sourceHashes, currentHashes);
+  const changed = hasSourceChanges(stateAfterHealthCheck.sourceHashes, currentHashes);
 
   if (!changed && config.schedule?.skipIfNoDataChange !== false) {
     process.stdout.write(`[${new Date().toISOString()}] No data changes. Skip run.\n`);
@@ -494,7 +857,7 @@ async function runOnce(configPath, statePath) {
       statePath,
       JSON.stringify(
         {
-          ...state,
+          ...stateAfterHealthCheck,
           sourceHashes: currentHashes,
           sourceCursors,
           lastRunAt: new Date().toISOString(),
@@ -524,7 +887,7 @@ async function runOnce(configPath, statePath) {
   });
 
   const issueFingerprint = buildIssueFingerprint(dryRun.issuesPayload);
-  const unchangedIssueSet = issueFingerprint === state.lastIssueFingerprint;
+  const unchangedIssueSet = issueFingerprint === stateAfterHealthCheck.lastIssueFingerprint;
 
   if (unchangedIssueSet && config.schedule?.skipIfIssueSetUnchanged !== false) {
     process.stdout.write(`[${new Date().toISOString()}] Issue set unchanged. Skip GitHub creation.\n`);
@@ -533,7 +896,7 @@ async function runOnce(configPath, statePath) {
       statePath,
       JSON.stringify(
         {
-          ...state,
+          ...stateAfterHealthCheck,
           sourceHashes: currentHashes,
           sourceCursors,
           lastIssueFingerprint: issueFingerprint,
@@ -571,6 +934,7 @@ async function runOnce(configPath, statePath) {
     statePath,
     JSON.stringify(
       {
+        ...stateAfterHealthCheck,
         sourceHashes: currentHashes,
         sourceCursors,
         lastIssueFingerprint: issueFingerprint,

@@ -66,6 +66,7 @@
   },
   "schedule": {
     "intervalMinutes": 1440,
+    "connectorHealthCheckIntervalMinutes": 1440,
     "skipIfNoDataChange": true,
     "skipIfIssueSetUnchanged": true
   },
@@ -81,6 +82,19 @@
   "charting": {
     "enabled": false,
     "command": null
+  },
+  "notifications": {
+    "connectorHealth": {
+      "enabled": true,
+      "channels": [
+        {
+          "type": "openclaw-chat",
+          "enabled": true,
+          "markdownPath": ".openclaw/chat/connector-health.md",
+          "jsonPath": ".openclaw/chat/connector-health.json"
+        }
+      ]
+    }
   },
   "secrets": {
     "githubTokenEnv": "GITHUB_TOKEN",
