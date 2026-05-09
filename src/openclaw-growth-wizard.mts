@@ -205,23 +205,32 @@ function withMissingRequiredAnalyticsConnector(selected: ConnectorKey[]): Connec
 }
 
 async function askConnectorSelection(rl): Promise<ConnectorKey[]> {
+  return askConnectorSelectionWithHealth(rl, {}, []);
+}
+
+async function askConnectorSelectionWithHealth(
+  rl,
+  healthByConnector: Record<string, any> = {},
+  initialSelected: ConnectorKey[] = [],
+): Promise<ConnectorKey[]> {
   if (!process.stdin.isTTY || !process.stdout.isTTY || !process.stdin.setRawMode) {
-    return await askConnectorSelectionByText(rl);
+    return await askConnectorSelectionByText(rl, healthByConnector);
   }
 
   rl.pause();
   try {
-    return await askConnectorSelectionByKeys();
+    return await askConnectorSelectionByKeys(healthByConnector, initialSelected);
   } finally {
     rl.resume();
   }
 }
 
-async function askConnectorSelectionByText(rl): Promise<ConnectorKey[]> {
+async function askConnectorSelectionByText(rl, healthByConnector: Record<string, any> = {}): Promise<ConnectorKey[]> {
   printConnectorIntro();
   CONNECTOR_DEFINITIONS.forEach((connector, index) => {
     process.stdout.write(`  ${index + 1}) ${connector.label}\n`);
     process.stdout.write(`     ${connector.summary}\n`);
+    process.stdout.write(`     ${formatConnectorHealthLine(connector.key, healthByConnector)}\n`);
   });
   while (true) {
     const answer = await ask(rl, 'Select connectors (comma-separated numbers/names, or all)', 'all');
@@ -251,7 +260,7 @@ function orderConnectors(keys: ConnectorKey[]): ConnectorKey[] {
 
 function printConnectorIntro() {
   process.stdout.write(`\n${ANSI.bold}OpenClaw connector setup${ANSI.reset}\n`);
-  process.stdout.write(`${ANSI.dim}Secrets stay local on this host. Do not paste them into Discord/OpenClaw chat.${ANSI.reset}\n\n`);
+  process.stdout.write(`${ANSI.dim}Secrets stay local on this host. Do not paste them into any chat or social channel.${ANSI.reset}\n\n`);
 }
 
 function connectorLabel(key: ConnectorKey) {
@@ -275,7 +284,53 @@ function toEnvName(value, fallback) {
     .replace(/^_+|_+$/g, '') || fallback;
 }
 
-function renderConnectorPicker(cursorIndex: number, selected: Set<ConnectorKey>, required: Set<ConnectorKey>, warning = '') {
+function connectorHealthLabel(status) {
+  if (status === 'connected') return 'healthy';
+  if (status === 'partial') return 'partial';
+  if (status === 'blocked') return 'blocked';
+  if (status === 'not_enabled') return 'not enabled';
+  if (status === 'not_connected') return 'not connected';
+  if (status === 'unknown') return 'unknown';
+  return status || 'not checked';
+}
+
+function formatConnectorHealthLine(key: ConnectorKey, healthByConnector: Record<string, any> = {}) {
+  const health = healthByConnector[key];
+  if (!health) return `${ANSI.dim}Health: not checked yet.${ANSI.reset}`;
+  const label = connectorHealthLabel(health.status);
+  const detail = health.detail ? ` - ${health.detail}` : '';
+  return `${ANSI.dim}Health: ${label}${detail}${ANSI.reset}`;
+}
+
+function connectorKeysNeedingAttention(healthByConnector: Record<string, any> = {}): ConnectorKey[] {
+  return CONNECTOR_KEYS.filter((key) =>
+    ['blocked', 'partial', 'unknown', 'not_connected'].includes(String(healthByConnector[key]?.status || '')),
+  );
+}
+
+async function getConnectorPickerHealth(configPath) {
+  if (!(await fileExists(configPath))) return {};
+  const result = await runCommandCapture(
+    `node scripts/openclaw-growth-status.mjs --config ${quote(configPath)} --json`,
+  );
+  const payload = parseJsonFromStdout(result.stdout);
+  const connectors = payload?.connectors && typeof payload.connectors === 'object' ? payload.connectors : {};
+  return {
+    analytics: connectors.analyticscli,
+    github: connectors.github,
+    revenuecat: connectors.revenuecat,
+    sentry: connectors.sentry,
+    asc: connectors.appStoreConnect,
+  };
+}
+
+function renderConnectorPicker(
+  cursorIndex: number,
+  selected: Set<ConnectorKey>,
+  required: Set<ConnectorKey>,
+  healthByConnector: Record<string, any> = {},
+  warning = '',
+) {
   process.stdout.write('\x1b[2J\x1b[H');
   printConnectorIntro();
   process.stdout.write(`${ANSI.bold}Select connectors to set up or overwrite now${ANSI.reset}\n`);
@@ -293,9 +348,10 @@ function renderConnectorPicker(cursorIndex: number, selected: Set<ConnectorKey>,
     const title = active ? `${ANSI.bold}${label}${ANSI.reset}` : label;
     process.stdout.write(`${pointer} ${box} ${title}\n`);
     process.stdout.write(`    ${connector.summary}\n`);
+    process.stdout.write(`    ${formatConnectorHealthLine(connector.key, healthByConnector)}\n`);
     process.stdout.write(`    ${ANSI.dim}Needs: ${connector.needs}${ANSI.reset}\n`);
     if (configured && !checked) {
-      process.stdout.write(`    ${ANSI.dim}Local values found; this is not a live health result. Unchecked keeps them unchanged.${ANSI.reset}\n`);
+      process.stdout.write(`    ${ANSI.dim}Local secrets/env values exist; unchecked keeps them unchanged.${ANSI.reset}\n`);
     }
     process.stdout.write('\n');
   });
@@ -306,7 +362,10 @@ function renderConnectorPicker(cursorIndex: number, selected: Set<ConnectorKey>,
   process.stdout.write(`${ANSI.dim}Esc/Q cancels. Number keys 1-${CONNECTOR_DEFINITIONS.length} also toggle connectors.${ANSI.reset}\n`);
 }
 
-async function askConnectorSelectionByKeys(): Promise<ConnectorKey[]> {
+async function askConnectorSelectionByKeys(
+  healthByConnector: Record<string, any> = {},
+  initialSelected: ConnectorKey[] = [],
+): Promise<ConnectorKey[]> {
   emitKeypressEvents(process.stdin);
   const wasRaw = process.stdin.isRaw;
   process.stdin.setRawMode(true);
@@ -314,8 +373,9 @@ async function askConnectorSelectionByKeys(): Promise<ConnectorKey[]> {
 
   let cursorIndex = 0;
   const required = getRequiredConnectorKeys();
+  const initial = new Set(initialSelected);
   const selected = new Set<ConnectorKey>(
-    CONNECTOR_KEYS.filter((key) => required.has(key) || !isConnectorLocallyConfigured(key)),
+    CONNECTOR_KEYS.filter((key) => required.has(key) || initial.has(key) || !isConnectorLocallyConfigured(key)),
   );
   let warning = '';
 
@@ -330,7 +390,7 @@ async function askConnectorSelectionByKeys(): Promise<ConnectorKey[]> {
       required.forEach((key) => selected.add(key));
       if (selected.size === 0) {
         warning = 'No connectors selected. Select a connector to update or press Esc to cancel.';
-        renderConnectorPicker(cursorIndex, selected, required, warning);
+        renderConnectorPicker(cursorIndex, selected, required, healthByConnector, warning);
         return;
       }
       cleanup();
@@ -402,12 +462,12 @@ async function askConnectorSelectionByKeys(): Promise<ConnectorKey[]> {
           }
         }
       }
-      renderConnectorPicker(cursorIndex, selected, required, warning);
+      renderConnectorPicker(cursorIndex, selected, required, healthByConnector, warning);
     };
 
     process.stdin.on('keypress', onKeypress);
     process.stdout.write(ANSI.hideCursor);
-    renderConnectorPicker(cursorIndex, selected, required, warning);
+    renderConnectorPicker(cursorIndex, selected, required, healthByConnector, warning);
   });
 }
 
@@ -1592,16 +1652,18 @@ async function runConnectorSetupWizard(args) {
 
   const rl = createInterface({ input: process.stdin, output: process.stdout });
   try {
-    const existingFixes = await offerConfiguredConnectionFixes(rl, args.config, []);
+    clearTerminal();
+    printConnectorIntro();
+    process.stdout.write('Checking live connector health before showing setup options...\n');
+    const healthByConnector = await getConnectorPickerHealth(args.config);
+    const existingFixes = connectorKeysNeedingAttention(healthByConnector);
     const requestedConnectors = args.connectors ? parseConnectorList(args.connectors) : [];
+    const chosenConnectors =
+      requestedConnectors.length > 0
+        ? orderConnectors([...new Set([...requestedConnectors, ...existingFixes])])
+        : await askConnectorSelectionWithHealth(rl, healthByConnector, existingFixes);
     let selected = withMissingRequiredAnalyticsConnector(
-      orderConnectors([
-        ...new Set(
-          requestedConnectors.length > 0 || existingFixes.length > 0
-            ? [...requestedConnectors, ...existingFixes]
-            : await askConnectorSelection(rl),
-        ),
-      ]),
+      chosenConnectors,
     );
     if (selected.length === 0) {
       throw new Error('No supported connectors selected. Use analytics, github, revenuecat, sentry, asc, or all.');
