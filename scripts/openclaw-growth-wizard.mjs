@@ -270,14 +270,14 @@ function renderConnectorPicker(cursorIndex, selected, required, warning = '') {
         const checked = isRequired || selected.has(connector.key);
         const pointer = active ? `${ANSI.cyan}>${ANSI.reset}` : ' ';
         const box = checked ? `${ANSI.green}[x]${ANSI.reset}` : '[ ]';
-        const suffix = isRequired ? ' (required baseline, missing)' : configured ? ' (already configured)' : '';
+        const suffix = isRequired ? ' (required baseline, missing)' : configured ? ' (local values found)' : '';
         const label = `${connector.label}${suffix}`;
         const title = active ? `${ANSI.bold}${label}${ANSI.reset}` : label;
         process.stdout.write(`${pointer} ${box} ${title}\n`);
         process.stdout.write(`    ${connector.summary}\n`);
         process.stdout.write(`    ${ANSI.dim}Needs: ${connector.needs}${ANSI.reset}\n`);
         if (configured && !checked) {
-            process.stdout.write(`    ${ANSI.dim}Local values detected; unchecked keeps them unchanged.${ANSI.reset}\n`);
+            process.stdout.write(`    ${ANSI.dim}Local values found; this is not a live health result. Unchecked keeps them unchanged.${ANSI.reset}\n`);
         }
         process.stdout.write('\n');
     });
