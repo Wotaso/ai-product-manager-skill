@@ -1229,7 +1229,26 @@ function buildSetupTestProgressPlan(selected) {
     if (selectedSet.has('github')) {
         items.push({ key: 'github', label: 'GitHub', detail: 'waiting for repo/token access check', status: 'pending' });
     }
+    items.push({
+        key: 'finalize',
+        label: 'Finalizing result',
+        detail: 'waiting for command output, parsing, and follow-up checks',
+        status: 'pending',
+    });
     return items;
+}
+function primaryProgressItemsFinished(items) {
+    return items
+        .filter((item) => item.key !== 'finalize')
+        .every((item) => !['pending', 'running'].includes(String(item.status || '')));
+}
+function updateProgressItem(items, key, status, detail) {
+    const item = items.find((entry) => entry.key === key);
+    if (!item)
+        return;
+    item.status = status;
+    if (detail)
+        item.detail = detail;
 }
 async function runSetupCommandWithProgress(command, env, selected, message) {
     const plan = buildSetupTestProgressPlan(selected);
@@ -1237,12 +1256,17 @@ async function runSetupCommandWithProgress(command, env, selected, message) {
     const progressCommand = command.includes('--progress-json') ? command : `${command} --progress-json`;
     const result = await runCommandCaptureWithProgress(progressCommand, (event) => {
         if (updateHealthProgress(plan, event)) {
-            const message = allProgressItemsFinished(plan)
-                ? 'Checks finished. Preparing the result...'
+            const primaryFinished = primaryProgressItemsFinished(plan);
+            if (primaryFinished) {
+                updateProgressItem(plan, 'finalize', 'running', 'command still running; parsing final output and follow-up work');
+            }
+            const message = primaryFinished
+                ? 'Checks finished. Finalizing result; do not close this terminal yet.'
                 : 'Connector setup test is still running. Do not close this terminal yet.';
             renderHealthProgress(plan, message, 'Connector setup test');
         }
     }, { env, timeoutMs: 180_000 });
+    updateProgressItem(plan, 'finalize', 'pass', 'result received');
     renderHealthProgress(plan, 'Connector setup test finished.', 'Connector setup test');
     return result;
 }
@@ -1269,7 +1293,7 @@ async function runImmediateConnectorHealthCheck({ rl, configPath, connector, sec
     let payload = parseJsonFromStdout(result.stdout);
     if (connector === 'asc') {
         try {
-            const ascWebAuthChanged = await ensureAscWebAnalyticsAuth();
+            const ascWebAuthChanged = await ensureAscWebAnalyticsAuth(rl, secrets);
             if (ascWebAuthChanged) {
                 result = await runSetupCommandWithProgress(command, env, [connector], 'Retesting ASC after web analytics login...');
                 payload = parseJsonFromStdout(result.stdout);
@@ -1902,8 +1926,15 @@ function isAscWebAuthAuthenticated(stdout) {
         return false;
     }
 }
-async function ensureAscWebAnalyticsAuth() {
+function resolveAscWebAppleId() {
+    return (process.env.ASC_WEB_APPLE_ID?.trim() ||
+        process.env.ASC_APPLE_ID?.trim() ||
+        process.env.APPLE_ID?.trim() ||
+        '');
+}
+async function ensureAscWebAnalyticsAuth(rl = null, secrets = {}) {
     process.stdout.write('\nChecking ASC web analytics authentication...\n');
+    process.stdout.write('Still working: verifying whether the ASC web session is active.\n');
     if (!(await commandExists('asc'))) {
         throw new Error('The asc CLI is not installed yet. Install it with `openclaw start --connectors asc`, then rerun the connector wizard so it can run `asc web auth login`.');
     }
@@ -1912,12 +1943,24 @@ async function ensureAscWebAnalyticsAuth() {
         process.stdout.write('ASC web analytics authentication is active.\n');
         return false;
     }
-    process.stdout.write('ASC web analytics needs a website login. Starting `asc web auth login` now.\n');
+    let appleId = resolveAscWebAppleId();
+    if (!appleId && rl) {
+        appleId = (await ask(rl, 'Apple Account email for ASC web analytics login (ASC_WEB_APPLE_ID)', '')).trim();
+        if (appleId) {
+            secrets.ASC_WEB_APPLE_ID = appleId;
+            await saveSecretsImmediately({ ASC_WEB_APPLE_ID: appleId });
+        }
+    }
+    if (!appleId) {
+        throw new Error('ASC web analytics login needs an Apple Account email. Rerun the connector wizard and enter ASC_WEB_APPLE_ID.');
+    }
+    process.stdout.write(`ASC web analytics needs a website login for ${appleId}. Starting \`asc web auth login --apple-id ...\` now.\n`);
     process.stdout.write('Complete the App Store Connect login flow, then return to this terminal.\n\n');
-    const loginCode = await runInteractiveCommand('asc web auth login');
+    const loginCode = await runInteractiveCommand(`asc web auth login --apple-id ${quote(appleId)}`);
     if (loginCode !== 0) {
         throw new Error('ASC web analytics login failed. Run `asc web auth login` manually, then rerun the connector wizard.');
     }
+    process.stdout.write('\nStill working: verifying the ASC web analytics session after login...\n');
     const verify = await runCommandCapture('asc web auth status --output json');
     if (!verify.ok || !isAscWebAuthAuthenticated(verify.stdout)) {
         throw new Error('ASC web analytics login did not verify. Run `asc web auth status --output json --pretty` to inspect the session, then rerun the connector wizard.');
@@ -2155,6 +2198,9 @@ async function guideAscConnector(rl, secrets) {
         secrets.ASC_KEY_ID = keyId.trim();
     if (issuerId.trim())
         secrets.ASC_ISSUER_ID = issuerId.trim();
+    const appleId = await ask(rl, 'Apple Account email for ASC web analytics login (ASC_WEB_APPLE_ID, leave empty to skip)', resolveAscWebAppleId());
+    if (appleId.trim())
+        secrets.ASC_WEB_APPLE_ID = appleId.trim();
     const privateKeyContent = await askAscPrivateKeyContent(rl);
     if (privateKeyContent) {
         const privateKeyPath = resolveAscPrivateKeyPath(keyId);
@@ -2389,7 +2435,7 @@ async function runConnectorSetupWizard(args) {
         }
         if (selected.includes('asc')) {
             try {
-                const ascWebAuthChanged = await ensureAscWebAnalyticsAuth();
+                const ascWebAuthChanged = await ensureAscWebAnalyticsAuth(rl, secrets);
                 if (ascWebAuthChanged) {
                     setupResult = await runSetupCommandWithProgress(command, env, selected, 'Retesting connector setup after ASC web analytics login...');
                     setupPayload = parseJsonFromStdout(setupResult.stdout);
