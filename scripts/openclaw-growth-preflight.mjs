@@ -822,10 +822,10 @@ async function runConnectionChecks({ checks, config, timeoutMs, progressJson = f
                     if (sentrySource?.mode === 'command') {
                         const command = String(sentrySource.command || '').trim();
                         if (!command) {
-                            addCheck(checks, 'connection:sentry-command', false, 'sentry source uses command mode but no command configured');
+                            addCheck(groupChecks, 'connection:sentry-command', false, 'sentry source uses command mode but no command configured');
                         }
                         else {
-                            const commandCheck = await testCommandSourceJson(command, commandCwd);
+                            const commandCheck = await testCommandSourceJson(`${command} --limit 1 --max-signals 1 --last 24h`, commandCwd);
                             addCheck(groupChecks, 'connection:sentry-command', commandCheck.ok, commandCheck.ok
                                 ? 'Sentry command smoke test passed'
                                 : `Sentry command smoke test failed (${commandCheck.detail})`);

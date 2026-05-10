@@ -247,8 +247,8 @@ async function askConnectorSelectionByText(rl, healthByConnector: Record<string,
     for (const connector of group.connectors) {
       const number = CONNECTOR_DEFINITIONS.findIndex((entry) => entry.key === connector.key) + 1;
       process.stdout.write(`  ${number}) ${connector.label}\n`);
-      process.stdout.write(`     ${formatConnectorHealthLine(connector.key, healthByConnector)}\n`);
-      process.stdout.write(`     ${connector.summary}\n`);
+      writeWrapped(formatConnectorHealthText(connector.key, healthByConnector), '     ', ANSI.dim);
+      writeWrapped(connector.summary, '     ');
     }
     process.stdout.write('\n');
   }
@@ -391,10 +391,43 @@ function connectorStatusLabel(key: ConnectorKey, healthByConnector: Record<strin
 }
 
 function formatConnectorHealthLine(key: ConnectorKey, healthByConnector: Record<string, any> = {}) {
+  return `${ANSI.dim}${formatConnectorHealthText(key, healthByConnector)}${ANSI.reset}`;
+}
+
+function formatConnectorHealthText(key: ConnectorKey, healthByConnector: Record<string, any> = {}) {
   const health = getConnectorHealth(key, healthByConnector);
   const label = connectorStatusLabel(key, healthByConnector);
   const detail = health.detail ? ` - ${health.detail}` : '';
-  return `${ANSI.dim}Status: ${label}${detail}${ANSI.reset}`;
+  return `Status: ${label}${detail}`;
+}
+
+function wrapText(text, indent = '', width = process.stdout.columns || 100) {
+  const available = Math.max(32, width - indent.length);
+  const words = String(text || '').split(/\s+/).filter(Boolean);
+  const lines: string[] = [];
+  let current = '';
+  for (const word of words) {
+    if (!current) {
+      current = word;
+    } else if (`${current} ${word}`.length <= available) {
+      current = `${current} ${word}`;
+    } else {
+      lines.push(current);
+      current = word;
+    }
+    while (current.length > available) {
+      lines.push(current.slice(0, available));
+      current = current.slice(available);
+    }
+  }
+  if (current) lines.push(current);
+  return lines.length > 0 ? lines.map((line) => `${indent}${line}`) : [indent.trimEnd()];
+}
+
+function writeWrapped(text, indent = '', style = '') {
+  for (const line of wrapText(text, indent)) {
+    process.stdout.write(style ? `${style}${line}${ANSI.reset}\n` : `${line}\n`);
+  }
 }
 
 function connectorPickerGroups(healthByConnector: Record<string, any> = {}) {
@@ -469,7 +502,8 @@ function renderConnectorPicker(
   process.stdout.write('\x1b[2J\x1b[H');
   printConnectorIntro();
   process.stdout.write(`${ANSI.bold}Select connectors to set up or overwrite now${ANSI.reset}\n`);
-  process.stdout.write(`${ANSI.dim}Use Up/Down to move, Space to toggle optional connectors, A to toggle all optional connectors, Enter to continue.${ANSI.reset}\n\n`);
+  writeWrapped('Use Up/Down to move, Space to toggle optional connectors, A to toggle all optional connectors, Enter to continue.', '', ANSI.dim);
+  process.stdout.write('\n');
 
   let index = 0;
   for (const group of connectorPickerGroups(healthByConnector)) {
@@ -484,8 +518,8 @@ function renderConnectorPicker(
       const label = `${connector.label}${suffix}`;
       const title = active ? `${ANSI.bold}${label}${ANSI.reset}` : label;
       process.stdout.write(`${pointer} ${box} ${title}\n`);
-      process.stdout.write(`    ${connector.summary}\n`);
-      process.stdout.write(`    ${formatConnectorHealthLine(connector.key, healthByConnector)}\n`);
+      writeWrapped(connector.summary, '    ');
+      writeWrapped(formatConnectorHealthText(connector.key, healthByConnector), '    ', ANSI.dim);
       process.stdout.write('\n');
       index += 1;
     }
