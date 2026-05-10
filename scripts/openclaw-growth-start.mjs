@@ -33,6 +33,7 @@ Options:
   --connectors <list>    Install/enable connector helpers (analytics,github,asc,revenuecat,sentry,all)
   --setup-only           Run bootstrap + preflight only (skip first run)
   --no-test-connections  Skip live API smoke checks in preflight
+  --progress-json        Emit machine-readable setup progress to stderr
   --help, -h             Show help
 `);
     process.exit(exitCode);
@@ -45,6 +46,7 @@ function parseArgs(argv) {
         run: true,
         testConnections: true,
         connectors: [],
+        progressJson: false,
     };
     for (let i = 0; i < argv.length; i += 1) {
         const token = argv[i];
@@ -73,6 +75,9 @@ function parseArgs(argv) {
         }
         else if (token === '--no-test-connections') {
             args.testConnections = false;
+        }
+        else if (token === '--progress-json') {
+            args.progressJson = true;
         }
         else if (token === '--help' || token === '-h') {
             printHelpAndExit(0);
@@ -152,13 +157,19 @@ function resolveShellCommand() {
     }
     return 'sh';
 }
-function runShellCommand(command, timeoutMs = 120_000) {
+function emitProgress(enabled, event) {
+    if (!enabled)
+        return;
+    process.stderr.write(`OPENCLAW_PROGRESS ${JSON.stringify(event)}\n`);
+}
+function runShellCommand(command, timeoutMs = 120_000, options = {}) {
     return new Promise((resolve) => {
         const child = spawn(resolveShellCommand(), ['-c', command], {
             stdio: ['ignore', 'pipe', 'pipe'],
         });
         let stdout = '';
         let stderr = '';
+        let stderrBuffer = '';
         let settled = false;
         const timer = setTimeout(() => {
             if (settled)
@@ -176,13 +187,25 @@ function runShellCommand(command, timeoutMs = 120_000) {
             stdout += String(chunk);
         });
         child.stderr.on('data', (chunk) => {
-            stderr += String(chunk);
+            const text = String(chunk);
+            stderr += text;
+            if (!options.onStderrLine)
+                return;
+            stderrBuffer += text;
+            const lines = stderrBuffer.split(/\r?\n/);
+            stderrBuffer = lines.pop() || '';
+            for (const line of lines) {
+                options.onStderrLine(line);
+            }
         });
         child.on('close', (code) => {
             if (settled)
                 return;
             settled = true;
             clearTimeout(timer);
+            if (options.onStderrLine && stderrBuffer.trim()) {
+                options.onStderrLine(stderrBuffer);
+            }
             resolve({
                 ok: code === 0,
                 code,
@@ -1241,7 +1264,7 @@ function remediateAscAppSetupFailure(error) {
     }
     return 'Verify ASC credentials, key role access, and `asc apps list --output json`.';
 }
-async function runPreflight(configPath, testConnections) {
+async function runPreflight(configPath, testConnections, progressJson = false) {
     const commandParts = [
         'node',
         'scripts/openclaw-growth-preflight.mjs',
@@ -1251,8 +1274,19 @@ async function runPreflight(configPath, testConnections) {
     if (testConnections) {
         commandParts.push('--test-connections');
     }
+    if (progressJson) {
+        commandParts.push('--progress-json');
+    }
     const command = commandParts.join(' ');
-    const result = await runShellCommand(command, 180_000);
+    const result = await runShellCommand(command, 180_000, {
+        onStderrLine: progressJson
+            ? (line) => {
+                if (line.startsWith('OPENCLAW_PROGRESS ')) {
+                    process.stderr.write(`${line}\n`);
+                }
+            }
+            : undefined,
+    });
     const payload = parseJsonFromStdout(result.stdout);
     return {
         shell: result,
@@ -1290,8 +1324,27 @@ async function main() {
         process.exitCode = 1;
         return;
     }
+    if (args.connectors.length > 0) {
+        emitProgress(args.progressJson, {
+            phase: 'start',
+            key: 'connectorSetup',
+            label: 'Connector helpers',
+            detail: 'installing and enabling selected helpers',
+        });
+    }
     const connectorSetup = args.connectors.length > 0 ? await installConnectorHelpers(configPath, args.connectors) : [];
     const failedConnectors = connectorSetup.filter((entry) => !entry.ok);
+    if (args.connectors.length > 0) {
+        emitProgress(args.progressJson, {
+            phase: 'finish',
+            key: 'connectorSetup',
+            label: 'Connector helpers',
+            detail: failedConnectors.length > 0
+                ? `${failedConnectors.length} helper setup step(s) need attention`
+                : 'selected helpers enabled',
+            status: failedConnectors.length > 0 ? 'fail' : 'pass',
+        });
+    }
     if (failedConnectors.length > 0 && !args.run) {
         process.stdout.write(`${JSON.stringify({
             ok: false,
@@ -1318,7 +1371,24 @@ async function main() {
         process.exitCode = 1;
         return;
     }
+    emitProgress(args.progressJson, {
+        phase: 'start',
+        key: 'analyticsProject',
+        label: 'AnalyticsCLI project',
+        detail: 'resolving default analytics project',
+    });
     const analyticsProjectSetup = await ensureAnalyticsProjectConfigured(configPath, args.project);
+    emitProgress(args.progressJson, {
+        phase: 'finish',
+        key: 'analyticsProject',
+        label: 'AnalyticsCLI project',
+        detail: analyticsProjectSetup.ok
+            ? analyticsProjectSetup.projectId
+                ? `using ${analyticsProjectSetup.projectId}`
+                : 'no project change needed'
+            : 'project selection required',
+        status: analyticsProjectSetup.ok ? 'pass' : 'fail',
+    });
     if (!analyticsProjectSetup.ok) {
         process.stdout.write(`${JSON.stringify({
             ok: false,
@@ -1343,7 +1413,26 @@ async function main() {
         process.exitCode = 1;
         return;
     }
+    emitProgress(args.progressJson, {
+        phase: 'start',
+        key: 'ascApp',
+        label: 'ASC app scope',
+        detail: 'resolving App Store Connect app scope',
+    });
     const ascAppSetup = await ensureAscAppConfigured(configPath, args.ascApp);
+    emitProgress(args.progressJson, {
+        phase: 'finish',
+        key: 'ascApp',
+        label: 'ASC app scope',
+        detail: ascAppSetup.ok
+            ? ascAppSetup.appId
+                ? `using app ${ascAppSetup.appId}`
+                : ascAppSetup.appScope === 'all_accessible_apps'
+                    ? `using all accessible apps (${ascAppSetup.appCount || 0} found)`
+                    : 'not enabled'
+            : describeAscAppSetupFailure(ascAppSetup.error),
+        status: ascAppSetup.ok ? 'pass' : 'fail',
+    });
     if (!ascAppSetup.ok) {
         process.stdout.write(`${JSON.stringify({
             ok: false,
@@ -1369,7 +1458,7 @@ async function main() {
         process.exitCode = 1;
         return;
     }
-    const preflightResult = await runPreflight(configPath, args.testConnections);
+    const preflightResult = await runPreflight(configPath, args.testConnections, args.progressJson);
     const preflightPayload = preflightResult.payload;
     if (!preflightPayload) {
         throw new Error(`Preflight returned invalid output.\nstdout:\n${preflightResult.shell.stdout}\nstderr:\n${preflightResult.shell.stderr}`);

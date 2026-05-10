@@ -1033,12 +1033,14 @@ function healthStatusLabel(status) {
         return 'deferred';
     return 'pending';
 }
-function renderHealthProgress(items, message = 'Live checks running...') {
+function renderHealthProgress(items, message = 'Live checks running...', title = 'Health check') {
     if (process.stdout.isTTY)
         clearTerminal();
-    process.stdout.write('Health check\n');
+    const finished = items.filter((item) => !['pending', 'running'].includes(String(item.status || ''))).length;
+    process.stdout.write(`${title}\n`);
     process.stdout.write('------------\n');
     process.stdout.write(`${message}\n\n`);
+    process.stdout.write(`${finished}/${items.length} checks finished.\n\n`);
     for (const item of items) {
         process.stdout.write(`[${healthStatusLabel(item.status)}] ${item.label}: ${item.detail}\n`);
     }
@@ -1065,6 +1067,62 @@ function updateHealthProgress(items, event) {
         return true;
     }
     return false;
+}
+function buildSetupTestProgressPlan(selected) {
+    const selectedSet = new Set(selected);
+    const items = [
+        {
+            key: 'connectorSetup',
+            label: 'Connector helpers',
+            detail: 'waiting to install and enable selected helpers',
+            status: 'pending',
+        },
+        {
+            key: 'analyticsProject',
+            label: 'AnalyticsCLI project',
+            detail: 'waiting to resolve default analytics project',
+            status: 'pending',
+        },
+    ];
+    if (selectedSet.has('asc')) {
+        items.push({
+            key: 'ascApp',
+            label: 'ASC app scope',
+            detail: 'waiting to resolve App Store Connect app scope',
+            status: 'pending',
+        });
+    }
+    items.push({
+        key: 'preflight',
+        label: 'Local preflight',
+        detail: 'waiting to validate config, dependencies, and source wiring',
+        status: 'pending',
+    });
+    if (selectedSet.has('analytics')) {
+        items.push({ key: 'analytics', label: 'AnalyticsCLI', detail: 'waiting for token auth + readonly query', status: 'pending' });
+    }
+    if (selectedSet.has('sentry')) {
+        items.push({ key: 'sentry', label: 'Sentry / GlitchTip', detail: 'waiting for token/org API + project discovery', status: 'pending' });
+    }
+    if (selectedSet.has('revenuecat')) {
+        items.push({ key: 'revenuecat', label: 'RevenueCat', detail: 'waiting for API key auth + project read', status: 'pending' });
+    }
+    if (selectedSet.has('github')) {
+        items.push({ key: 'github', label: 'GitHub', detail: 'waiting for repo/token access check', status: 'pending' });
+    }
+    return items;
+}
+async function runSetupCommandWithProgress(command, env, selected, message) {
+    const plan = buildSetupTestProgressPlan(selected);
+    renderHealthProgress(plan, `${message}\nDo not close this terminal yet.`, 'Connector setup test');
+    const progressCommand = command.includes('--progress-json') ? command : `${command} --progress-json`;
+    const result = await runCommandCaptureWithProgress(progressCommand, (event) => {
+        if (updateHealthProgress(plan, event)) {
+            renderHealthProgress(plan, 'Connector setup test is still running. Do not close this terminal yet.', 'Connector setup test');
+        }
+    }, { env });
+    renderHealthProgress(plan, 'Connector setup test finished.', 'Connector setup test');
+    return result;
 }
 async function offerConfiguredConnectionFixes(rl, configPath, selected) {
     if (!(await fileExists(configPath)))
@@ -1283,6 +1341,25 @@ function defaultSentryAccountLabel({ index, baseUrl }) {
     if (index === 0)
         return 'Sentry Cloud';
     return `Sentry Account ${index + 1}`;
+}
+function isSentryCloudBaseUrl(baseUrl) {
+    const normalized = String(baseUrl || '').trim().replace(/\/$/, '').toLowerCase();
+    return normalized === 'https://sentry.io' || normalized === 'https://www.sentry.io';
+}
+function printSentryTokenGuidance({ baseUrl, tokenEnv }) {
+    if (isSentryCloudBaseUrl(baseUrl)) {
+        process.stdout.write('\nToken type: use a Sentry personal user/auth token, not an organization integration token.\n');
+        process.stdout.write('Sentry token page: https://sentry.io/settings/account/api/auth-tokens/\n');
+    }
+    else {
+        process.stdout.write('\nToken type: use a GlitchTip/Sentry-compatible user auth token for this host.\n');
+        process.stdout.write('GlitchTip token page: Profile -> Auth Tokens on your GlitchTip instance.\n');
+    }
+    printBullets([
+        `Paste it as ${tokenEnv}.`,
+        'Required scopes: `org:read`, `team:read`, `project:read`, and `event:read`.',
+        'Optional for richer release context: `project:releases`.',
+    ]);
 }
 function parseCommaList(value) {
     return String(value || '')
@@ -1765,11 +1842,6 @@ async function guideRevenueCatConnector(rl, secrets) {
 async function guideSentryConnector(rl, secrets) {
     printSection('Sentry / GlitchTip', [
         'Paste token, org, and base URL. Projects are discovered automatically.',
-        'Token page: https://sentry.io/settings/account/api/auth-tokens/',
-    ]);
-    printBullets([
-        'Use read-only API scopes: `org:read`, `team:read`, `project:read`, and `event:read`.',
-        'Optional for richer release context: `project:releases`.',
         'Use `https://sentry.io` for Sentry Cloud or your GlitchTip/self-hosted base URL.',
     ]);
     const accounts = [];
@@ -1780,6 +1852,7 @@ async function guideSentryConnector(rl, secrets) {
         const label = await ask(rl, `Sentry account ${index + 1} label`, defaultLabel);
         const id = toConfigId(label || baseUrl, `sentry_${index + 1}`);
         const tokenEnv = defaultSentryTokenEnv({ index, label, baseUrl });
+        printSentryTokenGuidance({ baseUrl, tokenEnv });
         const token = await maybePromptSecret(rl, `Paste ${tokenEnv} into this local terminal`, tokenEnv);
         if (token)
             secrets[tokenEnv] = token;
@@ -2073,15 +2146,13 @@ async function runConnectorSetupWizard(args) {
             ...secrets,
         };
         let command = `node scripts/openclaw-growth-start.mjs --config ${quote(args.config)} --setup-only --connectors ${quote(selected.join(','))}`;
-        process.stdout.write('\nTesting connector setup...\n');
-        let setupResult = await runCommandCapture(command, { env });
+        let setupResult = await runSetupCommandWithProgress(command, env, selected, 'Testing connector setup...');
         let setupPayload = parseJsonFromStdout(setupResult.stdout);
         if (setupPayload?.needsUserInput && setupPayload.phase === 'analytics_project_selection_required') {
             const projectId = await askAnalyticsProjectFromSetupPayload(rl, setupPayload);
             if (projectId) {
                 command = `${command} --project ${quote(projectId)}`;
-                process.stdout.write('\nTesting connector setup with the selected AnalyticsCLI project...\n');
-                setupResult = await runCommandCapture(command, { env });
+                setupResult = await runSetupCommandWithProgress(command, env, selected, 'Testing connector setup with the selected AnalyticsCLI project...');
                 setupPayload = parseJsonFromStdout(setupResult.stdout);
             }
         }
