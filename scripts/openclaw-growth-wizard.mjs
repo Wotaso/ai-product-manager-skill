@@ -451,8 +451,8 @@ function renderConnectorPicker(cursorIndex, selected, required, healthByConnecto
             const label = `${connector.label}${suffix}`;
             const title = active ? `${ANSI.bold}${label}${ANSI.reset}` : label;
             process.stdout.write(`${pointer} ${box} ${title}\n`);
-            process.stdout.write(`    ${formatConnectorHealthLine(connector.key, healthByConnector)}\n`);
             process.stdout.write(`    ${connector.summary}\n`);
+            process.stdout.write(`    ${formatConnectorHealthLine(connector.key, healthByConnector)}\n`);
             process.stdout.write('\n');
             index += 1;
         }
@@ -1845,7 +1845,7 @@ async function ensureAscWebAnalyticsAuth() {
     const status = await runCommandCapture('asc web auth status --output json');
     if (status.ok && isAscWebAuthAuthenticated(status.stdout)) {
         process.stdout.write('ASC web analytics authentication is active.\n');
-        return;
+        return false;
     }
     process.stdout.write('ASC web analytics needs a website login. Starting `asc web auth login` now.\n');
     process.stdout.write('Complete the App Store Connect login flow, then return to this terminal.\n\n');
@@ -1858,6 +1858,7 @@ async function ensureAscWebAnalyticsAuth() {
         throw new Error('ASC web analytics login did not verify. Run `asc web auth status --output json --pretty` to inspect the session, then rerun the connector wizard.');
     }
     process.stdout.write('ASC web analytics authentication verified.\n');
+    return true;
 }
 function printSection(title, lines = []) {
     process.stdout.write(`\n${ANSI.bold}${title}${ANSI.reset}\n`);
@@ -2261,10 +2262,19 @@ async function runConnectorSetupWizard(args) {
         if (sentryAccounts.length > 0 && await upsertSentryAccountsConfig(args.config, sentryAccounts)) {
             process.stdout.write(`Sentry-compatible account config is up to date in ${args.config}.\n`);
         }
-        if (setupResult.ok && setupPayload?.ok !== false) {
-            if (selected.includes('asc')) {
-                await ensureAscWebAnalyticsAuth();
+        if (selected.includes('asc')) {
+            try {
+                const ascWebAuthChanged = await ensureAscWebAnalyticsAuth();
+                if (ascWebAuthChanged) {
+                    setupResult = await runSetupCommandWithProgress(command, env, selected, 'Retesting connector setup after ASC web analytics login...');
+                    setupPayload = parseJsonFromStdout(setupResult.stdout);
+                }
             }
+            catch (error) {
+                process.stdout.write(`ASC web analytics still needs attention: ${error instanceof Error ? error.message : String(error)}\n`);
+            }
+        }
+        if (setupResult.ok && setupPayload?.ok !== false) {
             printSetupSuccess(setupPayload);
             if (wroteSecrets) {
                 process.stdout.write('Future OpenClaw Growth commands load this secrets file automatically.\n');
