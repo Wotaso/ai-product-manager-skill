@@ -1975,14 +1975,32 @@ async function ensureAscWebAnalyticsAuth(rl = null, secrets = {}) {
     if (!appleId) {
         throw new Error('ASC web analytics login needs an Apple Account email. Rerun the connector wizard and enter ASC_WEB_APPLE_ID.');
     }
-    process.stdout.write(`ASC web analytics needs a website login for ${appleId}.\n`);
-    process.stdout.write('Starting `asc web auth login --apple-id ...` now. The next password and 2FA prompts come directly from asc.\n');
-    process.stdout.write('Press Enter once after typing the password, then wait for asc to continue.\n');
-    process.stdout.write('Complete the App Store Connect login flow, then return to this terminal.\n\n');
-    const loginCode = await runInteractiveProcess('asc', ['web', 'auth', 'login', '--apple-id', appleId], { env: ascEnv });
-    process.stdout.write(`\nASC web auth login exited with code ${loginCode ?? 'unknown'}.\n`);
-    if (loginCode !== 0) {
-        throw new Error('ASC web analytics login failed. Check the Apple Account email/password/2FA, then rerun the connector wizard.');
+    let attempts = 0;
+    while (true) {
+        attempts += 1;
+        process.stdout.write(`ASC web analytics needs a website login for ${appleId}.\n`);
+        process.stdout.write('Starting `asc web auth login --apple-id ...` now. The next password and 2FA prompts come directly from asc.\n');
+        process.stdout.write('Press Enter once after typing the password, then wait for asc to continue.\n');
+        process.stdout.write('Complete the App Store Connect login flow, then return to this terminal.\n\n');
+        const loginCode = await runInteractiveProcess('asc', ['web', 'auth', 'login', '--apple-id', appleId], { env: ascEnv });
+        process.stdout.write(`\nASC web auth login exited with code ${loginCode ?? 'unknown'}.\n`);
+        if (loginCode === 0) {
+            break;
+        }
+        process.stdout.write('Apple/asc rejected the web login. The wizard did not read or transform the password.\n');
+        if (!rl || attempts >= 3) {
+            throw new Error('ASC web analytics login failed. Check the Apple Account email/password/2FA, then rerun the connector wizard.');
+        }
+        const retry = await askYesNo(rl, 'Retry ASC web analytics login now?', true);
+        if (!retry) {
+            throw new Error('ASC web analytics login was not completed. Rerun the connector wizard when the Apple Account login is ready.');
+        }
+        const nextAppleId = (await ask(rl, 'Apple Account email for ASC web analytics login (press Enter to keep)', appleId)).trim();
+        if (nextAppleId && nextAppleId !== appleId) {
+            appleId = nextAppleId;
+            secrets.ASC_WEB_APPLE_ID = appleId;
+            await saveSecretsImmediately({ ASC_WEB_APPLE_ID: appleId });
+        }
     }
     process.stdout.write('\nStill working: verifying the ASC web analytics session after login...\n');
     const verify = await runCommandCapture('asc web auth status --output json', { env: ascEnv });
