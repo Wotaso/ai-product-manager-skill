@@ -1988,6 +1988,7 @@ async function ensureAscWebAnalyticsAuth(rl = null, secrets = {}) {
             break;
         }
         process.stdout.write('Apple/asc rejected the web login. The wizard did not read or transform the password.\n');
+        process.stdout.write('The ASC .p8 API key is separate from this Apple Account web login and is not used as the password.\n');
         if (!rl || attempts >= 3) {
             throw new Error('ASC web analytics login failed. Check the Apple Account email/password/2FA, then rerun the connector wizard.');
         }
@@ -2517,6 +2518,12 @@ async function askYesNo(rl, label, defaultYes = true) {
             return true;
         if (answer === 'n' || answer === 'no')
             return false;
+        if (answer.includes('private key')) {
+            process.stdout.write('That looks like leftover .p8 key text, not a yes/no answer. Ignoring it.\n');
+        }
+        else {
+            process.stdout.write('Please answer y or n.\n');
+        }
     }
 }
 async function askChoice(rl, label, options, defaultValue) {
