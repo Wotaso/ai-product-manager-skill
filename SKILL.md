@@ -1,25 +1,34 @@
 ---
 name: openclaw-growth-engineer
-description: OpenClaw-first growth autopilot for mobile apps. Correlate analytics, crashes, billing, feedback, store signals, and repo context into proposal drafts that can flow into OpenClaw chat, GitHub issues, or draft pull requests.
+description: AI Growth Engineer for mobile apps and agent runtimes including OpenClaw and Hermes. Correlate analytics, crashes, billing, feedback, store signals, and repo context into proposal drafts that can flow into agent chat, GitHub issues, or draft pull requests.
 license: MIT
 homepage: https://github.com/wotaso/analyticscli-skills
-metadata: {"author":"wotaso","version":"1.0.83","analyticscli-target":"@analyticscli/cli","analyticscli-supported-range":">=0.1.2-preview.0 <0.2.0","openclaw":{"emoji":"🚀","homepage":"https://github.com/wotaso/analyticscli-skills","requires":{"bins":["node","analyticscli"]},"install":[{"id":"analyticscli-cli","kind":"node","package":"@analyticscli/cli@preview","bins":["analyticscli"],"label":"Install/update AnalyticsCLI CLI (npm package @analyticscli/cli@preview)"}]}}
+metadata: {"author":"wotaso","version":"1.0.84","analyticscli-target":"@analyticscli/cli","analyticscli-supported-range":">=0.1.2-preview.0 <0.2.0","openclaw":{"emoji":"🚀","homepage":"https://github.com/wotaso/analyticscli-skills","requires":{"bins":["node","analyticscli"]},"install":[{"id":"analyticscli-cli","kind":"node","package":"@analyticscli/cli@preview","bins":["analyticscli"],"label":"Install/update AnalyticsCLI CLI (npm package @analyticscli/cli@preview)"}]},"hermes":{"tags":["Growth","Analytics","Mobile","Product","OpenClaw"],"homepage":"https://github.com/Wotaso/openclaw-growth-engineer-skill","requires":{"bins":["node","analyticscli"]},"install":[{"id":"openclaw-growth-engineer","kind":"skill","package":"Wotaso/openclaw-growth-engineer-skill","label":"Install the shared AI Growth Engineer skill for Hermes"}]}}
 ---
 
 # OpenClaw Growth Engineer
 
 ## Canonical Skill Identity
 
-`openclaw-growth-engineer` is the single canonical skill for OpenClaw product and growth work.
+`openclaw-growth-engineer` is the single canonical AI Growth Engineer skill for agent-driven product and growth work.
 The old `ai-product-manager` / `product-manager-skill` package is deprecated and should be used only as a migration alias for existing installs.
 Do not recommend installing or loading both skills.
 
+Use this same skill for OpenClaw and Hermes. Do not create a duplicate Hermes-specific copy of the instructions, scripts, references, or runtime artifacts. If an agent-specific compatibility note is needed, add a small section here and keep the deterministic runtime shared.
+
+## Agent Compatibility
+
+- OpenClaw: install through ClawHub with `clawhub install openclaw-growth-engineer` or `npx clawhub install openclaw-growth-engineer`.
+- Hermes: install the same public skill repository with `hermes skills install Wotaso/openclaw-growth-engineer-skill`.
+- Generic SKILL.md clients: install or mount the same `skills/openclaw-growth-engineer` folder.
+- All agents should use the same bundled `scripts/`, `references/`, and `data/` files.
+
 ## Use This Skill When
 
-- you want OpenClaw to turn product signals into execution-ready backlog work
+- you want an agent to turn product signals into execution-ready backlog work
 - you need one mobile-first workflow across AnalyticsCLI product analytics/feedback, RevenueCat, Sentry-compatible crash monitoring including GlitchTip, ASC/App Store Connect, app reviews, and repo context
-- you want the deterministic work to live in a standalone CLI and OpenClaw to stay the AI/chat layer
-- you want proposal delivery to be configurable between OpenClaw chat handoff, GitHub issues, and draft pull requests
+- you want the deterministic work to live in a standalone CLI and the host agent to stay the AI/chat layer
+- you want proposal delivery to be configurable between agent chat handoff, GitHub issues, and draft pull requests
 
 ## Product Focus
 
@@ -33,29 +42,29 @@ Treat this as a private-repo-first skill. The setup and connector wizards should
 
 - Do not require `project.githubRepo` during connector setup. Defer repo selection until GitHub delivery or code mapping actually needs it.
 - When the agent has permission to list repos, projects, apps, or Sentry/GlitchTip projects, discover them automatically and persist the best available mapping.
-- Sentry/GlitchTip project lists are not required input. If org + token are configured, the exporter should discover visible projects at runtime and let OpenClaw choose the relevant project from app/release context.
+- Sentry/GlitchTip project lists are not required input. If org + token are configured, the exporter should discover visible projects at runtime and let the agent choose the relevant project from app/release context.
 - If there are multiple plausible targets, use app/release/config context first; ask the user only when the choice is genuinely ambiguous.
 - Keep GitHub issue/PR creation disabled unless explicitly requested or clearly configured. Missing repo context should be a deferred state, not a setup blocker.
 
 ## Preferred Runtime
 
-Prefer the standalone `openclaw` CLI as the runtime surface.
+Prefer the standalone `openclaw` CLI as the runtime surface when it is available.
 
 - Setup path: `openclaw setup --config openclaw.config.json`
 - Primary path: `openclaw start --config openclaw.config.json`
 - Local monorepo path: `pnpm --filter @analyticscli/openclaw-cli dev start --repo-root <repo-root>`
-- Legacy copied-runtime scripts under `scripts/openclaw-growth-*.mjs` remain fallback-only for older OpenClaw workspaces
+- Copied-runtime scripts under `scripts/openclaw-growth-*.mjs` remain the compatibility path for agents that install this as a plain `SKILL.md` folder
 
-The CLI is intentionally non-AI. OpenClaw should stay the only conversational/implementation layer.
+The CLI is intentionally non-AI. The host agent should stay the only conversational/implementation layer.
 Use the CLI to gather signals, generate proposals, schedule checks, and send deliveries.
-If the user later asks OpenClaw to implement a proposal, OpenClaw should inspect the generated drafts and then use its own AI/runtime to do the work.
+If the user later asks the agent to implement a proposal, the agent should inspect the generated drafts and then use its own AI/runtime to do the work.
 
 Implementation PR rule:
 
-- If the user asks for a GitHub issue plus a pull request, or says "create a PR", "make the PR", "implement this", "fix the app", or close variants after a product/growth analysis, OpenClaw must create an implementation PR with production app code changes in the target repository.
+- If the user asks for a GitHub issue plus a pull request, or says "create a PR", "make the PR", "implement this", "fix the app", or close variants after a product/growth analysis, the agent must create an implementation PR with production app code changes in the target repository.
 - Do not satisfy that request with a proposal-only markdown PR. The CLI's proposal PR mode is only for explicit requests such as "make a proposal PR", "planning PR", "draft proposal", or scheduled proposal delivery.
 - A PR that only adds `.openclaw/proposals/*.md`, docs, or markdown planning files is not a valid implementation PR unless the user explicitly requested a proposal-only artifact.
-- For implementation PRs, OpenClaw must inspect the app repo, create or reuse a branch, edit the relevant app files, run targeted checks where feasible, then open/update the PR. Use GitHub issue creation for tracking, but keep the PR focused on real app behavior.
+- For implementation PRs, the agent must inspect the app repo, create or reuse a branch, edit the relevant app files, run targeted checks where feasible, then open/update the PR. Use GitHub issue creation for tracking, but keep the PR focused on real app behavior.
 - If the implementation cannot be completed because repo write access, branch access, or local checkout is unavailable, say that directly and do not create a placeholder markdown PR.
 
 `openclaw setup` should reuse the existing `analyticscli setup` flow instead of redefining skill installation locally. That means shared skills such as `analyticscli-cli` and `analyticscli-ts-sdk` come from the canonical AnalyticsCLI installer.
@@ -63,7 +72,7 @@ Implementation PR rule:
 ## Customization Boundary
 
 Treat this installed skill as vendor-managed and replaceable.
-OpenClaw should almost never edit this skill in-place for user- or project-specific customization, because future ClawHub updates may overwrite local changes.
+Agents should almost never edit this skill in-place for user- or project-specific customization, because future skill updates may overwrite local changes.
 When the user wants custom behavior, create a separate companion skill or project-local customization skill instead, for example `openclaw-growth-custom`, and have that skill reference or layer on top of this one.
 Only modify this skill directly when the change is intended as an upstream reusable fix for the canonical skill repository.
 
@@ -71,24 +80,24 @@ Only modify this skill directly when the change is intended as an upstream reusa
 
 Setup should feel guided for a developer, not like a silent preflight dump.
 
-- Root-cause policy: when connector setup fails for a user, do not hand out VPS-specific workaround commands as the final answer. Fix the reusable AI Growth Engineer skill/CLI/wizard so every future installer gets the corrected flow, then publish/sync the skill and ask the running OpenClaw instance to refetch it.
+- Root-cause policy: when connector setup fails for a user, do not hand out VPS-specific workaround commands as the final answer. Fix the reusable AI Growth Engineer skill/CLI/wizard so every future installer gets the corrected flow, then publish/sync the skill and ask the running agent instance to refetch it.
 - Prefer auto-detection and direct fixes over asking the user to run generic commands.
 - In chat, explain only what the user needs for the next step. Put provider details, scopes, and secret prompts in the wizard unless the user asks.
 - Ask for the minimum missing value only; do not request issue/PR permissions unless artifact creation is enabled.
 - For blockers, return one short next action first. Add detailed status, permissions, or URLs only when the user asks or the wizard needs that value.
 - After each setup phase, summarize only the result and the next concrete action.
-- Keep secrets out of prompts, repo files, logs, and command arguments; prefer OpenClaw secret storage or environment injection.
-- Never ask the user to paste API keys, GitHub tokens, or App Store Connect `.p8` private-key contents into Discord, OpenClaw chat, GitHub issues, PRs, or any shared transcript. Discord/chat is not an appropriate secret transport.
-- For secrets, give a secure host-terminal path: set env vars in the runtime shell, an OpenClaw secret store, a password manager injection flow, or the wizard-managed `~/.config/openclaw-growth/secrets.env` with `chmod 600`. OpenClaw Growth commands must load that env file automatically. For `.p8`, the terminal wizard must validate pasted file content cryptographically before writing it to `~/.config/openclaw-growth/AuthKey_<KEY_ID>.p8` with `chmod 600`; store only `ASC_PRIVATE_KEY_PATH` and never echo the private key back.
+- Keep secrets out of prompts, repo files, logs, and command arguments; prefer host-agent secret storage or environment injection.
+- Never ask the user to paste API keys, GitHub tokens, or App Store Connect `.p8` private-key contents into Discord, OpenClaw chat, Hermes chat, GitHub issues, PRs, or any shared transcript. Chat is not an appropriate secret transport.
+- For secrets, give a secure host-terminal path: set env vars in the runtime shell, an agent secret store, a password manager injection flow, or the wizard-managed `~/.config/openclaw-growth/secrets.env` with `chmod 600`. Growth commands must load that env file automatically. For `.p8`, the terminal wizard must validate pasted file content cryptographically before writing it to `~/.config/openclaw-growth/AuthKey_<KEY_ID>.p8` with `chmod 600`; store only `ASC_PRIVATE_KEY_PATH` and never echo the private key back.
 - When SDK instrumentation is missing or weak, guide the developer through the `analyticscli-ts-sdk` setup path so analytics events become useful for later growth analysis.
 - If AnalyticsCLI has no default project and multiple projects are visible, do not report that as a hard error. List the available projects, ask the user which one to use, persist the choice with `openclaw start --config openclaw.config.json --project <project_id>` or `analyticscli projects select <project_id>`, and then retry the setup/run.
 
-During setup chat, keep the first answer short. OpenClaw should not dump provider docs, permissions, status history, or troubleshooting unless the user asks for details.
+During setup chat, keep the first answer short. The agent should not dump provider docs, permissions, status history, or troubleshooting unless the user asks for details.
 
 Connector status questions:
 
 - If the user asks whether connectors are connected, which connectors have access, or whether a specific app such as "Flashes" has all connectors, do not infer from memory, skill text, MCP config, or whether helper binaries exist.
-- Run the deterministic status command from the OpenClaw workspace:
+- Run the deterministic status command from the active agent workspace:
   ```bash
   node scripts/openclaw-growth-status.mjs --config data/openclaw-growth-engineer/config.json --json
   ```
@@ -96,7 +105,7 @@ Connector status questions:
 - Do not require a single global GitHub repo for connector setup. GitHub is connected when auth/token is valid; choose or infer the repository per app/task later.
 - Answer from that command only. If it cannot be run, say "I have not run a connector status check yet" and give the wizard command; do not say credentials are missing just because they are not visible in chat.
 - Keep the answer short: say "Ja" only if every connector status is `connected`; otherwise list only the non-connected connector names and the status command's next action.
-- The interval runner performs a connector health check at least daily by default (`schedule.connectorHealthCheckIntervalMinutes`, default `1440`). If a configured connector is `partial`, `blocked`, or `unknown`, it writes a connector-health alert and sends it through the configured notification channel(s): OpenClaw chat outbox, Slack, generic webhook, or a custom command channel. Discord is only one possible command/webhook channel, not the default assumption.
+- The interval runner performs a connector health check at least daily by default (`schedule.connectorHealthCheckIntervalMinutes`, default `1440`). If a configured connector is `partial`, `blocked`, or `unknown`, it writes a connector-health alert and sends it through the configured notification channel(s): agent chat outbox, Slack, generic webhook, or a custom command channel. Discord is only one possible command/webhook channel, not the default assumption.
 
 Retention reliability:
 
@@ -126,12 +135,12 @@ Production crash and ASC growth monitoring:
 
 - Run the production health loop every day for every public, analytics-accessible app. Apps that are not public yet, not eligible for ASC analytics, or returning ASC web analytics 403s should be marked `not_public_or_not_analytics_ready` and skipped without calling them broken.
 - Daily crash check: prefer total production crashes from ASC App Usage breakdowns and Sentry production issue/event counts. Use ASC `crashRate` only as a supporting ratio, never as the only stability signal. TestFlight crashes are out of scope unless the user explicitly asks.
-- Any non-zero production crash count should trigger a short OpenClaw user notification through the configured OpenClaw chat/social delivery channel. The notification should name the app, date range, total crash count, affected app version when available, Sentry issue count/users when connected, and the recommended next action.
-- If GitHub issue/PR write access is configured through OpenClaw's GitHub API connection, automatically create the tracking GitHub issue or implementation PR for production crashes and high-confidence growth findings. Only skip GitHub artifact creation when `actions.disableAutoCreateGitHubArtifacts = true`, GitHub write access is unavailable, or the finding is too low-confidence to be useful.
+- Any non-zero production crash count should trigger a short user notification through the configured agent chat/social delivery channel. The notification should name the app, date range, total crash count, affected app version when available, Sentry issue count/users when connected, and the recommended next action.
+- If GitHub issue/PR write access is configured through the agent's GitHub API connection, automatically create the tracking GitHub issue or implementation PR for production crashes and high-confidence growth findings. Only skip GitHub artifact creation when `actions.disableAutoCreateGitHubArtifacts = true`, GitHub write access is unavailable, or the finding is too low-confidence to be useful.
 - Correlate ASC total crashes with Sentry production data before recommending growth pushes: app version/build, release date, top Sentry issue, affected users/events, funnel step, paywall/purchase path, and recent code changes. If ASC and Sentry disagree, report both and say which connector is more complete for the app.
 - Sentry-compatible crash monitoring is multi-account. Do not assume one global Sentry org/project. Support `sources.sentry.accounts[]` with separate `baseUrl`, `tokenEnv`, `org`, `projects[]`, and `environment` entries, for example Sentry Cloud plus a self-hosted GlitchTip instance with different projects.
 - Daily ASC acquisition check: collect all available ASC overview metrics, including but not limited to `units`, `redownloads`, `conversionRate`, `crashRate`, source page views, app usage, updates, app opens, subscription state, and total crashes. Treat ASC source data as source-level product page views, not source-level download units unless the CLI exposes a true source-download measure.
-- If ASC web analytics is not logged in or the user-owned web session expired, tell the OpenClaw user exactly how to refresh it: run `asc web auth login`, then verify with `asc web auth status --output json --pretty`, then rerun OpenClaw Growth. Do not confuse this with API-key ASC auth.
+- If ASC web analytics is not logged in or the user-owned web session expired, tell the user exactly how to refresh it: run `asc web auth login`, then verify with `asc web auth status --output json --pretty`, then rerun AI Growth Engineer. Do not confuse this with API-key ASC auth.
 - Do not try to auto-refresh ASC web analytics in unattended runs. Apple web auth is a user-owned browser session; if its TTL is short, the correct automation behavior is to detect expiry, notify the user, and continue using API-key ASC surfaces where available until the user refreshes web auth in the host terminal.
 - Weekly growth review: compare units/downloads, redownloads, conversion rate, source mix, AnalyticsCLI activation/funnels/retention, Sentry stability, RevenueCat monetization, reviews, and recent releases. Turn the strongest cross-source pattern into one implementation-ready Handlungsempfehlung.
 - Monthly growth review: compare month-over-month units, conversion, source quality, reviews, retention, churn, crash totals, and production versions. Decide which acquisition channel, store listing element, onboarding step, paywall, or feature should be built, changed, or deleted next.
@@ -159,12 +168,13 @@ AI Growth Engineer connectors:
 - Sentry-compatible crash monitoring: Sentry Cloud and/or self-hosted GlitchTip via multi-account Sentry config
 - ASC / App Store Connect CLI: store analytics, reviews/ratings, builds/TestFlight/release context, downloads/units, conversion, source traffic, app usage, subscriptions, purchases, and crash totals when configured
 
-Run the wizard on the VPS:
+Run the wizard from the active agent workspace:
 ```
 
 ```bash
-cd /home/lo/.openclaw/workspace && \
-  bash skills/openclaw-growth-engineer/scripts/bootstrap-openclaw-workspace.sh && \
+SKILL_DIR="${HERMES_SKILL_DIR}"
+if [ -z "$SKILL_DIR" ] || [ ! -d "$SKILL_DIR/scripts" ]; then SKILL_DIR="skills/openclaw-growth-engineer"; fi
+OPENCLAW_GROWTH_WORKSPACE="$PWD" bash "$SKILL_DIR/scripts/bootstrap-openclaw-workspace.sh" && \
   node scripts/openclaw-growth-wizard.mjs --connectors
 ```
 
@@ -183,12 +193,13 @@ Available connectors:
 - Sentry-compatible crash monitoring: Sentry Cloud and/or self-hosted GlitchTip via multi-account Sentry config
 - ASC / App Store Connect CLI: store analytics, reviews/ratings, builds/TestFlight/release context, downloads/units, conversion, source traffic, app usage, subscriptions, purchases, and crash totals when configured
 
-Run the wizard from the OpenClaw workspace:
+Run the wizard from the active agent workspace:
 ```
 
 ```bash
-cd /home/lo/.openclaw/workspace && \
-  bash skills/openclaw-growth-engineer/scripts/bootstrap-openclaw-workspace.sh && \
+SKILL_DIR="${HERMES_SKILL_DIR}"
+if [ -z "$SKILL_DIR" ] || [ ! -d "$SKILL_DIR/scripts" ]; then SKILL_DIR="skills/openclaw-growth-engineer"; fi
+OPENCLAW_GROWTH_WORKSPACE="$PWD" bash "$SKILL_DIR/scripts/bootstrap-openclaw-workspace.sh" && \
   node scripts/openclaw-growth-wizard.mjs --connectors
 ```
 
@@ -196,11 +207,12 @@ Then add one sentence: "The wizard will ask for the selected connectors and any 
 
 If the user asks which connectors exist, list only the connector names and one short purpose each. Treat Sentry Cloud and GlitchTip as Sentry-compatible accounts under one Sentry connector. Treat AnalyticsCLI feedback as part of AnalyticsCLI unless the user asks for custom extra sources. Do not include setup URLs, permissions, token scopes, status history, or validation output in that initial answer.
 
-If the user already names specific connectors, still prefer the checkbox wizard unless they explicitly ask for a non-interactive command. For explicit connector setup, use one copy-paste command with `cd` first:
+If the user already names specific connectors, still prefer the checkbox wizard unless they explicitly ask for a non-interactive command. For explicit connector setup, use one copy-paste command from the active agent workspace:
 
 ```bash
-cd /home/lo/.openclaw/workspace && \
-  bash skills/openclaw-growth-engineer/scripts/bootstrap-openclaw-workspace.sh && \
+SKILL_DIR="${HERMES_SKILL_DIR}"
+if [ -z "$SKILL_DIR" ] || [ ! -d "$SKILL_DIR/scripts" ]; then SKILL_DIR="skills/openclaw-growth-engineer"; fi
+OPENCLAW_GROWTH_WORKSPACE="$PWD" bash "$SKILL_DIR/scripts/bootstrap-openclaw-workspace.sh" && \
   node scripts/openclaw-growth-wizard.mjs --connectors analytics,github,revenuecat,sentry,asc
 ```
 

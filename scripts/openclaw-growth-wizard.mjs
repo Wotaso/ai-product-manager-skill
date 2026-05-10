@@ -1942,13 +1942,24 @@ function resolveAscWebAppleId() {
         process.env.APPLE_ID?.trim() ||
         '');
 }
+function ascWebAuthEnv() {
+    return {
+        ...process.env,
+        ASC_TIMEOUT: process.env.ASC_TIMEOUT || '90s',
+        ASC_TIMEOUT_SECONDS: process.env.ASC_TIMEOUT_SECONDS || '90',
+    };
+}
 async function ensureAscWebAnalyticsAuth(rl = null, secrets = {}) {
     process.stdout.write('\nChecking ASC web analytics authentication...\n');
     process.stdout.write('Still working: verifying whether the ASC web session is active.\n');
     if (!(await commandExists('asc'))) {
         throw new Error('The asc CLI is not installed yet. Install it with `openclaw start --connectors asc`, then rerun the connector wizard so it can run `asc web auth login`.');
     }
-    const status = await runCommandCapture('asc web auth status --output json');
+    const ascEnv = ascWebAuthEnv();
+    if (!process.env.ASC_TIMEOUT && !process.env.ASC_TIMEOUT_SECONDS) {
+        process.stdout.write('Using ASC_TIMEOUT=90s for ASC web auth because Apple web endpoints can be slow.\n');
+    }
+    const status = await runCommandCapture('asc web auth status --output json', { env: ascEnv });
     if (status.ok && isAscWebAuthAuthenticated(status.stdout)) {
         process.stdout.write('ASC web analytics authentication is active.\n');
         return false;
@@ -1966,14 +1977,15 @@ async function ensureAscWebAnalyticsAuth(rl = null, secrets = {}) {
     }
     process.stdout.write(`ASC web analytics needs a website login for ${appleId}.\n`);
     process.stdout.write('Starting `asc web auth login --apple-id ...` now. The next password and 2FA prompts come directly from asc.\n');
+    process.stdout.write('Press Enter once after typing the password, then wait for asc to continue.\n');
     process.stdout.write('Complete the App Store Connect login flow, then return to this terminal.\n\n');
-    const loginCode = await runInteractiveProcess('asc', ['web', 'auth', 'login', '--apple-id', appleId]);
+    const loginCode = await runInteractiveProcess('asc', ['web', 'auth', 'login', '--apple-id', appleId], { env: ascEnv });
     process.stdout.write(`\nASC web auth login exited with code ${loginCode ?? 'unknown'}.\n`);
     if (loginCode !== 0) {
         throw new Error('ASC web analytics login failed. Check the Apple Account email/password/2FA, then rerun the connector wizard.');
     }
     process.stdout.write('\nStill working: verifying the ASC web analytics session after login...\n');
-    const verify = await runCommandCapture('asc web auth status --output json');
+    const verify = await runCommandCapture('asc web auth status --output json', { env: ascEnv });
     if (!verify.ok || !isAscWebAuthAuthenticated(verify.stdout)) {
         throw new Error('ASC web analytics login did not verify. Run `asc web auth status --output json --pretty` to inspect the session, then rerun the connector wizard.');
     }
