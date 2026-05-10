@@ -1340,55 +1340,75 @@ function apiListItems(payload) {
   return [];
 }
 
+async function fetchSentryJsonPage({ baseUrl, token, url }) {
+  const normalizedToken = String(token || '').trim();
+  const response = await fetch(url, {
+    method: 'GET',
+    headers: {
+      Accept: 'application/json',
+      Authorization: `Bearer ${normalizedToken}`,
+      'User-Agent': 'openclaw-growth-wizard',
+    },
+  });
+  const body = await response.text();
+  if (!response.ok) {
+    return {
+      ok: false,
+      payload: null,
+      detail: `${url.pathname}: HTTP ${response.status}: ${truncate(body, 220)}`,
+    };
+  }
+  try {
+    return { ok: true, payload: body ? JSON.parse(body) : null, detail: url.pathname };
+  } catch (error) {
+    return {
+      ok: false,
+      payload: null,
+      detail: `${url.pathname}: invalid JSON (${error instanceof Error ? error.message : String(error)})`,
+    };
+  }
+}
+
+async function fetchSentryJsonList({ baseUrl, token, url }) {
+  const items = [];
+  const pages = [];
+  let nextUrl: URL | null = url;
+  for (let page = 0; nextUrl && page < 10; page += 1) {
+    const result = await fetchSentryJsonPage({ baseUrl, token, url: nextUrl });
+    pages.push(result.detail);
+    if (!result.ok) return { ...result, payload: items, detail: pages.join('; ') };
+    items.push(...apiListItems(result.payload));
+    const next = result.payload && typeof result.payload === 'object' ? result.payload.next : null;
+    nextUrl = typeof next === 'string' && next.trim() ? new URL(next, `${String(baseUrl || 'https://sentry.io').replace(/\/$/, '')}/`) : null;
+  }
+  return { ok: true, payload: items, detail: pages.join('; ') };
+}
+
+async function discoverSentryOrganizations({ baseUrl, token }) {
+  const normalizedToken = String(token || '').trim();
+  if (!normalizedToken) return { ok: false, organizations: [], detail: 'missing token' };
+  const url = buildUrl(baseUrl, '/api/0/organizations/', { per_page: 100 });
+  const result = await fetchSentryJsonList({ baseUrl, token: normalizedToken, url });
+  if (!result.ok) return { ok: false, organizations: [], detail: result.detail };
+  const organizations: Array<{ slug: string; name: string }> = apiListItems(result.payload)
+    .map((organization) => ({
+      slug: String(organization?.slug || organization?.name || '').trim(),
+      name: String(organization?.name || organization?.slug || '').trim(),
+    }))
+    .filter((organization) => organization.slug);
+  return {
+    ok: true,
+    organizations: Array.from(new Map(organizations.map((organization) => [organization.slug, organization])).values()),
+    detail: `found ${organizations.length} org(s)`,
+  };
+}
+
 async function discoverSentryProjects({ baseUrl, token, org }) {
   const normalizedOrg = String(org || '').trim();
   const normalizedToken = String(token || '').trim();
   if (!normalizedOrg || !normalizedToken) {
     return { ok: false, projects: [], detail: 'missing org or token' };
   }
-
-  const fetchJsonPage = async (url) => {
-    const response = await fetch(url, {
-      method: 'GET',
-      headers: {
-        Accept: 'application/json',
-        Authorization: `Bearer ${normalizedToken}`,
-        'User-Agent': 'openclaw-growth-wizard',
-      },
-    });
-    const body = await response.text();
-    if (!response.ok) {
-      return {
-        ok: false,
-        payload: null,
-        detail: `${url.pathname}: HTTP ${response.status}: ${truncate(body, 220)}`,
-      };
-    }
-    try {
-      return { ok: true, payload: body ? JSON.parse(body) : null, detail: url.pathname };
-    } catch (error) {
-      return {
-        ok: false,
-        payload: null,
-        detail: `${url.pathname}: invalid JSON (${error instanceof Error ? error.message : String(error)})`,
-      };
-    }
-  };
-
-  const fetchJsonList = async (url) => {
-    const items = [];
-    const pages = [];
-    let nextUrl: URL | null = url;
-    for (let page = 0; nextUrl && page < 10; page += 1) {
-      const result = await fetchJsonPage(nextUrl);
-      pages.push(result.detail);
-      if (!result.ok) return { ...result, payload: items, detail: pages.join('; ') };
-      items.push(...apiListItems(result.payload));
-      const next = result.payload && typeof result.payload === 'object' ? result.payload.next : null;
-      nextUrl = typeof next === 'string' && next.trim() ? new URL(next, `${String(baseUrl || 'https://sentry.io').replace(/\/$/, '')}/`) : null;
-    }
-    return { ok: true, payload: items, detail: pages.join('; ') };
-  };
 
   const projectSlugs = (payload) =>
     apiListItems(payload)
@@ -1400,7 +1420,7 @@ async function discoverSentryProjects({ baseUrl, token, org }) {
     const orgProjectsUrl = buildUrl(baseUrl, `/api/0/organizations/${encodeURIComponent(normalizedOrg)}/projects/`, {
       per_page: 100,
     });
-    const orgProjects = await fetchJsonList(orgProjectsUrl);
+    const orgProjects = await fetchSentryJsonList({ baseUrl, token: normalizedToken, url: orgProjectsUrl });
     attempted.push(orgProjects.detail);
     if (orgProjects.ok) {
       const projects = projectSlugs(orgProjects.payload);
@@ -1412,7 +1432,7 @@ async function discoverSentryProjects({ baseUrl, token, org }) {
     const teamsUrl = buildUrl(baseUrl, `/api/0/organizations/${encodeURIComponent(normalizedOrg)}/teams/`, {
       per_page: 100,
     });
-    const teams = await fetchJsonList(teamsUrl);
+    const teams = await fetchSentryJsonList({ baseUrl, token: normalizedToken, url: teamsUrl });
     attempted.push(teams.detail);
     if (teams.ok) {
       const teamSlugs = apiListItems(teams.payload)
@@ -1425,7 +1445,7 @@ async function discoverSentryProjects({ baseUrl, token, org }) {
           `/api/0/teams/${encodeURIComponent(normalizedOrg)}/${encodeURIComponent(teamSlug)}/projects/`,
           { per_page: 100 },
         );
-        const teamProjects = await fetchJsonList(teamProjectsUrl);
+        const teamProjects = await fetchSentryJsonList({ baseUrl, token: normalizedToken, url: teamProjectsUrl });
         attempted.push(teamProjects.detail);
         if (teamProjects.ok) allTeamProjects.push(...projectSlugs(teamProjects.payload));
       }
@@ -1439,7 +1459,7 @@ async function discoverSentryProjects({ baseUrl, token, org }) {
     }
 
     const allProjectsUrl = buildUrl(baseUrl, '/api/0/projects/', { per_page: 100 });
-    const allProjects = await fetchJsonList(allProjectsUrl);
+    const allProjects = await fetchSentryJsonList({ baseUrl, token: normalizedToken, url: allProjectsUrl });
     attempted.push(allProjects.detail);
     if (allProjects.ok) {
       const projects = apiListItems(allProjects.payload)
@@ -1836,10 +1856,26 @@ async function guideSentryConnector(rl, secrets: Record<string, string>) {
     const token = await maybePromptSecret(rl, `Paste ${tokenEnv} into this local terminal`, tokenEnv);
     if (token) secrets[tokenEnv] = token;
 
+    let discoveredOrganizations: Array<{ slug: string; name: string }> = [];
+    if (token) {
+      process.stdout.write(`Discovering Sentry / GlitchTip organizations for ${label}...\n`);
+      const organizationDiscovery = await discoverSentryOrganizations({ baseUrl, token });
+      if (organizationDiscovery.ok && organizationDiscovery.organizations.length > 0) {
+        discoveredOrganizations = organizationDiscovery.organizations;
+        process.stdout.write(
+          `Found org(s): ${discoveredOrganizations.map((organization) => organization.slug).join(', ')}\n`,
+        );
+      } else if (!organizationDiscovery.ok) {
+        process.stdout.write(`${ANSI.dim}Could not list organizations automatically (${organizationDiscovery.detail}).${ANSI.reset}\n`);
+      }
+    }
+
     const org = await ask(
       rl,
       `Sentry org slug for ${label} (leave empty to defer)`,
-      index === 0 ? process.env.SENTRY_ORG || '' : '',
+      index === 0
+        ? process.env.SENTRY_ORG || discoveredOrganizations[0]?.slug || ''
+        : discoveredOrganizations[0]?.slug || '',
     );
     const environment = await ask(
       rl,
@@ -1857,9 +1893,25 @@ async function guideSentryConnector(rl, secrets: Record<string, string>) {
           `Configured ${projects.length} project(s): ${projects.slice(0, 8).join(', ')}${projects.length > 8 ? ', ...' : ''}\n`,
         );
       } else {
-        process.stdout.write(`Could not discover projects automatically (${discovery.detail}).\n`);
-        const manualProjects = parseCommaList(await ask(rl, `Project slugs for ${label} (comma-separated, leave empty to let app context decide)`, ''));
-        projects = manualProjects;
+        const fallbackOrgs = discoveredOrganizations
+          .map((organization) => organization.slug)
+          .filter((slug) => slug && slug !== org.trim());
+        for (const fallbackOrg of fallbackOrgs) {
+          process.stdout.write(`Trying visible org ${fallbackOrg}...\n`);
+          const fallbackDiscovery = await discoverSentryProjects({ baseUrl, token, org: fallbackOrg });
+          if (fallbackDiscovery.ok && fallbackDiscovery.projects.length > 0) {
+            projects = fallbackDiscovery.projects;
+            process.stdout.write(
+              `Using org ${fallbackOrg}; configured ${projects.length} project(s): ${projects.slice(0, 8).join(', ')}${projects.length > 8 ? ', ...' : ''}\n`,
+            );
+            break;
+          }
+        }
+        if (projects.length === 0) {
+          process.stdout.write(`Could not discover projects automatically (${discovery.detail}).\n`);
+          const manualProjects = parseCommaList(await ask(rl, `Project slugs for ${label} (comma-separated, leave empty to let app context decide)`, ''));
+          projects = manualProjects;
+        }
       }
     } else {
       process.stdout.write('Project discovery needs both a token and org slug. Project scope will be resolved from app context later.\n');
