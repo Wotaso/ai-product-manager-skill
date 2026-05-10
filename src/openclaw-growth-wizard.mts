@@ -299,6 +299,50 @@ async function withTerminalLoading<T>(message: string, task: Promise<T>): Promis
   }
 }
 
+function normalizeConnectorProgressKey(key): ConnectorKey | null {
+  const normalized = String(key || '').trim().toLowerCase();
+  if (normalized === 'analytics' || normalized === 'analyticscli') return 'analytics';
+  if (normalized === 'github') return 'github';
+  if (normalized === 'revenuecat') return 'revenuecat';
+  if (normalized === 'sentry') return 'sentry';
+  if (normalized === 'asc' || normalized === 'appstoreconnect' || normalized === 'app-store-connect') return 'asc';
+  return null;
+}
+
+async function withConnectorHealthLoading<T>(
+  taskFactory: (onProgress: (event: any) => void) => Promise<T>,
+): Promise<T> {
+  const frames = ['-', '\\', '|', '/'];
+  const completed = new Set<ConnectorKey>();
+  let index = 0;
+  let current = 'starting';
+  const render = () => {
+    const count = Math.min(completed.size, CONNECTOR_KEYS.length);
+    process.stdout.write(`\rChecking connector health ${count}/${CONNECTOR_KEYS.length} (${current}) ${frames[index]}`);
+  };
+  const timer = setInterval(() => {
+    index = (index + 1) % frames.length;
+    render();
+  }, 120);
+  render();
+  try {
+    const result = await taskFactory((event) => {
+      const key = normalizeConnectorProgressKey(event?.key);
+      if (!key) return;
+      current = connectorLabel(key);
+      if (event?.phase === 'finish') completed.add(key);
+      render();
+    });
+    CONNECTOR_KEYS.forEach((key) => completed.add(key));
+    current = 'done';
+    render();
+    process.stdout.write('\n');
+    return result;
+  } finally {
+    clearInterval(timer);
+  }
+}
+
 function connectorLabel(key: ConnectorKey) {
   return CONNECTOR_DEFINITIONS.find((connector) => connector.key === key)?.label ?? key;
 }
@@ -383,7 +427,7 @@ function connectorKeysNeedingAttention(healthByConnector: Record<string, any> = 
   );
 }
 
-async function getConnectorPickerHealth(configPath) {
+async function getConnectorPickerHealth(configPath, onProgress: (event: any) => void = () => {}) {
   if (!(await fileExists(configPath))) {
     return Object.fromEntries(
       CONNECTOR_KEYS.map((key) => [
@@ -397,8 +441,9 @@ async function getConnectorPickerHealth(configPath) {
       ]),
     );
   }
-  const result = await runCommandCapture(
-    `node scripts/openclaw-growth-status.mjs --config ${quote(configPath)} --json`,
+  const result = await runCommandCaptureWithProgress(
+    `node scripts/openclaw-growth-status.mjs --config ${quote(configPath)} --json --progress-json`,
+    onProgress,
   );
   const payload = parseJsonFromStdout(result.stdout);
   const connectors = payload?.connectors && typeof payload.connectors === 'object' ? payload.connectors : {};
@@ -1292,10 +1337,8 @@ async function discoverSentryProjects({ baseUrl, token, org }) {
     return { ok: false, projects: [], detail: 'missing org or token' };
   }
 
-  try {
-    const response = await fetch(buildUrl(baseUrl, `/api/0/organizations/${encodeURIComponent(normalizedOrg)}/projects/`, {
-      per_page: 100,
-    }), {
+  const fetchJson = async (url) => {
+    const response = await fetch(url, {
       method: 'GET',
       headers: {
         Accept: 'application/json',
@@ -1305,18 +1348,97 @@ async function discoverSentryProjects({ baseUrl, token, org }) {
     });
     const body = await response.text();
     if (!response.ok) {
-      return { ok: false, projects: [], detail: `HTTP ${response.status}: ${truncate(body, 500)}` };
+      return {
+        ok: false,
+        payload: null,
+        detail: `${url.pathname}: HTTP ${response.status}: ${truncate(body, 220)}`,
+      };
     }
-    const payload = body ? JSON.parse(body) : [];
-    const projects = (Array.isArray(payload) ? payload : [])
+    try {
+      return { ok: true, payload: body ? JSON.parse(body) : null, detail: url.pathname };
+    } catch (error) {
+      return {
+        ok: false,
+        payload: null,
+        detail: `${url.pathname}: invalid JSON (${error instanceof Error ? error.message : String(error)})`,
+      };
+    }
+  };
+
+  const projectSlugs = (payload) =>
+    (Array.isArray(payload) ? payload : [])
       .map((project) => String(project?.slug || project?.name || '').trim())
       .filter(Boolean);
-    return { ok: true, projects: [...new Set(projects)], detail: `found ${projects.length} project(s)` };
+
+  const attempted = [];
+  try {
+    const orgProjectsUrl = buildUrl(baseUrl, `/api/0/organizations/${encodeURIComponent(normalizedOrg)}/projects/`, {
+      per_page: 100,
+    });
+    const orgProjects = await fetchJson(orgProjectsUrl);
+    attempted.push(orgProjects.detail);
+    if (orgProjects.ok) {
+      const projects = projectSlugs(orgProjects.payload);
+      if (projects.length > 0) {
+        return { ok: true, projects: [...new Set(projects)], detail: `found ${projects.length} project(s)` };
+      }
+    }
+
+    const teamsUrl = buildUrl(baseUrl, `/api/0/organizations/${encodeURIComponent(normalizedOrg)}/teams/`, {
+      per_page: 100,
+    });
+    const teams = await fetchJson(teamsUrl);
+    attempted.push(teams.detail);
+    if (teams.ok) {
+      const teamSlugs = (Array.isArray(teams.payload) ? teams.payload : [])
+        .map((team) => String(team?.slug || team?.name || '').trim())
+        .filter(Boolean);
+      const allTeamProjects = [];
+      for (const teamSlug of teamSlugs) {
+        const teamProjectsUrl = buildUrl(
+          baseUrl,
+          `/api/0/teams/${encodeURIComponent(normalizedOrg)}/${encodeURIComponent(teamSlug)}/projects/`,
+          { per_page: 100 },
+        );
+        const teamProjects = await fetchJson(teamProjectsUrl);
+        attempted.push(teamProjects.detail);
+        if (teamProjects.ok) allTeamProjects.push(...projectSlugs(teamProjects.payload));
+      }
+      if (allTeamProjects.length > 0) {
+        return {
+          ok: true,
+          projects: [...new Set(allTeamProjects)],
+          detail: `found ${allTeamProjects.length} project(s) via teams`,
+        };
+      }
+    }
+
+    const allProjectsUrl = buildUrl(baseUrl, '/api/0/projects/', { per_page: 100 });
+    const allProjects = await fetchJson(allProjectsUrl);
+    attempted.push(allProjects.detail);
+    if (allProjects.ok) {
+      const projects = (Array.isArray(allProjects.payload) ? allProjects.payload : [])
+        .filter((project) => {
+          const projectOrg = String(project?.organization?.slug || project?.organization?.name || '').trim();
+          return !projectOrg || projectOrg === normalizedOrg;
+        })
+        .map((project) => String(project?.slug || project?.name || '').trim())
+        .filter(Boolean);
+      if (projects.length > 0) {
+        return { ok: true, projects: [...new Set(projects)], detail: `found ${projects.length} project(s)` };
+      }
+    }
+
+    return {
+      ok: false,
+      projects: [],
+      detail: `found 0 project(s); tried ${attempted.filter(Boolean).join('; ')}`,
+    };
   } catch (error) {
     return {
       ok: false,
       projects: [],
-      detail: error instanceof Error ? error.message : String(error),
+      detail: `${error instanceof Error ? error.message : String(error)}; tried ${attempted.filter(Boolean).join('; ')}`,
     };
   }
 }
@@ -1669,7 +1791,8 @@ async function guideSentryConnector(rl, secrets: Record<string, string>) {
     'Token page: https://sentry.io/settings/account/api/auth-tokens/',
   ]);
   printBullets([
-    'Use read-only API scopes: `org:read`, `project:read`, and `event:read`.',
+    'Use read-only API scopes: `org:read`, `team:read`, `project:read`, and `event:read`.',
+    'Optional for richer release context: `project:releases`.',
     'Use `https://sentry.io` for Sentry Cloud or your GlitchTip/self-hosted base URL.',
   ]);
 
@@ -1736,7 +1859,7 @@ async function guideSentryConnector(rl, secrets: Record<string, string>) {
 
     const addAnother = await askYesNo(
       rl,
-      'Configure another Sentry-compatible account now, for example on another base URL?',
+      'Configure another Sentry / GlitchTip account now, for example on another base URL?',
       false,
     );
     if (!addAnother) break;
@@ -1899,9 +2022,8 @@ async function runConnectorSetupWizard(args) {
   try {
     clearTerminal();
     printConnectorIntro();
-    const healthByConnector = await withTerminalLoading(
-      'Checking live connector health before showing setup options...',
-      getConnectorPickerHealth(args.config),
+    const healthByConnector = await withConnectorHealthLoading((onProgress) =>
+      getConnectorPickerHealth(args.config, onProgress),
     );
     const existingFixes = connectorKeysNeedingAttention(healthByConnector);
     const requestedConnectors = args.connectors ? parseConnectorList(args.connectors) : [];

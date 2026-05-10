@@ -17,6 +17,7 @@ const DEFAULT_CONFIG_PATH = 'data/openclaw-growth-engineer/config.json';
 const DEFAULT_STATE_PATH = 'data/openclaw-growth-engineer/state.json';
 const DEFAULT_RUNTIME_DIR = 'data/openclaw-growth-engineer/runtime';
 const DEFAULT_CONNECTOR_HEALTH_INTERVAL_MINUTES = 1440;
+const SELF_UPDATE_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
 type ShellResult = {
   ok: boolean;
@@ -30,6 +31,7 @@ function parseArgs(argv) {
     config: DEFAULT_CONFIG_PATH,
     state: DEFAULT_STATE_PATH,
     loop: false,
+    noSelfUpdate: false,
   };
   for (let i = 0; i < argv.length; i += 1) {
     const token = argv[i];
@@ -44,6 +46,8 @@ function parseArgs(argv) {
       i += 1;
     } else if (token === '--loop') {
       args.loop = true;
+    } else if (token === '--no-self-update') {
+      args.noSelfUpdate = true;
     } else if (token === '--help' || token === '-h') {
       printHelpAndExit(0);
     } else {
@@ -62,6 +66,9 @@ OpenClaw Growth Runner
 
 Usage:
   node scripts/openclaw-growth-runner.mjs [--config <file>] [--state <file>] [--loop]
+
+Options:
+  --no-self-update   Skip the ClawHub skill update check for this run
 
 Default config: ${DEFAULT_CONFIG_PATH}
 Default state:  ${DEFAULT_STATE_PATH}
@@ -98,9 +105,117 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function isTruthyEnv(value) {
+  return ['1', 'true', 'yes', 'y', 'on'].includes(String(value || '').trim().toLowerCase());
+}
+
+function isFalseyEnv(value) {
+  return ['0', 'false', 'no', 'n', 'off'].includes(String(value || '').trim().toLowerCase());
+}
+
 async function commandExists(commandName) {
   const result = await runShellCommand(`command -v ${quote(commandName)} >/dev/null 2>&1`, 10_000);
   return result.ok;
+}
+
+async function filesHaveSameContent(leftPath, rightPath) {
+  try {
+    const [left, right] = await Promise.all([fs.readFile(leftPath), fs.readFile(rightPath)]);
+    return left.equals(right);
+  } catch {
+    return false;
+  }
+}
+
+async function shouldRunSelfUpdate(workspaceRoot, force) {
+  if (force) return true;
+  const statePath = path.join(workspaceRoot, 'data/openclaw-growth-engineer/self-update.json');
+  const state = await readJsonOptional(statePath, null);
+  const lastCheckedAt = Date.parse(String(state?.lastCheckedAt || ''));
+  return !Number.isFinite(lastCheckedAt) || Date.now() - lastCheckedAt > SELF_UPDATE_INTERVAL_MS;
+}
+
+async function writeSelfUpdateState(workspaceRoot, value) {
+  const statePath = path.join(workspaceRoot, 'data/openclaw-growth-engineer/self-update.json');
+  await fs.mkdir(path.dirname(statePath), { recursive: true });
+  await fs.writeFile(
+    statePath,
+    `${JSON.stringify({ version: 1, checkedAt: new Date().toISOString(), ...value }, null, 2)}\n`,
+    'utf8',
+  );
+}
+
+async function rerunCurrentProcessWithoutSelfUpdate() {
+  return await new Promise<number | null>((resolve) => {
+    const child = spawn(process.execPath, process.argv.slice(1), {
+      env: {
+        ...process.env,
+        OPENCLAW_GROWTH_SKIP_SELF_UPDATE: '1',
+      },
+      stdio: 'inherit',
+    });
+    child.on('error', () => resolve(1));
+    child.on('close', (code) => resolve(code));
+  });
+}
+
+async function maybeSelfUpdateFromClawHub(args) {
+  if (args.noSelfUpdate) return false;
+  if (isTruthyEnv(process.env.OPENCLAW_GROWTH_SKIP_SELF_UPDATE)) return false;
+  if (isTruthyEnv(process.env.OPENCLAW_GROWTH_DISABLE_SELF_UPDATE)) return false;
+  if (isFalseyEnv(process.env.OPENCLAW_GROWTH_SELF_UPDATE)) return false;
+
+  const workspaceRoot = process.cwd();
+  const skillOriginPath = path.join(workspaceRoot, 'skills/openclaw-growth-engineer/.clawhub/origin.json');
+  if (!existsSync(skillOriginPath)) return false;
+  if (!(await commandExists('npx'))) return false;
+
+  const force = String(process.env.OPENCLAW_GROWTH_SELF_UPDATE || '').trim().toLowerCase() === 'always';
+  if (!(await shouldRunSelfUpdate(workspaceRoot, force))) return false;
+
+  const beforeOrigin = await readJsonOptional(skillOriginPath, null);
+  const beforeVersion = String(beforeOrigin?.installedVersion || '');
+  process.stdout.write('Checking for OpenClaw Growth Engineer skill updates...\n');
+  const updateResult = await runShellCommand(
+    'npx -y clawhub --no-input --dir skills update openclaw-growth-engineer --force',
+    120_000,
+  );
+  const afterOrigin = await readJsonOptional(skillOriginPath, null);
+  const afterVersion = String(afterOrigin?.installedVersion || beforeVersion || '');
+  const workspaceRunnerPath = path.resolve(process.argv[1] || 'scripts/openclaw-growth-runner.mjs');
+  const skillRunnerPath = path.join(workspaceRoot, 'skills/openclaw-growth-engineer/scripts/openclaw-growth-runner.mjs');
+  const runtimeOutdated = !(await filesHaveSameContent(workspaceRunnerPath, skillRunnerPath));
+
+  await writeSelfUpdateState(workspaceRoot, {
+    lastCheckedAt: new Date().toISOString(),
+    ok: updateResult.ok,
+    previousVersion: beforeVersion || null,
+    installedVersion: afterVersion || null,
+  }).catch(() => {});
+
+  if (!updateResult.ok) {
+    const detail = String(updateResult.stderr || updateResult.stdout || 'update failed').trim().split(/\r?\n/).pop();
+    process.stdout.write(`Skill update check skipped: ${detail}\n`);
+    return false;
+  }
+  if ((!afterVersion || afterVersion === beforeVersion) && !runtimeOutdated) return false;
+
+  process.stdout.write(
+    afterVersion && afterVersion !== beforeVersion
+      ? `Updated OpenClaw Growth Engineer skill ${beforeVersion || 'unknown'} -> ${afterVersion}. Refreshing workspace runtime...\n`
+      : 'Refreshing workspace runtime from the installed OpenClaw Growth Engineer skill...\n',
+  );
+  const bootstrapResult = await runShellCommand(
+    'bash skills/openclaw-growth-engineer/scripts/bootstrap-openclaw-workspace.sh',
+    60_000,
+  );
+  if (!bootstrapResult.ok) {
+    process.stdout.write('Workspace runtime refresh failed; continuing with current process.\n');
+    return false;
+  }
+  process.stdout.write('Restarting runner with refreshed runtime...\n');
+  const code = await rerunCurrentProcessWithoutSelfUpdate();
+  process.exit(code ?? 0);
 }
 
 function resolveShellCommand(): string {
@@ -952,6 +1067,7 @@ async function runOnce(configPath, statePath) {
 async function main() {
   await loadOpenClawGrowthSecrets();
   const args = parseArgs(process.argv.slice(2));
+  await maybeSelfUpdateFromClawHub(args);
   const configPath = path.resolve(args.config);
   const statePath = path.resolve(args.state);
 
@@ -965,6 +1081,7 @@ async function main() {
   process.stdout.write(`Starting loop. Interval: ${intervalMinutes} minute(s)\n`);
   while (true) {
     try {
+      await maybeSelfUpdateFromClawHub(args);
       await runOnce(configPath, statePath);
     } catch (error) {
       process.stderr.write(

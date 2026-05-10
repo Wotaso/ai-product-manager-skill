@@ -20,6 +20,7 @@ Options:
   --config <file>      Config path (default: ${DEFAULT_CONFIG_PATH})
   --timeout-ms <ms>    Live check timeout in milliseconds (default: ${DEFAULT_TIMEOUT_MS})
   --json               Print JSON (default)
+  --progress-json      Emit machine-readable connector progress events on stderr
   --help, -h           Show help
 `);
     process.exit(exitCode);
@@ -29,6 +30,7 @@ function parseArgs(argv) {
         config: DEFAULT_CONFIG_PATH,
         timeoutMs: DEFAULT_TIMEOUT_MS,
         json: true,
+        progressJson: false,
     };
     for (let index = 0; index < argv.length; index += 1) {
         const token = argv[index];
@@ -51,6 +53,9 @@ function parseArgs(argv) {
         else if (token === '--json') {
             args.json = true;
         }
+        else if (token === '--progress-json') {
+            args.progressJson = true;
+        }
         else if (token === '--help' || token === '-h') {
             printHelpAndExit(0);
         }
@@ -66,6 +71,11 @@ function quote(value) {
     }
     return `'${String(value).replace(/'/g, `'\\''`)}'`;
 }
+function emitProgress(enabled, event) {
+    if (!enabled)
+        return;
+    process.stderr.write(`OPENCLAW_PROGRESS ${JSON.stringify(event)}\n`);
+}
 function runShell(command, options = {}) {
     return new Promise((resolve) => {
         const child = spawn('/bin/sh', ['-lc', command], {
@@ -75,6 +85,7 @@ function runShell(command, options = {}) {
         });
         let stdout = '';
         let stderr = '';
+        let stderrBuffer = '';
         const timer = setTimeout(() => {
             child.kill('SIGTERM');
         }, options.timeoutMs || DEFAULT_TIMEOUT_MS);
@@ -82,7 +93,15 @@ function runShell(command, options = {}) {
             stdout += String(chunk);
         });
         child.stderr.on('data', (chunk) => {
-            stderr += String(chunk);
+            const text = String(chunk);
+            stderr += text;
+            if (options.onStderrLine) {
+                stderrBuffer += text;
+                const lines = stderrBuffer.split(/\r?\n/);
+                stderrBuffer = lines.pop() || '';
+                for (const line of lines)
+                    options.onStderrLine(line);
+            }
         });
         child.on('error', (error) => {
             clearTimeout(timer);
@@ -90,6 +109,8 @@ function runShell(command, options = {}) {
         });
         child.on('close', (code) => {
             clearTimeout(timer);
+            if (options.onStderrLine && stderrBuffer.trim())
+                options.onStderrLine(stderrBuffer.trim());
             resolve({ ok: code === 0, code, stdout, stderr });
         });
     });
@@ -118,7 +139,7 @@ function isConfiguredRepo(value) {
     const repo = String(value || '').trim();
     return Boolean(repo && repo !== 'owner/repo' && /^[^/\s]+\/[^/\s]+$/.test(repo));
 }
-async function runPreflight(configPath, timeoutMs) {
+async function runPreflight(configPath, timeoutMs, progressJson = false) {
     const command = [
         'node',
         'scripts/openclaw-growth-preflight.mjs',
@@ -128,8 +149,17 @@ async function runPreflight(configPath, timeoutMs) {
         '--timeout-ms',
         String(timeoutMs),
         '--json',
+        ...(progressJson ? ['--progress-json'] : []),
     ].join(' ');
-    const result = await runShell(command, { timeoutMs: Math.max(timeoutMs + 5_000, 20_000) });
+    const result = await runShell(command, {
+        timeoutMs: Math.max(timeoutMs + 5_000, 20_000),
+        onStderrLine: progressJson
+            ? (line) => {
+                if (line.startsWith('OPENCLAW_PROGRESS '))
+                    process.stderr.write(`${line}\n`);
+            }
+            : undefined,
+    });
     const output = result.stdout.trim();
     if (!output) {
         return {
@@ -293,8 +323,14 @@ async function main() {
     const args = parseArgs(process.argv.slice(2));
     const configPath = path.resolve(args.config);
     const config = await readJson(configPath);
-    const preflight = await runPreflight(configPath, args.timeoutMs);
+    const preflight = await runPreflight(configPath, args.timeoutMs, args.progressJson);
     const preflightPayload = preflight.payload;
+    emitProgress(args.progressJson, {
+        phase: 'start',
+        key: 'appStoreConnect',
+        label: 'App Store Connect',
+        detail: 'ASC API + web analytics auth',
+    });
     const connectors = preflightPayload
         ? {
             analyticscli: summarizeAnalytics(preflightPayload, config),
@@ -310,6 +346,13 @@ async function main() {
             sentry: connector('unknown', preflight.error || 'Preflight did not run'),
             appStoreConnect: connector('unknown', preflight.error || 'Preflight did not run'),
         };
+    emitProgress(args.progressJson, {
+        phase: 'finish',
+        key: 'appStoreConnect',
+        label: 'App Store Connect',
+        detail: connectors.appStoreConnect?.detail || 'ASC check complete',
+        status: connectors.appStoreConnect?.status === 'connected' ? 'pass' : connectors.appStoreConnect?.status === 'partial' ? 'warn' : 'fail',
+    });
     const values = Object.values(connectors);
     const allConnected = values.every((entry) => entry.status === 'connected');
     const connectorNextActions = values
