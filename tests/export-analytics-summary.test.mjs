@@ -31,6 +31,10 @@ JSON
 fi
 
 if [[ "$*" == *" get onboarding-journey "* ]]; then
+  if [[ "$*" == *"--project project-one"* ]]; then
+    echo 'project one has no onboarding data yet' >&2
+    exit 1
+  fi
   cat <<'JSON'
 {"starters":100,"completedUsers":40,"completionRate":40,"paywallReachedUsers":50,"paywallSkippedUsers":30,"paywallSkipRateFromPaywall":60,"purchasedUsers":4,"purchaseRateFromPaywall":8}
 JSON
@@ -38,6 +42,10 @@ JSON
 fi
 
 if [[ "$*" == *" retention "* ]]; then
+  if [[ "$*" == *"--project project-one"* ]]; then
+    echo 'project one has no retention data yet' >&2
+    exit 1
+  fi
   cat <<'JSON'
 {"cohortSize":100,"days":[{"day":7,"retentionRate":0.05}]}
 JSON
@@ -66,6 +74,7 @@ echo "{}"
     assert.equal(payload.meta.source, 'analyticscli');
     assert.equal(payload.meta.projectScope, 'all_accessible_projects');
     assert.equal(payload.meta.projectsScanned, 2);
+    assert.equal(payload.meta.projects[0].queryWarnings.length, 2);
     assert(payload.signals.length > 0);
   } finally {
     rmSync(tempDir, { recursive: true, force: true });

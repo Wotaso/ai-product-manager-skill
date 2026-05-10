@@ -146,7 +146,7 @@ async function listAnalyticsProjects() {
     const payload = await runJsonCommand('analyticscli', ['projects', 'list', '--format', 'json']);
     return extractProjectChoices(payload);
 }
-async function runOptionalAnalyticsQuery(label, args) {
+async function runOptionalAnalyticsQuery(label, args, options = {}) {
     try {
         return {
             payload: await runJsonCommand('analyticscli', args),
@@ -155,7 +155,7 @@ async function runOptionalAnalyticsQuery(label, args) {
     }
     catch (error) {
         const exitCode = error && typeof error === 'object' && 'exitCode' in error ? error.exitCode : null;
-        if (exitCode === 2) {
+        if (options.softFail || exitCode === 2) {
             return {
                 payload: null,
                 warning: `${label}: ${error instanceof Error ? error.message : String(error)}`,
@@ -175,7 +175,7 @@ async function buildProjectSummary(project, args) {
         '--last',
         args.last,
         '--with-trends',
-    ]);
+    ], { softFail: true });
     const retention = await runOptionalAnalyticsQuery(`${project.label} retention query`, [
         ...baseArgs,
         'retention',
@@ -187,7 +187,7 @@ async function buildProjectSummary(project, args) {
         '90',
         '--last',
         args.last,
-    ]);
+    ], { softFail: true });
     const summary = buildAnalyticsSummary({
         projectId: project.id,
         project: project.label,

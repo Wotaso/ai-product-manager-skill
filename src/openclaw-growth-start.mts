@@ -1243,35 +1243,20 @@ async function ensureAnalyticsProjectConfigured(configPath, explicitProjectId) {
 async function buildProjectSelectionResponse({ configCreated, configPath, projectConfigured, rawError }) {
   const projectList = await listAnalyticsProjects();
   const projects = projectList.projects;
-  const singleProject = projects.length === 1 ? projects[0] : null;
   return {
-    ok: true,
-    phase: 'project_selection_required',
+    ok: false,
+    phase: 'analytics_project_scope_error',
     setupComplete: false,
     configCreated,
     configPath,
     projectConfigured,
-    needsUserInput: true,
-    question:
-      projects.length > 1
-        ? 'Which AnalyticsCLI project should OpenClaw use for this setup?'
-        : 'Which AnalyticsCLI project should OpenClaw use for this setup?',
-    message:
-      projects.length > 1
-        ? 'Multiple AnalyticsCLI projects are available. Ask the user which project to use, then persist it and retry the run.'
-        : singleProject
-          ? 'One AnalyticsCLI project is available. Persist it as the default project and retry the run.'
-          : 'AnalyticsCLI needs a selected project before the first run can query analytics.',
+    needsUserInput: false,
+    question: null,
+    message: 'An AnalyticsCLI command still requires a project pin, but connector setup should use all accessible projects by default.',
     projects,
-    suggestedProjectId: singleProject?.id || null,
-    nextCommand:
-      singleProject
-        ? `node scripts/openclaw-growth-start.mjs --config ${quote(configPath)} --project ${quote(singleProject.id)}`
-        : `node scripts/openclaw-growth-start.mjs --config ${quote(configPath)} --project <project_id>`,
-    alternatePersistCommand:
-      singleProject
-        ? `analyticscli projects select ${singleProject.id}`
-        : 'analyticscli projects select <project_id>',
+    suggestedProjectId: null,
+    nextCommand: `node scripts/openclaw-growth-start.mjs --config ${quote(configPath)}`,
+    alternatePersistCommand: null,
     retryCommand: `node scripts/openclaw-growth-start.mjs --config ${quote(configPath)}`,
     rawError: truncate(rawError, 800),
     projectListError: projectList.ok ? null : truncate(projectList.error, 800),

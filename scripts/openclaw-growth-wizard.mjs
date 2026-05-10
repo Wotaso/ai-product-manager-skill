@@ -800,7 +800,7 @@ function summarizeFailureFix(connector, blockers) {
         if (/revoked|unauthorized|UNAUTHORIZED/i.test(combined)) {
             return 'Paste a fresh AnalyticsCLI readonly CLI token in the wizard, then let setup retest.';
         }
-        return 'Verify the AnalyticsCLI token and selected project, then rerun setup.';
+        return 'Verify the AnalyticsCLI token can list projects. Per-project query failures are reported as warnings and should not block connector setup.';
     }
     if (connector === 'sentry') {
         if (/404|Not Found/i.test(combined)) {
