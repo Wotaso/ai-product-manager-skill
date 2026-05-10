@@ -2013,18 +2013,15 @@ function shouldForceFreshAnalyticsToken(healthByConnector = {}) {
     return ['blocked', 'partial'].includes(String(health?.status || '')) || /revoked|unauthorized|invalid token/i.test(detail);
 }
 async function guideAnalyticsConnector(rl, secrets, options = {}) {
-    printSection('AnalyticsCLI', [
-        'Create a readonly CLI token in the AnalyticsCLI dashboard, then paste it here.',
-        'Open https://dash.analyticscli.com/ in your browser.',
-        'In the sidebar, click Account.',
-        'Select API Keys.',
-        'Click Create Access Token.',
-        'Copy the Readonly CLI Token shown once in the modal.',
-    ]);
-    process.stdout.write('Do not paste the token into chat. Paste it only into this local terminal.\n\n');
+    printSection('AnalyticsCLI');
+    process.stdout.write('Create a readonly CLI token:\n');
+    process.stdout.write('1. Open https://dash.analyticscli.com/\n');
+    process.stdout.write('2. Account -> API Keys\n');
+    process.stdout.write('3. Create Access Token\n');
+    process.stdout.write('4. Copy the Readonly CLI Token and paste it below\n\n');
     const forceFresh = Boolean(options.forceFresh);
     if (forceFresh && process.env.ANALYTICSCLI_ACCESS_TOKEN) {
-        process.stdout.write('A previous AnalyticsCLI token is already stored, but the last health check rejected it. Paste the new token from the dashboard now.\n\n');
+        process.stdout.write('Stored token failed. Paste a new token.\n\n');
     }
     const token = forceFresh
         ? await ask(rl, 'Paste the new AnalyticsCLI readonly CLI token into this local terminal', '')
