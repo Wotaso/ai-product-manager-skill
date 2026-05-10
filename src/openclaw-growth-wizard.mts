@@ -368,6 +368,7 @@ async function askConnectorSelectionByKeys(
 ): Promise<ConnectorKey[]> {
   emitKeypressEvents(process.stdin);
   const wasRaw = process.stdin.isRaw;
+  const wasPaused = process.stdin.isPaused();
   process.stdin.setRawMode(true);
   process.stdin.resume();
 
@@ -383,6 +384,9 @@ async function askConnectorSelectionByKeys(
     const cleanup = () => {
       process.stdin.off('keypress', onKeypress);
       process.stdin.setRawMode(Boolean(wasRaw));
+      if (wasPaused) {
+        process.stdin.pause();
+      }
       process.stdout.write(ANSI.showCursor);
     };
 

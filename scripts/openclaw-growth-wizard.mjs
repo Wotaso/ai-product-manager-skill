@@ -334,6 +334,7 @@ function renderConnectorPicker(cursorIndex, selected, required, healthByConnecto
 async function askConnectorSelectionByKeys(healthByConnector = {}, initialSelected = []) {
     emitKeypressEvents(process.stdin);
     const wasRaw = process.stdin.isRaw;
+    const wasPaused = process.stdin.isPaused();
     process.stdin.setRawMode(true);
     process.stdin.resume();
     let cursorIndex = 0;
@@ -345,6 +346,9 @@ async function askConnectorSelectionByKeys(healthByConnector = {}, initialSelect
         const cleanup = () => {
             process.stdin.off('keypress', onKeypress);
             process.stdin.setRawMode(Boolean(wasRaw));
+            if (wasPaused) {
+                process.stdin.pause();
+            }
             process.stdout.write(ANSI.showCursor);
         };
         const finish = () => {
