@@ -928,28 +928,6 @@ function payloadHasConnectorFailures(payload, connector) {
   return blockers.some((blocker) => !isDeferredGitHubFailure(blocker) && connectorForBlocker(blocker) === connector);
 }
 
-async function askAnalyticsProjectFromSetupPayload(rl, payload) {
-  const projects = Array.isArray(payload?.projects) ? payload.projects : [];
-  if (projects.length === 0) return '';
-
-  process.stdout.write('\nSetup needs one AnalyticsCLI project before it can finish.\n');
-  projects.forEach((project, index) => {
-    const label = project.label || project.name || project.slug || project.id;
-    process.stdout.write(`  ${index + 1}) ${label} (${project.id})\n`);
-  });
-
-  while (true) {
-    const answer = await ask(rl, 'AnalyticsCLI project number or ID', projects.length === 1 ? projects[0].id : '');
-    const numericIndex = Number.parseInt(answer, 10);
-    if (Number.isInteger(numericIndex) && projects[numericIndex - 1]?.id) {
-      return projects[numericIndex - 1].id;
-    }
-    const matchingProject = projects.find((project) => project.id === answer || project.name === answer || project.slug === answer);
-    if (matchingProject?.id) return matchingProject.id;
-    process.stdout.write('Choose one of the listed project numbers, or paste the exact project ID.\n');
-  }
-}
-
 async function askListSelection(rl, label, entries, options: Record<string, any> = {}) {
   const includeManual = Boolean(options.includeManual);
   const includeDefer = Boolean(options.includeDefer);
@@ -1265,8 +1243,8 @@ function buildSetupTestProgressPlan(selected: ConnectorKey[]) {
     },
     {
       key: 'analyticsProject',
-      label: 'AnalyticsCLI project',
-      detail: 'waiting to resolve default analytics project',
+      label: 'AnalyticsCLI scope',
+      detail: 'waiting to check accessible analytics projects',
       status: 'pending',
     },
   ];
@@ -1340,7 +1318,7 @@ async function runImmediateConnectorHealthCheck({
     ...process.env,
     ...secrets,
   };
-  let command = `node scripts/openclaw-growth-start.mjs --config ${quote(configPath)} --setup-only --connectors ${quote(connector)} --only-connectors ${quote(connector)}`;
+  const command = `node scripts/openclaw-growth-start.mjs --config ${quote(configPath)} --setup-only --connectors ${quote(connector)} --only-connectors ${quote(connector)}`;
   let result = await runSetupCommandWithProgress(
     command,
     env,
@@ -1348,20 +1326,6 @@ async function runImmediateConnectorHealthCheck({
     `Checking ${connectorLabel(connector)} immediately after setup...`,
   );
   let payload = parseJsonFromStdout(result.stdout);
-
-  if (connector === 'analytics' && payload?.needsUserInput && payload.phase === 'analytics_project_selection_required') {
-    const projectId = await askAnalyticsProjectFromSetupPayload(rl, payload);
-    if (projectId) {
-      command = `${command} --project ${quote(projectId)}`;
-      result = await runSetupCommandWithProgress(
-        command,
-        env,
-        [connector],
-        'Checking AnalyticsCLI with the selected project...',
-      );
-      payload = parseJsonFromStdout(result.stdout);
-    }
-  }
 
   if (connector === 'asc') {
     try {
@@ -2581,23 +2545,9 @@ async function runConnectorSetupWizard(args) {
       ...process.env,
       ...secrets,
     };
-    let command = `node scripts/openclaw-growth-start.mjs --config ${quote(args.config)} --setup-only --connectors ${quote(selected.join(','))}`;
+    const command = `node scripts/openclaw-growth-start.mjs --config ${quote(args.config)} --setup-only --connectors ${quote(selected.join(','))}`;
     let setupResult = await runSetupCommandWithProgress(command, env, selected, 'Testing connector setup...');
     let setupPayload = parseJsonFromStdout(setupResult.stdout);
-
-    if (setupPayload?.needsUserInput && setupPayload.phase === 'analytics_project_selection_required') {
-      const projectId = await askAnalyticsProjectFromSetupPayload(rl, setupPayload);
-      if (projectId) {
-        command = `${command} --project ${quote(projectId)}`;
-        setupResult = await runSetupCommandWithProgress(
-          command,
-          env,
-          selected,
-          'Testing connector setup with the selected AnalyticsCLI project...',
-        );
-        setupPayload = parseJsonFromStdout(setupResult.stdout);
-      }
-    }
 
     if (sentryAccounts.length > 0 && await upsertSentryAccountsConfig(args.config, sentryAccounts)) {
       process.stdout.write(`Sentry-compatible account config is up to date in ${args.config}.\n`);

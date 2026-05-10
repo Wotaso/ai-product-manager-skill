@@ -398,7 +398,7 @@ function buildNoSignalsError(sourceEntries) {
     'Sources:',
     ...summaries.map((summary) => `- ${summary}`),
     'Next steps:',
-    '- Select or pass an AnalyticsCLI project (`analyticscli projects select <id>` or exporter `--project <id>`).',
+    '- Leave AnalyticsCLI project scope unpinned by default; the exporter scans all accessible projects unless a task explicitly needs `--project <id>`.',
     '- Verify the selected project has release analytics events in the requested window, or enable additional sources such as ASC CLI, RevenueCat, Sentry, or feedback.',
   ].join('\n');
 }

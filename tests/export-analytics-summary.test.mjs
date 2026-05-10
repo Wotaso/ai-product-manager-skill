@@ -18,11 +18,17 @@ test('export-analytics-summary passes the wizard token to analyticscli commands'
     `#!/usr/bin/env bash
 set -euo pipefail
 
-if [[ "\${1:-}" != "--readonly-token" || "\${2:-}" != "fresh-token" ]]; then
+if [[ "\${ANALYTICSCLI_ACCESS_TOKEN:-}" != "fresh-token" ]]; then
   echo '{"error":{"code":"UNAUTHORIZED","message":"Token has been revoked"}}' >&2
   exit 1
 fi
-shift 2
+
+if [[ "$*" == "projects list --format json" ]]; then
+  cat <<'JSON'
+{"projects":[{"id":"project-one","name":"Project One"},{"id":"project-two","name":"Project Two"}]}
+JSON
+  exit 0
+fi
 
 if [[ "$*" == *" get onboarding-journey "* ]]; then
   cat <<'JSON'
@@ -58,6 +64,8 @@ echo "{}"
     assert.equal(result.status, 0, `${result.stderr}\n${result.stdout}`);
     const payload = JSON.parse(result.stdout);
     assert.equal(payload.meta.source, 'analyticscli');
+    assert.equal(payload.meta.projectScope, 'all_accessible_projects');
+    assert.equal(payload.meta.projectsScanned, 2);
     assert(payload.signals.length > 0);
   } finally {
     rmSync(tempDir, { recursive: true, force: true });

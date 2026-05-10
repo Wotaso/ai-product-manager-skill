@@ -16,7 +16,7 @@ Usage:
   node scripts/export-analytics-summary.mjs [options]
 
 Options:
-  --project <id>       AnalyticsCLI project ID (optional when a default project is selected)
+  --project <id>       Optional AnalyticsCLI project ID pin (default: all visible projects)
   --last <duration>    Relative time window like 30d (default: 30d)
   --out <file>         Write JSON to file instead of stdout
   --include-debug      Include development/debug data
@@ -112,6 +112,40 @@ function buildBaseArgs(input) {
     }
     return args;
 }
+function extractProjectChoices(payload) {
+    const candidates = (() => {
+        if (Array.isArray(payload))
+            return payload;
+        if (payload && typeof payload === 'object') {
+            if (Array.isArray(payload.projects))
+                return payload.projects;
+            if (Array.isArray(payload.items))
+                return payload.items;
+            if (Array.isArray(payload.data))
+                return payload.data;
+        }
+        return [];
+    })();
+    const byId = new Map();
+    for (const candidate of candidates) {
+        if (!candidate || typeof candidate !== 'object')
+            continue;
+        const id = String(candidate.id || candidate.projectId || candidate.project_id || '').trim();
+        if (!id)
+            continue;
+        const name = String(candidate.name || candidate.displayName || '').trim();
+        const slug = String(candidate.slug || '').trim();
+        byId.set(id, {
+            id,
+            label: name || slug || id,
+        });
+    }
+    return [...byId.values()].sort((a, b) => String(a.label).localeCompare(String(b.label)));
+}
+async function listAnalyticsProjects() {
+    const payload = await runJsonCommand('analyticscli', ['projects', 'list', '--format', 'json']);
+    return extractProjectChoices(payload);
+}
 async function runOptionalAnalyticsQuery(label, args) {
     try {
         return {
@@ -130,9 +164,102 @@ async function runOptionalAnalyticsQuery(label, args) {
         throw new Error(`${label} failed: ${error instanceof Error ? error.message : String(error)}`);
     }
 }
+async function buildProjectSummary(project, args) {
+    const baseArgs = buildBaseArgs({ ...args, project: project.id });
+    const onboardingJourney = await runOptionalAnalyticsQuery(`${project.label} onboarding journey query`, [
+        ...baseArgs,
+        'get',
+        'onboarding-journey',
+        '--within',
+        'user',
+        '--last',
+        args.last,
+        '--with-trends',
+    ]);
+    const retention = await runOptionalAnalyticsQuery(`${project.label} retention query`, [
+        ...baseArgs,
+        'retention',
+        '--anchor-event',
+        'onboarding:start',
+        '--days',
+        '1,3,7',
+        '--max-age-days',
+        '90',
+        '--last',
+        args.last,
+    ]);
+    const summary = buildAnalyticsSummary({
+        projectId: project.id,
+        project: project.label,
+        last: args.last,
+        onboardingJourney: onboardingJourney.payload,
+        retention: retention.payload,
+        maxSignals: args.maxSignals,
+    });
+    const queryWarnings = [onboardingJourney.warning, retention.warning].filter(Boolean);
+    if (queryWarnings.length > 0) {
+        summary.meta.queryWarnings = queryWarnings;
+    }
+    summary.meta.projectId = project.id;
+    summary.meta.projectLabel = project.label;
+    return summary;
+}
+function priorityRank(priority) {
+    if (priority === 'high')
+        return 3;
+    if (priority === 'medium')
+        return 2;
+    return 1;
+}
+function coerceNumber(value) {
+    const numeric = typeof value === 'number' ? value : Number(value);
+    return Number.isFinite(numeric) ? numeric : 0;
+}
+function combineProjectSummaries(projects, summaries, input) {
+    const signals = summaries.flatMap((summary) => (Array.isArray(summary.signals) ? summary.signals : []).map((signal) => ({
+        ...signal,
+        id: `${summary.meta?.projectId || summary.project}:${signal.id}`,
+        project: summary.project,
+        evidence: [`Project: ${summary.project}`, ...(Array.isArray(signal.evidence) ? signal.evidence : [])],
+    })));
+    signals.sort((a, b) => {
+        const priorityDelta = priorityRank(String(b.priority || 'low')) - priorityRank(String(a.priority || 'low'));
+        if (priorityDelta !== 0)
+            return priorityDelta;
+        return Math.abs(coerceNumber(b.delta_percent ?? b.deltaPercent)) - Math.abs(coerceNumber(a.delta_percent ?? a.deltaPercent));
+    });
+    return {
+        project: 'all_accessible_projects',
+        window: summaries[0]?.window || `last_${input.last}`,
+        signals: signals.slice(0, Math.max(1, Number(input.maxSignals) || 4)),
+        meta: {
+            generatedAt: new Date().toISOString(),
+            source: 'analyticscli',
+            projectScope: 'all_accessible_projects',
+            projectsScanned: projects.length,
+            projects: summaries.map((summary) => ({
+                id: summary.meta?.projectId || null,
+                label: summary.meta?.projectLabel || summary.project,
+                signalCount: Array.isArray(summary.signals) ? summary.signals.length : 0,
+                queryWarnings: summary.meta?.queryWarnings || [],
+            })),
+        },
+    };
+}
 async function main() {
     await loadOpenClawGrowthSecrets();
     const args = parseArgs(process.argv.slice(2));
+    if (!args.project) {
+        const projects = await listAnalyticsProjects();
+        if (projects.length > 0) {
+            const summaries = [];
+            for (const project of projects) {
+                summaries.push(await buildProjectSummary(project, args));
+            }
+            await writeJsonOutput(args.out, combineProjectSummaries(projects, summaries, args));
+            return;
+        }
+    }
     const baseArgs = buildBaseArgs(args);
     const onboardingJourney = await runOptionalAnalyticsQuery('onboarding journey query', [
         ...baseArgs,

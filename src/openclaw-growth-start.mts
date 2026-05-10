@@ -4,7 +4,6 @@ import { existsSync, promises as fs } from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import { spawn } from 'node:child_process';
-import { createInterface } from 'node:readline/promises';
 import { getActionMode, getDefaultSourceCommand } from './openclaw-growth-shared.mjs';
 import { loadOpenClawGrowthSecrets } from './openclaw-growth-env.mjs';
 
@@ -39,7 +38,7 @@ Usage:
 
 Options:
   --config <file>        Config path (default: ${DEFAULT_CONFIG_PATH})
-  --project <id>         AnalyticsCLI project ID to use for generated source commands
+  --project <id>         Optional AnalyticsCLI project ID pin for generated source commands
   --asc-app <id>         Optional ASC app ID filter (defaults to all accessible apps)
   --connectors <list>    Install/enable connector helpers (analytics,github,asc,revenuecat,sentry,all)
   --only-connectors <list>
@@ -1198,44 +1197,21 @@ function configHasEnabledAnalyticsSource(config) {
   return Boolean(config?.sources?.analytics && config.sources.analytics.enabled !== false);
 }
 
-async function askAnalyticsProjectChoice(projects) {
-  const rl = createInterface({ input: process.stdin, output: process.stdout });
-  try {
-    process.stdout.write('\nSelect the AnalyticsCLI project for product analytics:\n');
-    projects.forEach((project, index) => {
-      process.stdout.write(`  ${index + 1}) ${project.label} (${project.id})\n`);
-    });
-    while (true) {
-      const answer = (await rl.question('Project number or project ID: ')).trim();
-      if (!answer) continue;
-      const numericIndex = Number.parseInt(answer, 10);
-      if (Number.isInteger(numericIndex) && projects[numericIndex - 1]) {
-        return projects[numericIndex - 1].id;
-      }
-      const matchingProject = projects.find((project) => project.id === answer || project.name === answer || project.slug === answer);
-      if (matchingProject) return matchingProject.id;
-      process.stdout.write('Choose one of the listed project numbers, or paste the exact project ID.\n');
-    }
-  } finally {
-    rl.close();
-  }
-}
-
 async function ensureAnalyticsProjectConfigured(configPath, explicitProjectId) {
   if (normalizeString(explicitProjectId)) {
     const changed = await configureAnalyticsProject(configPath, explicitProjectId);
-    return { ok: true, configured: true, changed, projectId: explicitProjectId, needsUserInput: false };
+    return { ok: true, configured: true, changed, projectId: explicitProjectId, projectScope: 'single_project', needsUserInput: false };
   }
 
   const config = await readJson(configPath);
   if (!configHasEnabledAnalyticsSource(config)) {
-    return { ok: true, configured: false, changed: false, projectId: null, needsUserInput: false };
+    return { ok: true, configured: false, changed: false, projectId: null, projectScope: 'disabled', needsUserInput: false };
   }
 
   const configuredProjectId = normalizeString(config.project?.analyticsProjectId);
   if (configuredProjectId) {
     const changed = await configureAnalyticsProject(configPath, configuredProjectId);
-    return { ok: true, configured: true, changed, projectId: configuredProjectId, needsUserInput: false };
+    return { ok: true, configured: true, changed, projectId: configuredProjectId, projectScope: 'single_project', needsUserInput: false };
   }
 
   const projectList = await listAnalyticsProjects();
@@ -1245,30 +1221,22 @@ async function ensureAnalyticsProjectConfigured(configPath, explicitProjectId) {
       configured: false,
       changed: false,
       projectId: null,
+      projectScope: 'all_accessible_projects',
+      projectCount: null,
       needsUserInput: false,
       warning: truncate(projectList.error, 800),
     };
   }
 
-  if (projectList.projects.length === 1) {
-    const projectId = projectList.projects[0].id;
-    const changed = await configureAnalyticsProject(configPath, projectId);
-    return { ok: true, configured: true, changed, projectId, projects: projectList.projects, needsUserInput: false };
-  }
-
-  if (projectList.projects.length > 1 && process.stdin.isTTY && process.stdout.isTTY) {
-    const projectId = await askAnalyticsProjectChoice(projectList.projects);
-    const changed = await configureAnalyticsProject(configPath, projectId);
-    return { ok: true, configured: true, changed, projectId, projects: projectList.projects, needsUserInput: false };
-  }
-
   return {
-    ok: false,
+    ok: true,
     configured: false,
     changed: false,
     projectId: null,
+    projectScope: 'all_accessible_projects',
+    projectCount: projectList.projects.length,
     projects: projectList.projects,
-    needsUserInput: true,
+    needsUserInput: false,
   };
 }
 
@@ -1487,52 +1455,23 @@ async function main() {
   emitProgress(args.progressJson, {
     phase: 'start',
     key: 'analyticsProject',
-    label: 'AnalyticsCLI project',
-    detail: 'resolving default analytics project',
+    label: 'AnalyticsCLI scope',
+    detail: 'checking accessible analytics projects',
   });
   const analyticsProjectSetup = await ensureAnalyticsProjectConfigured(configPath, args.project);
   emitProgress(args.progressJson, {
     phase: 'finish',
     key: 'analyticsProject',
-    label: 'AnalyticsCLI project',
+    label: 'AnalyticsCLI scope',
     detail: analyticsProjectSetup.ok
       ? analyticsProjectSetup.projectId
         ? `using ${analyticsProjectSetup.projectId}`
-        : 'no project change needed'
-      : 'project selection required',
+        : analyticsProjectSetup.projectScope === 'all_accessible_projects'
+          ? `using all accessible projects (${analyticsProjectSetup.projectCount ?? 'unknown'} found)`
+          : 'no project pin needed'
+      : 'analytics scope check failed',
     status: analyticsProjectSetup.ok ? 'pass' : 'fail',
   });
-  if (!analyticsProjectSetup.ok) {
-    process.stdout.write(
-      `${JSON.stringify(
-        {
-          ok: false,
-          phase: 'analytics_project_selection_required',
-          configCreated: configResult.created,
-          configPath,
-          projectConfigured: false,
-          ascAppConfigured: ascAppConfiguredFromArg,
-          connectorSetup,
-          needsUserInput: analyticsProjectSetup.needsUserInput,
-          question: 'Which AnalyticsCLI project should OpenClaw use for product analytics?',
-          projects: analyticsProjectSetup.projects || [],
-          nextCommand: `node scripts/openclaw-growth-start.mjs --config ${quote(configPath)} --setup-only --connectors ${quote(args.connectors.join(','))} --project <project_id>`,
-          blockers: [
-            {
-              check: 'connection:analytics_project',
-              detail: 'AnalyticsCLI auth works, but multiple projects are available and setup is running non-interactively.',
-              remediation: 'Run the connector wizard in a terminal so it can ask for the project, or rerun start with --project <project_id>.',
-            },
-          ],
-        },
-        null,
-        2,
-      )}\n`,
-    );
-    process.exitCode = 1;
-    return;
-  }
-
   emitProgress(args.progressJson, {
     phase: 'start',
     key: 'ascApp',
