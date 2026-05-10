@@ -734,8 +734,117 @@ function printConnectorSetupProgress(payload) {
     const connectorSetup = Array.isArray(payload?.connectorSetup) ? payload.connectorSetup : [];
     const okConnectors = connectorSetup.filter((entry) => entry?.ok).map((entry) => entry.connector).filter(Boolean);
     if (okConnectors.length > 0) {
-        process.stdout.write(`Connected: ${okConnectors.join(', ')}.\n`);
+        process.stdout.write(`Configured locally: ${okConnectors.map(connectorTitle).join(', ')}.\n`);
     }
+}
+function checkConnectorKey(check) {
+    return connectorFromCheckName(`${check?.name || ''} ${check?.detail || ''}`);
+}
+function getConfiguredConnectorKeys(payload) {
+    const connectorSetup = Array.isArray(payload?.connectorSetup) ? payload.connectorSetup : [];
+    return new Set(connectorSetup
+        .filter((entry) => entry?.ok)
+        .map((entry) => entry.connector)
+        .filter(Boolean));
+}
+function getPassingConnectorKeys(payload, failedConnectors = new Set()) {
+    const checks = Array.isArray(payload?.checks) ? payload.checks : [];
+    const configuredConnectors = getConfiguredConnectorKeys(payload);
+    const passing = new Set();
+    for (const check of checks) {
+        if (check?.status !== 'pass')
+            continue;
+        const connector = checkConnectorKey(check);
+        if (!connector || failedConnectors.has(connector))
+            continue;
+        if (configuredConnectors.size > 0 && !configuredConnectors.has(connector))
+            continue;
+        passing.add(connector);
+    }
+    return orderConnectors([...passing]);
+}
+function summarizeFailureReason(detail) {
+    const text = String(detail || '').replace(/\s+/g, ' ').trim();
+    if (/token has been revoked/i.test(text))
+        return 'token has been revoked';
+    if (/unauthorized|UNAUTHORIZED/i.test(text))
+        return 'token is unauthorized';
+    if (/Sentry API 404|Not Found/i.test(text))
+        return 'API returned 404 Not Found';
+    if (/project\.githubRepo is missing/i.test(text))
+        return 'GitHub repo is not configured';
+    if (/missing/i.test(text))
+        return text;
+    return cleanHealthDetail(text);
+}
+function summarizeFailureFix(connector, blockers) {
+    const combined = blockers.map((blocker) => `${blocker.check || ''} ${blocker.detail || ''}`).join('\n');
+    if (connector === 'analytics') {
+        if (/revoked|unauthorized|UNAUTHORIZED/i.test(combined)) {
+            return 'Paste a fresh AnalyticsCLI readonly token in the wizard, then let setup retest. If you use staging/local, also verify ANALYTICSCLI_API_URL.';
+        }
+        return 'Verify the AnalyticsCLI token and selected project, then rerun setup.';
+    }
+    if (connector === 'sentry') {
+        if (/404|Not Found/i.test(combined)) {
+            return 'Rerun Sentry/GlitchTip setup and use the correct base URL + discovered org. If projects are discovered, accept/select those projects.';
+        }
+        return 'Verify the Sentry/GlitchTip token, base URL, org, and project list, then rerun setup.';
+    }
+    if (connector === 'github') {
+        return 'Set project.githubRepo only if you want GitHub issue/PR delivery now; otherwise leave GitHub deferred.';
+    }
+    if (connector === 'revenuecat') {
+        return 'Paste a RevenueCat v2 secret API key with read-only project permissions, then rerun setup.';
+    }
+    if (connector === 'asc') {
+        return 'Rerun ASC setup and verify ASC credentials, key role access, and `asc apps list --output json`.';
+    }
+    return blockers.find((blocker) => blocker.remediation)?.remediation || 'Fix the failing configuration and rerun setup.';
+}
+function groupBlockersByConnector(blockers) {
+    const groups = new Map();
+    for (const blocker of blockers) {
+        if (isDeferredGitHubFailure(blocker))
+            continue;
+        const connector = connectorFromCheckName(`${blocker?.check || ''} ${blocker?.detail || ''}`) || 'setup';
+        const entries = groups.get(connector) || [];
+        entries.push(blocker);
+        groups.set(connector, entries);
+    }
+    return groups;
+}
+function printDeferredSetupNotes(blockers) {
+    const deferredGitHub = blockers.some((blocker) => isDeferredGitHubFailure(blocker));
+    if (!deferredGitHub)
+        return;
+    process.stdout.write('\nDeferred / optional:\n');
+    process.stdout.write('- GitHub: repo is not configured. This is only needed for GitHub issue/PR delivery.\n');
+}
+function printConciseSetupBlockers(payload, command) {
+    const blockers = Array.isArray(payload?.blockers) ? payload.blockers : [];
+    const groups = groupBlockersByConnector(blockers);
+    const failedConnectors = new Set([...groups.keys()].filter((key) => key !== 'setup'));
+    const passingConnectors = getPassingConnectorKeys(payload, failedConnectors);
+    if (passingConnectors.length > 0) {
+        process.stdout.write(`Live checks passed: ${passingConnectors.map(connectorTitle).join(', ')}.\n`);
+    }
+    if (groups.size > 0) {
+        process.stdout.write('\nNeeds fix:\n');
+        for (const [connector, connectorBlockers] of groups.entries()) {
+            const primary = connectorBlockers[0] || {};
+            const reasons = [
+                ...new Set(connectorBlockers
+                    .map((blocker) => summarizeFailureReason(blocker.detail || blocker.check))
+                    .filter(Boolean)),
+            ];
+            process.stdout.write(`- ${connectorTitle(connector)}: ${summarizeFailureReason(primary.detail || primary.check)}\n`);
+            process.stdout.write(`  Why: ${reasons.join('; ')}.\n`);
+            process.stdout.write(`  Fix: ${summarizeFailureFix(connector, connectorBlockers)}\n`);
+        }
+    }
+    printDeferredSetupNotes(blockers);
+    process.stdout.write(`\nRerun: ${command}\n`);
 }
 async function askAnalyticsProjectFromSetupPayload(rl, payload) {
     const projects = Array.isArray(payload?.projects) ? payload.projects : [];
@@ -793,14 +902,7 @@ function printSetupFailure({ result, payload, command }) {
     printConnectorSetupProgress(payload);
     const blockers = Array.isArray(payload?.blockers) ? payload.blockers : [];
     if (blockers.length > 0) {
-        process.stdout.write('\nNext steps:\n');
-        blockers.forEach((blocker, index) => {
-            process.stdout.write(`${index + 1}. ${blocker.detail || blocker.check || 'Configuration check failed'}\n`);
-            if (blocker.remediation) {
-                process.stdout.write(`   Fix: ${blocker.remediation}\n`);
-            }
-        });
-        process.stdout.write(`\nAfter fixing the configuration, rerun: ${command}\n`);
+        printConciseSetupBlockers(payload, command);
         return;
     }
     const reason = result.code === null ? 'setup command did not report an exit code' : `setup command exited with code ${result.code}`;

@@ -1609,6 +1609,7 @@ async function main() {
           ascAppScope: ascAppSetup.appScope || null,
           githubRepo: configResult.githubRepo,
           connectorSetup,
+          checks: preflightPayload.checks || [],
           blockers,
         },
         null,
