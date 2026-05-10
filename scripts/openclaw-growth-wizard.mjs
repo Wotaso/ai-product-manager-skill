@@ -802,30 +802,42 @@ function summarizeFailureFix(connector, blockers) {
     }
     return blockers.find((blocker) => blocker.remediation)?.remediation || 'Fix the failing configuration and rerun setup.';
 }
-function groupBlockersByConnector(blockers) {
+function connectorForBlocker(blocker) {
+    return connectorFromCheckName(`${blocker?.check || ''} ${blocker?.detail || ''}`) || 'setup';
+}
+function groupBlockersByConnector(blockers, focusConnectors = null) {
     const groups = new Map();
+    const focus = focusConnectors ? new Set(focusConnectors) : null;
     for (const blocker of blockers) {
         if (isDeferredGitHubFailure(blocker))
             continue;
-        const connector = connectorFromCheckName(`${blocker?.check || ''} ${blocker?.detail || ''}`) || 'setup';
+        const connector = connectorForBlocker(blocker);
+        if (focus && !focus.has(connector))
+            continue;
         const entries = groups.get(connector) || [];
         entries.push(blocker);
         groups.set(connector, entries);
     }
     return groups;
 }
-function printDeferredSetupNotes(blockers) {
+function printDeferredSetupNotes(blockers, focusConnectors = null) {
+    const focus = focusConnectors ? new Set(focusConnectors) : null;
     const deferredGitHub = blockers.some((blocker) => isDeferredGitHubFailure(blocker));
-    if (!deferredGitHub)
+    if (!deferredGitHub || (focus && !focus.has('github')))
         return;
     process.stdout.write('\nDeferred / optional:\n');
     process.stdout.write('- GitHub: repo is not configured. This is only needed for GitHub issue/PR delivery.\n');
 }
-function printConciseSetupBlockers(payload, command) {
+function printConciseSetupBlockers(payload, command, options = {}) {
     const blockers = Array.isArray(payload?.blockers) ? payload.blockers : [];
-    const groups = groupBlockersByConnector(blockers);
+    const focusConnectors = Array.isArray(options.focusConnectors) ? options.focusConnectors : null;
+    const groups = groupBlockersByConnector(blockers, focusConnectors);
     const failedConnectors = new Set([...groups.keys()].filter((key) => key !== 'setup'));
-    const passingConnectors = getPassingConnectorKeys(payload, failedConnectors);
+    let passingConnectors = getPassingConnectorKeys(payload, failedConnectors);
+    if (focusConnectors) {
+        const focus = new Set(focusConnectors);
+        passingConnectors = passingConnectors.filter((connector) => focus.has(connector));
+    }
     if (passingConnectors.length > 0) {
         process.stdout.write(`Live checks passed: ${passingConnectors.map(connectorTitle).join(', ')}.\n`);
     }
@@ -843,8 +855,14 @@ function printConciseSetupBlockers(payload, command) {
             process.stdout.write(`  Fix: ${summarizeFailureFix(connector, connectorBlockers)}\n`);
         }
     }
-    printDeferredSetupNotes(blockers);
-    process.stdout.write(`\nRerun: ${command}\n`);
+    printDeferredSetupNotes(blockers, focusConnectors);
+    if (groups.size > 0 || !options.hideRerunWhenClean) {
+        process.stdout.write(`\nRerun: ${command}\n`);
+    }
+}
+function payloadHasConnectorFailures(payload, connector) {
+    const blockers = Array.isArray(payload?.blockers) ? payload.blockers : [];
+    return blockers.some((blocker) => !isDeferredGitHubFailure(blocker) && connectorForBlocker(blocker) === connector);
 }
 async function askAnalyticsProjectFromSetupPayload(rl, payload) {
     const projects = Array.isArray(payload?.projects) ? payload.projects : [];
@@ -1225,6 +1243,49 @@ async function runSetupCommandWithProgress(command, env, selected, message) {
     }, { env });
     renderHealthProgress(plan, 'Connector setup test finished.', 'Connector setup test');
     return result;
+}
+async function runImmediateConnectorHealthCheck({ rl, configPath, connector, secrets, sentryAccounts = [], }) {
+    if (connector === 'sentry' && sentryAccounts.length > 0) {
+        await upsertSentryAccountsConfig(configPath, sentryAccounts);
+    }
+    const env = {
+        ...process.env,
+        ...secrets,
+    };
+    let command = `node scripts/openclaw-growth-start.mjs --config ${quote(configPath)} --setup-only --connectors ${quote(connector)}`;
+    let result = await runSetupCommandWithProgress(command, env, [connector], `Checking ${connectorLabel(connector)} immediately after setup...`);
+    let payload = parseJsonFromStdout(result.stdout);
+    if (connector === 'analytics' && payload?.needsUserInput && payload.phase === 'analytics_project_selection_required') {
+        const projectId = await askAnalyticsProjectFromSetupPayload(rl, payload);
+        if (projectId) {
+            command = `${command} --project ${quote(projectId)}`;
+            result = await runSetupCommandWithProgress(command, env, [connector], 'Checking AnalyticsCLI with the selected project...');
+            payload = parseJsonFromStdout(result.stdout);
+        }
+    }
+    if (connector === 'asc') {
+        try {
+            const ascWebAuthChanged = await ensureAscWebAnalyticsAuth();
+            if (ascWebAuthChanged) {
+                result = await runSetupCommandWithProgress(command, env, [connector], 'Retesting ASC after web analytics login...');
+                payload = parseJsonFromStdout(result.stdout);
+            }
+        }
+        catch (error) {
+            process.stdout.write(`ASC web analytics still needs attention: ${error instanceof Error ? error.message : String(error)}\n`);
+        }
+    }
+    if (payloadHasConnectorFailures(payload, connector)) {
+        process.stdout.write(`\n${connectorLabel(connector)} needs attention before continuing.\n`);
+        printConciseSetupBlockers(payload, command, {
+            focusConnectors: [connector],
+            hideRerunWhenClean: true,
+        });
+        const retry = await askYesNo(rl, `Re-enter ${connectorLabel(connector)} configuration now?`, true);
+        return { ok: false, retry, result, payload };
+    }
+    process.stdout.write(`\n${connectorLabel(connector)} immediate health check passed or is only waiting on optional/deferred context.\n`);
+    return { ok: true, retry: false, result, payload };
 }
 async function offerConfiguredConnectionFixes(rl, configPath, selected) {
     if (!(await fileExists(configPath)))
@@ -2212,24 +2273,75 @@ async function runConnectorSetupWizard(args) {
         const secrets = {};
         let sentryAccounts = [];
         if (selected.includes('analytics')) {
-            clearTerminal();
-            await guideAnalyticsConnector(rl, secrets);
+            while (true) {
+                clearTerminal();
+                await guideAnalyticsConnector(rl, secrets);
+                const check = await runImmediateConnectorHealthCheck({
+                    rl,
+                    configPath: args.config,
+                    connector: 'analytics',
+                    secrets,
+                });
+                if (!check.retry)
+                    break;
+            }
         }
         if (selected.includes('github')) {
-            clearTerminal();
-            await guideGitHubConnector(rl, secrets);
+            while (true) {
+                clearTerminal();
+                await guideGitHubConnector(rl, secrets);
+                const check = await runImmediateConnectorHealthCheck({
+                    rl,
+                    configPath: args.config,
+                    connector: 'github',
+                    secrets,
+                });
+                if (!check.retry)
+                    break;
+            }
         }
         if (selected.includes('revenuecat')) {
-            clearTerminal();
-            await guideRevenueCatConnector(rl, secrets);
+            while (true) {
+                clearTerminal();
+                await guideRevenueCatConnector(rl, secrets);
+                const check = await runImmediateConnectorHealthCheck({
+                    rl,
+                    configPath: args.config,
+                    connector: 'revenuecat',
+                    secrets,
+                });
+                if (!check.retry)
+                    break;
+            }
         }
         if (selected.includes('sentry')) {
-            clearTerminal();
-            sentryAccounts = await guideSentryConnector(rl, secrets);
+            while (true) {
+                clearTerminal();
+                sentryAccounts = await guideSentryConnector(rl, secrets);
+                const check = await runImmediateConnectorHealthCheck({
+                    rl,
+                    configPath: args.config,
+                    connector: 'sentry',
+                    secrets,
+                    sentryAccounts,
+                });
+                if (!check.retry)
+                    break;
+            }
         }
         if (selected.includes('asc')) {
-            clearTerminal();
-            await guideAscConnector(rl, secrets);
+            while (true) {
+                clearTerminal();
+                await guideAscConnector(rl, secrets);
+                const check = await runImmediateConnectorHealthCheck({
+                    rl,
+                    configPath: args.config,
+                    connector: 'asc',
+                    secrets,
+                });
+                if (!check.retry)
+                    break;
+            }
         }
         const secretsFile = resolveSecretsFile();
         const wroteSecrets = Object.keys(secrets).length > 0;
