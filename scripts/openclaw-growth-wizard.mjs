@@ -1269,13 +1269,28 @@ function buildUrl(baseUrl, pathname, params = {}) {
     }
     return url;
 }
+function apiListItems(payload) {
+    if (Array.isArray(payload))
+        return payload;
+    if (!payload || typeof payload !== 'object')
+        return [];
+    if (Array.isArray(payload.results))
+        return payload.results;
+    if (Array.isArray(payload.data))
+        return payload.data;
+    if (Array.isArray(payload.projects))
+        return payload.projects;
+    if (Array.isArray(payload.teams))
+        return payload.teams;
+    return [];
+}
 async function discoverSentryProjects({ baseUrl, token, org }) {
     const normalizedOrg = String(org || '').trim();
     const normalizedToken = String(token || '').trim();
     if (!normalizedOrg || !normalizedToken) {
         return { ok: false, projects: [], detail: 'missing org or token' };
     }
-    const fetchJson = async (url) => {
+    const fetchJsonPage = async (url) => {
         const response = await fetch(url, {
             method: 'GET',
             headers: {
@@ -1303,7 +1318,22 @@ async function discoverSentryProjects({ baseUrl, token, org }) {
             };
         }
     };
-    const projectSlugs = (payload) => (Array.isArray(payload) ? payload : [])
+    const fetchJsonList = async (url) => {
+        const items = [];
+        const pages = [];
+        let nextUrl = url;
+        for (let page = 0; nextUrl && page < 10; page += 1) {
+            const result = await fetchJsonPage(nextUrl);
+            pages.push(result.detail);
+            if (!result.ok)
+                return { ...result, payload: items, detail: pages.join('; ') };
+            items.push(...apiListItems(result.payload));
+            const next = result.payload && typeof result.payload === 'object' ? result.payload.next : null;
+            nextUrl = typeof next === 'string' && next.trim() ? new URL(next, `${String(baseUrl || 'https://sentry.io').replace(/\/$/, '')}/`) : null;
+        }
+        return { ok: true, payload: items, detail: pages.join('; ') };
+    };
+    const projectSlugs = (payload) => apiListItems(payload)
         .map((project) => String(project?.slug || project?.name || '').trim())
         .filter(Boolean);
     const attempted = [];
@@ -1311,7 +1341,7 @@ async function discoverSentryProjects({ baseUrl, token, org }) {
         const orgProjectsUrl = buildUrl(baseUrl, `/api/0/organizations/${encodeURIComponent(normalizedOrg)}/projects/`, {
             per_page: 100,
         });
-        const orgProjects = await fetchJson(orgProjectsUrl);
+        const orgProjects = await fetchJsonList(orgProjectsUrl);
         attempted.push(orgProjects.detail);
         if (orgProjects.ok) {
             const projects = projectSlugs(orgProjects.payload);
@@ -1322,16 +1352,16 @@ async function discoverSentryProjects({ baseUrl, token, org }) {
         const teamsUrl = buildUrl(baseUrl, `/api/0/organizations/${encodeURIComponent(normalizedOrg)}/teams/`, {
             per_page: 100,
         });
-        const teams = await fetchJson(teamsUrl);
+        const teams = await fetchJsonList(teamsUrl);
         attempted.push(teams.detail);
         if (teams.ok) {
-            const teamSlugs = (Array.isArray(teams.payload) ? teams.payload : [])
+            const teamSlugs = apiListItems(teams.payload)
                 .map((team) => String(team?.slug || team?.name || '').trim())
                 .filter(Boolean);
             const allTeamProjects = [];
             for (const teamSlug of teamSlugs) {
                 const teamProjectsUrl = buildUrl(baseUrl, `/api/0/teams/${encodeURIComponent(normalizedOrg)}/${encodeURIComponent(teamSlug)}/projects/`, { per_page: 100 });
-                const teamProjects = await fetchJson(teamProjectsUrl);
+                const teamProjects = await fetchJsonList(teamProjectsUrl);
                 attempted.push(teamProjects.detail);
                 if (teamProjects.ok)
                     allTeamProjects.push(...projectSlugs(teamProjects.payload));
@@ -1345,10 +1375,10 @@ async function discoverSentryProjects({ baseUrl, token, org }) {
             }
         }
         const allProjectsUrl = buildUrl(baseUrl, '/api/0/projects/', { per_page: 100 });
-        const allProjects = await fetchJson(allProjectsUrl);
+        const allProjects = await fetchJsonList(allProjectsUrl);
         attempted.push(allProjects.detail);
         if (allProjects.ok) {
-            const projects = (Array.isArray(allProjects.payload) ? allProjects.payload : [])
+            const projects = apiListItems(allProjects.payload)
                 .filter((project) => {
                 const projectOrg = String(project?.organization?.slug || project?.organization?.name || '').trim();
                 return !projectOrg || projectOrg === normalizedOrg;

@@ -175,8 +175,8 @@ async function expandDiscoveredProjects(account, token) {
   const url = buildUrl(account.baseUrl || DEFAULT_BASE_URL, `/api/0/organizations/${encodeURIComponent(org)}/projects/`, {
     per_page: 100,
   });
-  const payload = await sentryFetchJson(url, token);
-  const projects = (Array.isArray(payload) ? payload : [])
+  const payload = await sentryFetchList(url, token);
+  const projects = apiListItems(payload)
     .map((project) => String(project?.slug || project?.name || '').trim())
     .filter(Boolean);
   const uniqueProjects = [...new Set(projects)];
@@ -240,6 +240,15 @@ function buildUrl(baseUrl, pathname, params) {
   return url;
 }
 
+function apiListItems(payload) {
+  if (Array.isArray(payload)) return payload;
+  if (!payload || typeof payload !== 'object') return [];
+  if (Array.isArray(payload.results)) return payload.results;
+  if (Array.isArray(payload.data)) return payload.data;
+  if (Array.isArray(payload.projects)) return payload.projects;
+  return [];
+}
+
 async function sentryFetchJson(url, token) {
   const response = await fetch(url, {
     method: 'GET',
@@ -254,6 +263,18 @@ async function sentryFetchJson(url, token) {
     throw new Error(`Sentry API ${response.status}: ${body.slice(0, 500) || 'request failed'}`);
   }
   return body ? JSON.parse(body) : null;
+}
+
+async function sentryFetchList(url, token) {
+  const items = [];
+  let nextUrl = url;
+  for (let page = 0; nextUrl && page < 10; page += 1) {
+    const payload = await sentryFetchJson(nextUrl, token);
+    items.push(...apiListItems(payload));
+    const next = payload && typeof payload === 'object' ? payload.next : null;
+    nextUrl = typeof next === 'string' && next.trim() ? new URL(next, `${nextUrl.origin}/`) : null;
+  }
+  return items;
 }
 
 function redactString(value) {
