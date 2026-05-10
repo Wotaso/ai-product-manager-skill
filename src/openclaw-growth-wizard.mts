@@ -803,6 +803,34 @@ async function askAnalyticsProjectFromSetupPayload(rl, payload) {
   }
 }
 
+async function askListSelection(rl, label, entries, options: Record<string, any> = {}) {
+  const includeManual = Boolean(options.includeManual);
+  const includeDefer = Boolean(options.includeDefer);
+  entries.forEach((entry, index) => {
+    const description = entry.description ? ` - ${entry.description}` : '';
+    process.stdout.write(`  ${index + 1}) ${entry.label}${description}\n`);
+  });
+  const manualIndex = includeManual ? entries.length + 1 : null;
+  const deferIndex = includeDefer ? entries.length + (includeManual ? 2 : 1) : null;
+  if (manualIndex) process.stdout.write(`  ${manualIndex}) Enter manually\n`);
+  if (deferIndex) process.stdout.write(`  ${deferIndex}) Defer\n`);
+
+  while (true) {
+    const answer = (await ask(rl, label, entries.length === 1 ? '1' : '')).trim();
+    const numericIndex = Number.parseInt(answer, 10);
+    if (Number.isInteger(numericIndex)) {
+      if (numericIndex >= 1 && numericIndex <= entries.length) return entries[numericIndex - 1].value;
+      if (manualIndex && numericIndex === manualIndex) return '__manual__';
+      if (deferIndex && numericIndex === deferIndex) return '';
+    }
+    const matchingEntry = entries.find((entry) =>
+      [entry.value, entry.label].some((value) => String(value || '').toLowerCase() === answer.toLowerCase()),
+    );
+    if (matchingEntry) return matchingEntry.value;
+    process.stdout.write('Choose one of the listed numbers.\n');
+  }
+}
+
 function printSetupFailure({ result, payload, command }) {
   process.stdout.write('\nFAILED: Connector setup needs attention.\n');
   printConnectorSetupProgress(payload);
@@ -1870,13 +1898,32 @@ async function guideSentryConnector(rl, secrets: Record<string, string>) {
       }
     }
 
-    const org = await ask(
-      rl,
-      `Sentry org slug for ${label} (leave empty to defer)`,
-      index === 0
-        ? process.env.SENTRY_ORG || discoveredOrganizations[0]?.slug || ''
-        : discoveredOrganizations[0]?.slug || '',
-    );
+    let org = '';
+    if (discoveredOrganizations.length === 1) {
+      org = discoveredOrganizations[0].slug;
+      process.stdout.write(`Using organization: ${org}\n`);
+    } else if (discoveredOrganizations.length > 1) {
+      process.stdout.write('Select organization:\n');
+      const orgChoice = await askListSelection(
+        rl,
+        `Organization for ${label}`,
+        discoveredOrganizations.map((organization) => ({
+          value: organization.slug,
+          label: organization.slug,
+          description: organization.name && organization.name !== organization.slug ? organization.name : '',
+        })),
+        { includeManual: true, includeDefer: true },
+      );
+      org = orgChoice === '__manual__'
+        ? await ask(rl, `Sentry org slug for ${label}`, index === 0 ? process.env.SENTRY_ORG || '' : '')
+        : orgChoice;
+    } else {
+      org = await ask(
+        rl,
+        `Sentry org slug for ${label} (leave empty to defer)`,
+        index === 0 ? process.env.SENTRY_ORG || '' : '',
+      );
+    }
     const environment = await ask(
       rl,
       `Sentry environment for ${label}`,
