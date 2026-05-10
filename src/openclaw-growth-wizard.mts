@@ -636,14 +636,25 @@ async function runInteractiveCommand(command, options: { env?: NodeJS.ProcessEnv
   });
 }
 
-async function runInteractiveProcess(command, args: string[], options: { env?: NodeJS.ProcessEnv; silent?: boolean } = {}) {
+async function runInteractiveProcess(
+  command,
+  args: string[],
+  options: { env?: NodeJS.ProcessEnv; silent?: boolean; rl?: any } = {},
+) {
   return await new Promise<number | null>((resolve) => {
+    options.rl?.pause?.();
     const child = spawn(command, args, {
       env: options.env ?? process.env,
       stdio: options.silent ? 'ignore' : 'inherit',
     });
-    child.on('error', () => resolve(127));
-    child.on('close', (code) => resolve(code));
+    child.on('error', () => {
+      options.rl?.resume?.();
+      resolve(127);
+    });
+    child.on('close', (code) => {
+      options.rl?.resume?.();
+      resolve(code);
+    });
   });
 }
 
@@ -1990,7 +2001,7 @@ async function readAscPrivateKeyPaste(rl) {
         return;
       }
 
-      const endMatch = buffer.match(/-----END PRIVATE KEY-----[^\r\n]*(?:\r?\n|$)/);
+      const endMatch = buffer.match(/-----END PRIVATE KEY-+[^\r\n]*(?:\r?\n|$)/);
       if (endMatch?.index !== undefined) {
         finish(buffer.slice(0, endMatch.index + endMatch[0].length));
         return;
@@ -2098,18 +2109,18 @@ async function ensureAscWebAnalyticsAuth(rl = null, secrets: Record<string, stri
   let attempts = 0;
   while (true) {
     attempts += 1;
-    process.stdout.write(`ASC web analytics needs a website login for ${appleId}.\n`);
-    process.stdout.write('Starting `asc web auth login --apple-id ...` now. The next password and 2FA prompts come directly from asc.\n');
-    process.stdout.write('Press Enter once after typing the password, then wait for asc to continue.\n');
-    process.stdout.write('Complete the App Store Connect login flow, then return to this terminal.\n\n');
-    const loginCode = await runInteractiveProcess('asc', ['web', 'auth', 'login', '--apple-id', appleId], { env: ascEnv });
-    process.stdout.write(`\nASC web auth login exited with code ${loginCode ?? 'unknown'}.\n`);
+    process.stdout.write(`\nASC web login: ${appleId}\n`);
+    process.stdout.write('The next prompts are from asc. Enter the Apple Account password/2FA there.\n\n');
+    const loginCode = await runInteractiveProcess('asc', ['web', 'auth', 'login', '--apple-id', appleId], {
+      env: ascEnv,
+      rl,
+    });
     if (loginCode === 0) {
       break;
     }
 
-    process.stdout.write('Apple/asc rejected the web login. The wizard did not read or transform the password.\n');
-    process.stdout.write('The ASC .p8 API key is separate from this Apple Account web login and is not used as the password.\n');
+    process.stdout.write('\nASC web login failed.\n');
+    process.stdout.write('Reason: asc/Apple rejected the Apple Account login. The .p8 API key is not used here.\n\n');
     if (!rl || attempts >= 3) {
       throw new Error(
         'ASC web analytics login failed. Check the Apple Account email/password/2FA, then rerun the connector wizard.',
