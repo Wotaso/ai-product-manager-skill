@@ -1031,7 +1031,11 @@ async function runConnectionChecks({ checks, config, timeoutMs, progressJson = f
         addCheck(checks, checkName, false, 'source uses command mode but no command configured');
         continue;
       }
-      const commandCheck = await testCommandSourceJson(command, commandCwd);
+      const smokeCommand =
+        connectorKind === 'asc' && command.includes('export-asc-summary')
+          ? `${command} --skip-web-analytics --reviews-limit 1 --feedback-limit 1 --max-signals 1`
+          : command;
+      const commandCheck = await testCommandSourceJson(smokeCommand, commandCwd);
       addCheck(
         checks,
         checkName,

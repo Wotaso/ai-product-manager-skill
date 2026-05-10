@@ -1968,6 +1968,7 @@ async function readAscPrivateKeyPaste(rl) {
   return await new Promise<string>((resolve, reject) => {
     let buffer = '';
     let settled = false;
+    let finishing = false;
     let lineCount = 0;
     const previousEncoding = process.stdin.readableEncoding;
 
@@ -1978,21 +1979,32 @@ async function readAscPrivateKeyPaste(rl) {
       rl.resume();
     };
 
-    const finish = (value) => {
-      if (settled) return;
+    const complete = (value) => {
       settled = true;
       cleanup();
       resolve(value ? `${String(value).trim()}\n` : '');
     };
 
+    const finish = (value, options: { drainMs?: number } = {}) => {
+      if (settled || finishing) return;
+      finishing = true;
+      const drainMs = options.drainMs ?? 0;
+      if (drainMs > 0) {
+        setTimeout(() => complete(value), drainMs);
+      } else {
+        complete(value);
+      }
+    };
+
     const onError = (error) => {
-      if (settled) return;
+      if (settled || finishing) return;
       settled = true;
       cleanup();
       reject(error);
     };
 
     const onData = (chunk) => {
+      if (finishing) return;
       buffer += String(chunk);
       lineCount = buffer.split(/\r?\n/).length;
 
@@ -2003,7 +2015,7 @@ async function readAscPrivateKeyPaste(rl) {
 
       const endMatch = buffer.match(/-----END PRIVATE KEY-+[^\r\n]*(?:\r?\n|$)/);
       if (endMatch?.index !== undefined) {
-        finish(buffer.slice(0, endMatch.index + endMatch[0].length));
+        finish(buffer.slice(0, endMatch.index + endMatch[0].length), { drainMs: 750 });
         return;
       }
 
@@ -2706,8 +2718,17 @@ async function runConnectorSetupWizard(args) {
   }
 }
 
+function clearPromptInput(rl) {
+  try {
+    rl.write?.(null, { ctrl: true, name: 'u' });
+  } catch {
+    // Best-effort cleanup for stale pasted terminal input before showing a prompt.
+  }
+}
+
 async function ask(rl, label, defaultValue = '') {
   const suffix = defaultValue ? ` (${defaultValue})` : '';
+  clearPromptInput(rl);
   const answer = (await rl.question(`${label}${suffix}: `)).trim();
   return answer || defaultValue;
 }
@@ -2715,6 +2736,7 @@ async function ask(rl, label, defaultValue = '') {
 async function askYesNo(rl, label, defaultYes = true) {
   const suffix = defaultYes ? '[Y/n]' : '[y/N]';
   while (true) {
+    clearPromptInput(rl);
     const answer = (await rl.question(`${label} ${suffix} `)).trim().toLowerCase();
     if (!answer) return defaultYes;
     if (answer === 'y' || answer === 'yes') return true;
