@@ -31,6 +31,8 @@ Options:
   --project <id>         AnalyticsCLI project ID to use for generated source commands
   --asc-app <id>         Optional ASC app ID filter (defaults to all accessible apps)
   --connectors <list>    Install/enable connector helpers (analytics,github,asc,revenuecat,sentry,all)
+  --only-connectors <list>
+                         Limit live preflight checks to analytics,github,asc,revenuecat,sentry
   --setup-only           Run bootstrap + preflight only (skip first run)
   --no-test-connections  Skip live API smoke checks in preflight
   --progress-json        Emit machine-readable setup progress to stderr
@@ -46,6 +48,7 @@ function parseArgs(argv) {
         run: true,
         testConnections: true,
         connectors: [],
+        onlyConnectors: [],
         progressJson: false,
     };
     for (let i = 0; i < argv.length; i += 1) {
@@ -68,6 +71,10 @@ function parseArgs(argv) {
         }
         else if (token === '--connectors') {
             args.connectors = parseConnectorList(next || '');
+            i += 1;
+        }
+        else if (token === '--only-connectors') {
+            args.onlyConnectors = parseConnectorList(next || '');
             i += 1;
         }
         else if (token === '--setup-only') {
@@ -1236,7 +1243,7 @@ function remediationForCheck(checkName, configPath) {
         return 'Write `data/openclaw-growth-engineer/analytics_summary.json` via your analytics refresh step (API-key based source command/file generation).';
     }
     if (checkName === 'connection:analytics') {
-        return 'Nearly done: I only need AnalyticsCLI query access from you to continue setup. Create or copy a readonly CLI token in dash.analyticscli.com -> API Keys, then run `analyticscli login`, paste it when prompted, and run `analyticscli projects select`. Use `ANALYTICSCLI_ACCESS_TOKEN` from a secret store for automation. Use `--api-url <url>` only for staging/local.';
+        return 'Paste a fresh AnalyticsCLI readonly CLI token in the connector wizard, or run `analyticscli login` and paste the token when prompted.';
     }
     if (checkName === 'connection:github') {
         return 'Verify `GITHUB_TOKEN` and repo access to `/repos/<owner>/<repo>` + issues API.';
@@ -1264,7 +1271,7 @@ function remediateAscAppSetupFailure(error) {
     }
     return 'Verify ASC credentials, key role access, and `asc apps list --output json`.';
 }
-async function runPreflight(configPath, testConnections, progressJson = false) {
+async function runPreflight(configPath, testConnections, progressJson = false, onlyConnectors = []) {
     const commandParts = [
         'node',
         'scripts/openclaw-growth-preflight.mjs',
@@ -1273,6 +1280,9 @@ async function runPreflight(configPath, testConnections, progressJson = false) {
     ];
     if (testConnections) {
         commandParts.push('--test-connections');
+    }
+    if (onlyConnectors.length > 0) {
+        commandParts.push('--only-connectors', quote(onlyConnectors.join(',')));
     }
     if (progressJson) {
         commandParts.push('--progress-json');
@@ -1458,7 +1468,7 @@ async function main() {
         process.exitCode = 1;
         return;
     }
-    const preflightResult = await runPreflight(configPath, args.testConnections, args.progressJson);
+    const preflightResult = await runPreflight(configPath, args.testConnections, args.progressJson, args.onlyConnectors);
     const preflightPayload = preflightResult.payload;
     if (!preflightPayload) {
         throw new Error(`Preflight returned invalid output.\nstdout:\n${preflightResult.shell.stdout}\nstderr:\n${preflightResult.shell.stderr}`);

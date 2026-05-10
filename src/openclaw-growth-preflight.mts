@@ -45,6 +45,8 @@ Usage:
 Options:
   --config <file>        Config path (default: ${DEFAULT_CONFIG_PATH})
   --test-connections     Run live API/connector smoke checks for enabled channels
+  --only-connectors <list>
+                         Limit live checks to analytics,github,asc,revenuecat,sentry
   --timeout-ms <ms>      Connection test timeout in milliseconds (default: ${DEFAULT_CONNECTION_TIMEOUT_MS})
   --progress-json        Emit machine-readable progress events on stderr
   --json                 Print JSON only (default)
@@ -59,6 +61,7 @@ function parseArgs(argv) {
     json: true,
     progressJson: false,
     testConnections: false,
+    onlyConnectors: [],
     timeoutMs: DEFAULT_CONNECTION_TIMEOUT_MS,
   };
 
@@ -73,6 +76,9 @@ function parseArgs(argv) {
       i += 1;
     } else if (token === '--test-connections') {
       args.testConnections = true;
+    } else if (token === '--only-connectors') {
+      args.onlyConnectors = parseConnectorList(next || '');
+      i += 1;
     } else if (token === '--progress-json') {
       args.progressJson = true;
     } else if (token === '--timeout-ms') {
@@ -92,6 +98,39 @@ function parseArgs(argv) {
   }
 
   return args;
+}
+
+function normalizeConnectorKey(value) {
+  const normalized = String(value || '').trim().toLowerCase().replace(/[_\s]+/g, '-');
+  if (!normalized) return null;
+  if (normalized === 'all') return 'all';
+  if (['analytics', 'analyticscli', 'product-analytics', 'events'].includes(normalized)) return 'analytics';
+  if (['github', 'gh', 'github-code', 'codebase', 'code-access'].includes(normalized)) return 'github';
+  if (['asc', 'asc-cli', 'app-store-connect', 'appstoreconnect', 'app-store'].includes(normalized)) return 'asc';
+  if (['revenuecat', 'revenue-cat', 'rc', 'revenuecat-mcp'].includes(normalized)) return 'revenuecat';
+  if (['sentry', 'sentry-api', 'sentry-mcp', 'glitchtip', 'crashes', 'errors', 'crash-reporting'].includes(normalized)) return 'sentry';
+  return null;
+}
+
+function parseConnectorList(value) {
+  if (!String(value || '').trim()) return [];
+  const connectors = new Set();
+  for (const entry of String(value).split(',')) {
+    const connector = normalizeConnectorKey(entry);
+    if (!connector) {
+      printHelpAndExit(1, `Unknown connector: ${entry.trim()}. Use analytics, github, asc, revenuecat, sentry, or all.`);
+    }
+    if (connector === 'all') {
+      connectors.add('analytics');
+      connectors.add('github');
+      connectors.add('asc');
+      connectors.add('revenuecat');
+      connectors.add('sentry');
+    } else {
+      connectors.add(connector);
+    }
+  }
+  return [...connectors];
 }
 
 function shellQuote(value) {
@@ -121,7 +160,7 @@ function resolveShellCommand(): string {
   return 'sh';
 }
 
-function runShell(command, options: { cwd?: string; env?: NodeJS.ProcessEnv } = {}): Promise<ShellResult> {
+function runShell(command, options: { cwd?: string; env?: NodeJS.ProcessEnv; timeoutMs?: number } = {}): Promise<ShellResult> {
   return new Promise((resolve) => {
     const child = spawn(resolveShellCommand(), ['-c', command], {
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -131,6 +170,19 @@ function runShell(command, options: { cwd?: string; env?: NodeJS.ProcessEnv } = 
 
     let stdout = '';
     let stderr = '';
+    let settled = false;
+    const timeoutMs = options.timeoutMs ?? 60_000;
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      child.kill('SIGTERM');
+      resolve({
+        ok: false,
+        code: null,
+        stdout,
+        stderr: `${stderr}\nTimed out after ${timeoutMs}ms`,
+      });
+    }, timeoutMs);
 
     child.stdout.on('data', (chunk) => {
       stdout += String(chunk);
@@ -140,6 +192,9 @@ function runShell(command, options: { cwd?: string; env?: NodeJS.ProcessEnv } = 
     });
 
     child.on('close', (code) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
       resolve({
         ok: code === 0,
         code,
@@ -466,7 +521,7 @@ async function fetchWithTimeout(url, options, timeoutMs) {
   }
 }
 
-async function testAnalyticsConnection(analyticsToken, analyticsTokenEnv) {
+async function testAnalyticsConnection(analyticsToken, analyticsTokenEnv, timeoutMs) {
   const hasCli = await commandExists('analyticscli');
   if (!hasCli) {
     return {
@@ -475,13 +530,15 @@ async function testAnalyticsConnection(analyticsToken, analyticsTokenEnv) {
     };
   }
 
-  const result = await runShell('analyticscli projects list', {
+  const result = await runShell('analyticscli projects list --format json', {
     env: analyticsToken
       ? {
           [analyticsTokenEnv]: analyticsToken,
           ANALYTICSCLI_ACCESS_TOKEN: analyticsToken,
+          ANALYTICSCLI_READONLY_TOKEN: analyticsToken,
         }
       : undefined,
+    timeoutMs,
   });
   if (!result.ok) {
     return {
@@ -538,10 +595,10 @@ async function testRevenueCatConnection(revenuecatToken, timeoutMs) {
 
 function describeAnalyticsConnectionFailure(detail, analyticsTokenEnv, hasAnalyticsToken) {
   if (!hasAnalyticsToken) {
-    return `Nearly done: I only need AnalyticsCLI query access from you to continue setup. Create or copy a readonly CLI token in dash.analyticscli.com -> API Keys, then run \`analyticscli login\` and paste it when prompted, or set \`${analyticsTokenEnv}\` from a secret store. Use \`--api-url <url>\` or \`ANALYTICSCLI_API_URL\` only for staging/local. Raw error: ${detail}`;
+    return `AnalyticsCLI needs query access. Create or copy a readonly CLI token in dash.analyticscli.com -> API Keys, then paste it into the wizard or run \`analyticscli login\` and paste it when prompted. Raw error: ${detail}`;
   }
 
-  return `AnalyticsCLI connection failed with \`${analyticsTokenEnv}\` set. Verify the token and selected project. If you are testing staging/local, also verify \`ANALYTICSCLI_API_URL\` or \`--api-url\`. Raw error: ${detail}`;
+  return `AnalyticsCLI connection failed with \`${analyticsTokenEnv}\` set. Verify that the pasted readonly CLI token is current and has project access. Raw error: ${detail}`;
 }
 
 async function testSentryConnection(sentryToken, timeoutMs, baseUrl = 'https://sentry.io') {
@@ -720,7 +777,11 @@ async function testCommandSourceJson(command, cwd = process.cwd()) {
   };
 }
 
-async function runConnectionChecks({ checks, config, timeoutMs, progressJson = false }) {
+function onlyAllows(onlyConnectors, connector) {
+  return !Array.isArray(onlyConnectors) || onlyConnectors.length === 0 || onlyConnectors.includes(connector);
+}
+
+async function runConnectionChecks({ checks, config, timeoutMs, progressJson = false, onlyConnectors = [] }) {
   const analyticsTokenEnv = getSecretName(config, 'analyticsTokenEnv', 'ANALYTICSCLI_ACCESS_TOKEN');
   const revenuecatTokenEnv = getSecretName(config, 'revenuecatTokenEnv', 'REVENUECAT_API_KEY');
   const sentryTokenEnv = getSecretName(config, 'sentryTokenEnv', 'SENTRY_AUTH_TOKEN');
@@ -734,17 +795,18 @@ async function runConnectionChecks({ checks, config, timeoutMs, progressJson = f
   const commandCwd = getProjectCommandCwd(config);
 
   const analyticsSource = config.sources?.analytics;
-  await runProgressGroup({
-    checks,
-    progressJson,
-    key: 'analytics',
-    label: 'AnalyticsCLI',
-    detail: 'token auth + readonly query',
-    run: async () => {
+  if (onlyAllows(onlyConnectors, 'analytics')) {
+    await runProgressGroup({
+      checks,
+      progressJson,
+      key: 'analytics',
+      label: 'AnalyticsCLI',
+      detail: 'token auth + readonly query',
+      run: async () => {
       if (sourceEnabled(config, 'analytics')) {
-        const analyticsToken = process.env[analyticsTokenEnv] || process.env.ANALYTICSCLI_ACCESS_TOKEN || '';
+        const analyticsToken = process.env.ANALYTICSCLI_ACCESS_TOKEN || process.env[analyticsTokenEnv] || process.env.ANALYTICSCLI_READONLY_TOKEN || '';
         const hasAnalyticsToken = Boolean(analyticsToken);
-        const analyticsConnection = await testAnalyticsConnection(analyticsToken, analyticsTokenEnv);
+        const analyticsConnection = await testAnalyticsConnection(analyticsToken, analyticsTokenEnv, timeoutMs);
         addCheck(
           checks,
           'connection:analytics',
@@ -774,17 +836,19 @@ async function runConnectionChecks({ checks, config, timeoutMs, progressJson = f
       } else {
         addCheck(checks, 'connection:analytics', true, 'source disabled');
       }
-    },
-  });
+      },
+    });
+  }
 
   const revenuecatSource = config.sources?.revenuecat;
-  await runProgressGroup({
-    checks,
-    progressJson,
-    key: 'revenuecat',
-    label: 'RevenueCat',
-    detail: 'API key auth + project read',
-    run: async () => {
+  if (onlyAllows(onlyConnectors, 'revenuecat')) {
+    await runProgressGroup({
+      checks,
+      progressJson,
+      key: 'revenuecat',
+      label: 'RevenueCat',
+      detail: 'API key auth + project read',
+      run: async () => {
       if (sourceEnabled(config, 'revenuecat')) {
         const token = process.env[revenuecatTokenEnv] || '';
         if (!token) {
@@ -809,17 +873,19 @@ async function runConnectionChecks({ checks, config, timeoutMs, progressJson = f
       } else {
         addCheck(checks, 'connection:revenuecat', true, 'source disabled');
       }
-    },
-  });
+      },
+    });
+  }
 
   const sentrySource = config.sources?.sentry;
-  await runProgressGroup({
-    checks,
-    progressJson,
-    key: 'sentry',
-    label: 'Sentry / GlitchTip',
-    detail: 'token/org API + project discovery',
-    run: async () => {
+  if (onlyAllows(onlyConnectors, 'sentry')) {
+    await runProgressGroup({
+      checks,
+      progressJson,
+      key: 'sentry',
+      label: 'Sentry / GlitchTip',
+      detail: 'token/org API + project discovery',
+      run: async () => {
       if (sourceEnabled(config, 'sentry')) {
         const sentryAccounts = normalizeSentryAccounts(config, sentryTokenEnv);
         for (const account of sentryAccounts) {
@@ -864,11 +930,14 @@ async function runConnectionChecks({ checks, config, timeoutMs, progressJson = f
       } else {
         addCheck(checks, 'connection:sentry', true, 'source disabled');
       }
-    },
-  });
+      },
+    });
+  }
 
   const feedbackSource = config.sources?.feedback;
-  if (sourceEnabled(config, 'feedback') && feedbackSource?.mode === 'command') {
+  if (!onlyAllows(onlyConnectors, 'feedback')) {
+    // Skip feedback during focused connector checks.
+  } else if (sourceEnabled(config, 'feedback') && feedbackSource?.mode === 'command') {
     const command = String(feedbackSource.command || '').trim();
     if (!command) {
       addCheck(checks, 'connection:feedback', false, 'feedback source uses command mode but no command configured');
@@ -905,6 +974,15 @@ async function runConnectionChecks({ checks, config, timeoutMs, progressJson = f
 
   for (const extraSource of getAllSourceEntries(config).filter((source) => !source.builtIn)) {
     const serviceKind = classifyServiceKind(extraSource.service || extraSource.key);
+    const connectorKind =
+      serviceKind === 'store'
+        ? 'asc'
+        : serviceKind === 'revenue'
+          ? 'revenuecat'
+          : serviceKind === 'crash'
+            ? 'sentry'
+            : serviceKind;
+    if (!onlyAllows(onlyConnectors, connectorKind)) continue;
     const checkName = `connection:${extraSource.key}`;
     if (extraSource.enabled === false) {
       addCheck(checks, checkName, true, 'source disabled');
@@ -951,13 +1029,14 @@ async function runConnectionChecks({ checks, config, timeoutMs, progressJson = f
   const githubToken = process.env[githubTokenEnv] || '';
   const githubCheckName =
     actionMode === 'pull_request' ? 'connection:github-pull-requests' : 'connection:github';
-  await runProgressGroup({
-    checks,
-    progressJson,
-    key: 'github',
-    label: 'GitHub',
-    detail: githubRepo ? `repo access (${githubRepo})` : 'repo access deferred until repo is known',
-    run: async () => {
+  if (onlyAllows(onlyConnectors, 'github')) {
+    await runProgressGroup({
+      checks,
+      progressJson,
+      key: 'github',
+      label: 'GitHub',
+      detail: githubRepo ? `repo access (${githubRepo})` : 'repo access deferred until repo is known',
+      run: async () => {
       if (!requiresGitHubDelivery && (!githubToken || !githubRepo)) {
         addCheck(
           checks,
@@ -986,8 +1065,9 @@ async function runConnectionChecks({ checks, config, timeoutMs, progressJson = f
             : `GitHub auth check failed (${githubConnection.detail})`,
         );
       }
-    },
-  });
+      },
+    });
+  }
 }
 
 async function main() {
@@ -1232,6 +1312,7 @@ async function main() {
         config,
         progressJson: args.progressJson,
         timeoutMs: args.timeoutMs,
+        onlyConnectors: args.onlyConnectors,
       });
     }
   }

@@ -701,7 +701,7 @@ async function runCommandCaptureWithTimeout(
 async function runCommandCaptureWithProgress(
   command,
   onProgress,
-  options: { env?: NodeJS.ProcessEnv } = {},
+  options: { env?: NodeJS.ProcessEnv; timeoutMs?: number } = {},
 ) {
   return await new Promise<{ ok: boolean; stdout: string; stderr: string; code: number | null }>((resolve) => {
     const child = spawn('/bin/sh', ['-lc', command], {
@@ -711,6 +711,14 @@ async function runCommandCaptureWithProgress(
     let stdout = '';
     let stderr = '';
     let stderrBuffer = '';
+    let settled = false;
+    const timeoutMs = options.timeoutMs ?? 180_000;
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      child.kill('SIGTERM');
+      resolve({ ok: false, stdout, stderr: `${stderr}\nTimed out after ${timeoutMs}ms`, code: null });
+    }, timeoutMs);
     child.stdout.on('data', (chunk) => {
       stdout += String(chunk);
     });
@@ -731,9 +739,15 @@ async function runCommandCaptureWithProgress(
       }
     });
     child.on('error', (error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
       resolve({ ok: false, stdout, stderr: error.message, code: null });
     });
     child.on('close', (code) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
       const match = stderrBuffer.match(/^OPENCLAW_PROGRESS\s+(.+)$/);
       if (match) {
         try {
@@ -823,7 +837,7 @@ function summarizeFailureFix(connector, blockers) {
   const combined = blockers.map((blocker) => `${blocker.check || ''} ${blocker.detail || ''}`).join('\n');
   if (connector === 'analytics') {
     if (/revoked|unauthorized|UNAUTHORIZED/i.test(combined)) {
-      return 'Paste a fresh AnalyticsCLI readonly token in the wizard, then let setup retest. If you use staging/local, also verify ANALYTICSCLI_API_URL.';
+      return 'Paste a fresh AnalyticsCLI readonly CLI token in the wizard, then let setup retest.';
     }
     return 'Verify the AnalyticsCLI token and selected project, then rerun setup.';
   }
@@ -1236,6 +1250,10 @@ function updateHealthProgress(items, event) {
   return false;
 }
 
+function allProgressItemsFinished(items) {
+  return items.length > 0 && items.every((item) => !['pending', 'running'].includes(String(item.status || '')));
+}
+
 function buildSetupTestProgressPlan(selected: ConnectorKey[]) {
   const selectedSet = new Set(selected);
   const items = [
@@ -1287,11 +1305,23 @@ async function runSetupCommandWithProgress(command, env, selected: ConnectorKey[
   const progressCommand = command.includes('--progress-json') ? command : `${command} --progress-json`;
   const result = await runCommandCaptureWithProgress(progressCommand, (event) => {
     if (updateHealthProgress(plan, event)) {
-      renderHealthProgress(plan, 'Connector setup test is still running. Do not close this terminal yet.', 'Connector setup test');
+      const message = allProgressItemsFinished(plan)
+        ? 'Checks finished. Preparing the result...'
+        : 'Connector setup test is still running. Do not close this terminal yet.';
+      renderHealthProgress(plan, message, 'Connector setup test');
     }
-  }, { env });
+  }, { env, timeoutMs: 180_000 });
   renderHealthProgress(plan, 'Connector setup test finished.', 'Connector setup test');
   return result;
+}
+
+async function saveSecretsImmediately(secrets: Record<string, string>) {
+  if (Object.keys(secrets).length === 0) return false;
+  const secretsFile = resolveSecretsFile();
+  await writeSecretsFile(secretsFile, secrets);
+  Object.assign(process.env, secrets);
+  process.stdout.write(`Saved local secrets to ${secretsFile} with chmod 600.\n`);
+  return true;
 }
 
 async function runImmediateConnectorHealthCheck({
@@ -1304,12 +1334,13 @@ async function runImmediateConnectorHealthCheck({
   if (connector === 'sentry' && sentryAccounts.length > 0) {
     await upsertSentryAccountsConfig(configPath, sentryAccounts);
   }
+  await saveSecretsImmediately(secrets);
 
   const env = {
     ...process.env,
     ...secrets,
   };
-  let command = `node scripts/openclaw-growth-start.mjs --config ${quote(configPath)} --setup-only --connectors ${quote(connector)}`;
+  let command = `node scripts/openclaw-growth-start.mjs --config ${quote(configPath)} --setup-only --connectors ${quote(connector)} --only-connectors ${quote(connector)}`;
   let result = await runSetupCommandWithProgress(
     command,
     env,
@@ -2114,7 +2145,10 @@ async function guideAnalyticsConnector(rl, secrets: Record<string, string>) {
     'Paste AnalyticsCLI readonly token into this local terminal',
     'ANALYTICSCLI_ACCESS_TOKEN',
   );
-  if (token) secrets.ANALYTICSCLI_ACCESS_TOKEN = token;
+  if (token) {
+    secrets.ANALYTICSCLI_ACCESS_TOKEN = token;
+    secrets.ANALYTICSCLI_READONLY_TOKEN = token;
+  }
   else process.stdout.write('No AnalyticsCLI token saved. Product analytics setup remains pending; rerun this wizard when ready.\n\n');
 }
 
