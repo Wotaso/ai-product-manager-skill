@@ -1,10 +1,26 @@
 # OpenClaw Growth Engineer
 
-OpenClaw-first growth autopilot for mobile apps, centered around a standalone `openclaw` CLI runtime plus OpenClaw itself as the AI layer.
+Shared AI Growth Engineer for mobile apps, centered around a standalone `openclaw` CLI runtime plus the host agent as the AI layer.
 
 It pulls together analytics, monetization, crashes, feedback, store signals, and repo context and turns them into proposal drafts that can be handed to OpenClaw chat, GitHub issues, or draft PRs.
 
 If you only want the normal setup path: run setup once, then start the CLI.
+
+## Shared Skill Distribution
+
+This folder is the single canonical skill for OpenClaw, Hermes, and generic `SKILL.md` clients. Do not fork the instructions or runtime for Hermes. Keep shared behavior in this folder and use only small metadata/docs notes for agent-specific install paths.
+
+OpenClaw install:
+
+```bash
+npx clawhub install openclaw-growth-engineer
+```
+
+Hermes install:
+
+```bash
+hermes skills install Wotaso/openclaw-growth-engineer-skill
+```
 
 ## Quick Start
 
@@ -60,7 +76,7 @@ Before requesting optional credentials, ask which connections the user wants to 
 - Correlates product signals with repo context; connect GitHub with readable code access whenever possible because it makes analytics findings much more actionable.
 - Generates local issue drafts by default.
 - Writes an OpenClaw chat outbox by default, and creates GitHub issues or draft pull requests only when GitHub artifact creation is explicitly enabled in config.
-- Leaves all conversational analysis and implementation work to OpenClaw itself.
+- Leaves all conversational analysis and implementation work to the host agent.
 
 ## What The Wizard Writes
 
@@ -110,7 +126,7 @@ openclaw run --config openclaw.config.json --loop
 In this monorepo, `apps/openclaw-cli` is now the preferred runtime surface. The checked-in `skills/openclaw-growth-engineer/src` and `scripts/openclaw-*` files remain compatibility paths while the standalone CLI settles.
 
 The CLI is deliberately deterministic. It should not carry its own AI configuration.
-OpenClaw should call the CLI for data collection and proposal generation, then use OpenClaw AI itself when the user wants interpretation or implementation.
+The host agent should call the CLI for data collection and proposal generation, then use its own AI/runtime when the user wants interpretation or implementation.
 
 Run this after editing runtime scripts:
 

@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
-# Copy growth-engineer runtime from a ClawHub skill install into the OpenClaw workspace root
-# so `node scripts/openclaw-growth-start.mjs` works (paths match docs + OpenClaw run).
+# Copy growth-engineer runtime from an installed skill into the active workspace root
+# so `node scripts/openclaw-growth-start.mjs` works (paths match docs + agent runs).
 #
 # Typical layout after installing a bundled growth runtime skill:
 #   <workspace>/skills/<skill-slug>/scripts/*.mjs
+# Hermes normally installs into ~/.hermes/skills/<skill-slug>/, so the target
+# workspace is the current working directory unless OPENCLAW_GROWTH_WORKSPACE is set.
 # This script creates:
 #   <workspace>/scripts/*.mjs
 #   <workspace>/data/openclaw-growth-engineer/*.json
@@ -21,7 +23,13 @@ if [[ "${skill_slug}" != "product-manager-skill" && "${skill_slug}" != "ai-produ
   exit 0
 fi
 
-WORKSPACE="$(cd "${SKILL_ROOT}/../.." && pwd)"
+if [[ -n "${OPENCLAW_GROWTH_WORKSPACE:-}" ]]; then
+  WORKSPACE="$(cd "${OPENCLAW_GROWTH_WORKSPACE}" && pwd)"
+elif [[ -n "${HOME:-}" && "${SKILL_ROOT}" == "${HOME}/.hermes/skills/"* ]]; then
+  WORKSPACE="$(pwd)"
+else
+  WORKSPACE="$(cd "${SKILL_ROOT}/../.." && pwd)"
+fi
 
 if [[ "${skill_slug}" == "openclaw-growth-engineer" && -f "${SKILL_ROOT}/.clawhub/origin.json" && "${OPENCLAW_GROWTH_DISABLE_SELF_UPDATE:-}" != "1" && "${OPENCLAW_GROWTH_BOOTSTRAP_SKIP_UPDATE:-}" != "1" ]]; then
   if command -v clawhub >/dev/null 2>&1; then
