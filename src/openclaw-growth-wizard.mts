@@ -636,6 +636,17 @@ async function runInteractiveCommand(command, options: { env?: NodeJS.ProcessEnv
   });
 }
 
+async function runInteractiveProcess(command, args: string[], options: { env?: NodeJS.ProcessEnv; silent?: boolean } = {}) {
+  return await new Promise<number | null>((resolve) => {
+    const child = spawn(command, args, {
+      env: options.env ?? process.env,
+      stdio: options.silent ? 'ignore' : 'inherit',
+    });
+    child.on('error', () => resolve(127));
+    child.on('close', (code) => resolve(code));
+  });
+}
+
 async function runCommandCapture(command, options: { env?: NodeJS.ProcessEnv } = {}) {
   return await new Promise<{ ok: boolean; stdout: string; stderr: string; code: number | null }>((resolve) => {
     const child = spawn('/bin/sh', ['-lc', command], {
@@ -2071,11 +2082,15 @@ async function ensureAscWebAnalyticsAuth(rl = null, secrets: Record<string, stri
     throw new Error('ASC web analytics login needs an Apple Account email. Rerun the connector wizard and enter ASC_WEB_APPLE_ID.');
   }
 
-  process.stdout.write(`ASC web analytics needs a website login for ${appleId}. Starting \`asc web auth login --apple-id ...\` now.\n`);
+  process.stdout.write(`ASC web analytics needs a website login for ${appleId}.\n`);
+  process.stdout.write('Starting `asc web auth login --apple-id ...` now. The next password and 2FA prompts come directly from asc.\n');
   process.stdout.write('Complete the App Store Connect login flow, then return to this terminal.\n\n');
-  const loginCode = await runInteractiveCommand(`asc web auth login --apple-id ${quote(appleId)}`);
+  const loginCode = await runInteractiveProcess('asc', ['web', 'auth', 'login', '--apple-id', appleId]);
+  process.stdout.write(`\nASC web auth login exited with code ${loginCode ?? 'unknown'}.\n`);
   if (loginCode !== 0) {
-    throw new Error('ASC web analytics login failed. Run `asc web auth login` manually, then rerun the connector wizard.');
+    throw new Error(
+      'ASC web analytics login failed. Check the Apple Account email/password/2FA, then rerun the connector wizard.',
+    );
   }
 
   process.stdout.write('\nStill working: verifying the ASC web analytics session after login...\n');
@@ -2359,6 +2374,7 @@ async function guideAscConnector(rl, secrets: Record<string, string>) {
     resolveAscWebAppleId(),
   );
   if (appleId.trim()) secrets.ASC_WEB_APPLE_ID = appleId.trim();
+  process.stdout.write('ASC web password and 2FA are not stored by this wizard; asc asks for them interactively during web login.\n');
 
   const privateKeyContent = await askAscPrivateKeyContent(rl);
   if (privateKeyContent) {
