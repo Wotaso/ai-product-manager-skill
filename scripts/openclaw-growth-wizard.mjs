@@ -1019,6 +1019,7 @@ function compactJsonError(value) {
             error.code ? `code=${error.code}` : '',
             error.message ? `message=${error.message}` : '',
             error.details?.reason ? `reason=${error.details.reason}` : '',
+            error.details?.upgradeUrl ? `upgradeUrl=${error.details.upgradeUrl}` : '',
         ].filter(Boolean);
         return parts.join(', ');
     }

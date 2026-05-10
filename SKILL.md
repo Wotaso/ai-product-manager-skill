@@ -115,6 +115,17 @@ Retention reliability:
 - Do not filter silently. If using stable-only retention, disclose that ephemeral/unknown identities were excluded and compare the remaining cohort size.
 - Product recommendations can still mention weak retention, but phrase it as "appears low" when reliability is weak and pair it with an instrumentation/persistence action.
 
+AnalyticsCLI product feedback:
+
+- Use Sentry/GlitchTip for production exceptions, crashes, hangs, and backend stack traces.
+- Use `analyticscli feedback submit` for feedback to the AnalyticsCLI SaaS owner about AnalyticsCLI itself: missing features, broken CLI/API/dashboard behavior, confusing errors, poor docs, or workflow friction.
+- Do not confuse this with tenant-owned end-user feedback collected by the AnalyticsCLI feedback feature. Tenant feedback is a product signal for the tenant's app; `analyticscli feedback submit` is operator feedback about AnalyticsCLI/OpenClaw tooling.
+- When an AnalyticsCLI command or API endpoint fails in a way that blocks analysis, submit a bounded report if feedback service credentials are configured. Include command/endpoint, project id when safe, sanitized payload shape, status code, error body, request id if present, expected behavior, and workaround used.
+- Example:
+  ```bash
+  analyticscli feedback submit --category bug --message "Retention query returns HTTP 500 for minimal payload" --context "endpoint=/v1/query/retention project=<project_id> anchorEvent=onboarding:start days=[1] last=7d identityQuality=all workaround=funnel+RevenueCat requestId=<request_id_if_present>"
+  ```
+
 Growth operating plan:
 
 - Goal: increase durable product value and business output by reducing churn, increasing MRR/LTV, improving acquisition quality, optimizing funnels/paywalls/onboarding/activation, and creating, changing, or deleting features only when the data supports it.
