@@ -365,20 +365,27 @@ async function main() {
     detail: 'ASC API + web analytics auth',
   });
 
+  const [githubStatus, ascStatus] = await Promise.all([
+    checkGitHub(config, args.timeoutMs),
+    preflightPayload
+      ? summarizeAsc(preflightPayload, config, args.timeoutMs)
+      : Promise.resolve(connector('unknown', preflight.error || 'Preflight did not run')),
+  ]);
+
   const connectors = preflightPayload
     ? {
         analyticscli: summarizeAnalytics(preflightPayload, config),
-        github: await checkGitHub(config, args.timeoutMs),
+        github: githubStatus,
         revenuecat: summarizeRevenueCat(preflightPayload, config),
         sentry: summarizeSentry(preflightPayload, config),
-        appStoreConnect: await summarizeAsc(preflightPayload, config, args.timeoutMs),
+        appStoreConnect: ascStatus,
       }
     : {
         analyticscli: connector('unknown', preflight.error || 'Preflight did not run'),
-        github: await checkGitHub(config, args.timeoutMs),
+        github: githubStatus,
         revenuecat: connector('unknown', preflight.error || 'Preflight did not run'),
         sentry: connector('unknown', preflight.error || 'Preflight did not run'),
-        appStoreConnect: connector('unknown', preflight.error || 'Preflight did not run'),
+        appStoreConnect: ascStatus,
       };
   emitProgress(args.progressJson, {
     phase: 'finish',

@@ -442,6 +442,16 @@ function truncate(value, max = 240) {
   return `${text.slice(0, max)}…`;
 }
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isTransientNetworkFailure(value) {
+  return /NETWORK_ERROR|fetch failed|tlsv1 alert|SSL routines|ECONNRESET|ECONNREFUSED|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|socket hang up|network timeout|Temporary failure/i.test(
+    String(value || ''),
+  );
+}
+
 async function readJson(filePath): Promise<any> {
   const raw = await fs.readFile(filePath, 'utf8');
   return JSON.parse(raw);
@@ -492,6 +502,23 @@ async function runProgressGroup({ checks, progressJson, key, label, detail, run 
   }
 }
 
+function scheduleProgressGroup(tasks, checks, progressJson, { key, label, detail, run }) {
+  tasks.push(
+    (async () => {
+      const groupChecks = [];
+      await runProgressGroup({
+        checks: groupChecks,
+        progressJson,
+        key,
+        label,
+        detail,
+        run: () => run(groupChecks),
+      });
+      checks.push(...groupChecks);
+    })(),
+  );
+}
+
 function getSecretName(config, key, fallback) {
   const value = config?.secrets?.[key];
   return typeof value === 'string' && value.trim() ? value.trim() : fallback;
@@ -530,28 +557,36 @@ async function testAnalyticsConnection(analyticsToken, analyticsTokenEnv, timeou
     };
   }
 
-  const result = await runShell('analyticscli projects list --format json', {
-    env: analyticsToken
-      ? {
-          [analyticsTokenEnv]: analyticsToken,
-          ANALYTICSCLI_ACCESS_TOKEN: analyticsToken,
-          ANALYTICSCLI_READONLY_TOKEN: analyticsToken,
-        }
-      : undefined,
-    timeoutMs,
-  });
+  const runCheck = () =>
+    runShell('analyticscli projects list --format json', {
+      env: analyticsToken
+        ? {
+            [analyticsTokenEnv]: analyticsToken,
+            ANALYTICSCLI_ACCESS_TOKEN: analyticsToken,
+            ANALYTICSCLI_READONLY_TOKEN: analyticsToken,
+          }
+        : undefined,
+      timeoutMs,
+    });
+  let result = await runCheck();
+  let retried = false;
+  if (!result.ok && isTransientNetworkFailure(result.stderr || result.stdout)) {
+    retried = true;
+    await sleep(1_500);
+    result = await runCheck();
+  }
   if (!result.ok) {
     return {
       ok: false,
-      detail: truncate(result.stderr || `exit ${result.code}`),
+      detail: truncate(`${retried ? 'transient network error persisted after retry: ' : ''}${result.stderr || `exit ${result.code}`}`),
     };
   }
 
   return {
     ok: true,
     detail: analyticsToken
-      ? 'analyticscli token auth check passed (`projects list`)'
-      : 'analyticscli auth check passed (`projects list`)',
+      ? `analyticscli token auth check passed${retried ? ' after retry' : ''} (\`projects list\`)`
+      : `analyticscli auth check passed${retried ? ' after retry' : ''} (\`projects list\`)`,
   };
 }
 
@@ -755,11 +790,17 @@ function getProjectCommandCwd(config) {
 }
 
 async function testCommandSourceJson(command, cwd = process.cwd()) {
-  const result = await runShell(command, { cwd });
+  let result = await runShell(command, { cwd });
+  let retried = false;
+  if (!result.ok && isTransientNetworkFailure(result.stderr || result.stdout)) {
+    retried = true;
+    await sleep(1_500);
+    result = await runShell(command, { cwd });
+  }
   if (!result.ok) {
     return {
       ok: false,
-      detail: truncate(result.stderr || `exit ${result.code}`),
+      detail: truncate(`${retried ? 'transient network error persisted after retry: ' : ''}${result.stderr || `exit ${result.code}`}`),
     };
   }
 
@@ -773,7 +814,7 @@ async function testCommandSourceJson(command, cwd = process.cwd()) {
   }
   return {
     ok: true,
-    detail: 'command returned JSON',
+    detail: retried ? 'command returned JSON after retry' : 'command returned JSON',
   };
 }
 
@@ -782,6 +823,7 @@ function onlyAllows(onlyConnectors, connector) {
 }
 
 async function runConnectionChecks({ checks, config, timeoutMs, progressJson = false, onlyConnectors = [] }) {
+  const tasks = [];
   const analyticsTokenEnv = getSecretName(config, 'analyticsTokenEnv', 'ANALYTICSCLI_ACCESS_TOKEN');
   const revenuecatTokenEnv = getSecretName(config, 'revenuecatTokenEnv', 'REVENUECAT_API_KEY');
   const sentryTokenEnv = getSecretName(config, 'sentryTokenEnv', 'SENTRY_AUTH_TOKEN');
@@ -796,19 +838,17 @@ async function runConnectionChecks({ checks, config, timeoutMs, progressJson = f
 
   const analyticsSource = config.sources?.analytics;
   if (onlyAllows(onlyConnectors, 'analytics')) {
-    await runProgressGroup({
-      checks,
-      progressJson,
+    scheduleProgressGroup(tasks, checks, progressJson, {
       key: 'analytics',
       label: 'AnalyticsCLI',
       detail: 'token auth + readonly query',
-      run: async () => {
+      run: async (groupChecks) => {
       if (sourceEnabled(config, 'analytics')) {
         const analyticsToken = process.env.ANALYTICSCLI_ACCESS_TOKEN || process.env[analyticsTokenEnv] || process.env.ANALYTICSCLI_READONLY_TOKEN || '';
         const hasAnalyticsToken = Boolean(analyticsToken);
         const analyticsConnection = await testAnalyticsConnection(analyticsToken, analyticsTokenEnv, timeoutMs);
         addCheck(
-          checks,
+          groupChecks,
           'connection:analytics',
           analyticsConnection.ok,
           analyticsConnection.ok
@@ -824,7 +864,7 @@ async function runConnectionChecks({ checks, config, timeoutMs, progressJson = f
           } else {
             const commandCheck = await testCommandSourceJson(command, commandCwd);
             addCheck(
-              checks,
+              groupChecks,
               'connection:analytics-command',
               commandCheck.ok,
               commandCheck.ok
@@ -834,7 +874,7 @@ async function runConnectionChecks({ checks, config, timeoutMs, progressJson = f
           }
         }
       } else {
-        addCheck(checks, 'connection:analytics', true, 'source disabled');
+        addCheck(groupChecks, 'connection:analytics', true, 'source disabled');
       }
       },
     });
@@ -842,18 +882,16 @@ async function runConnectionChecks({ checks, config, timeoutMs, progressJson = f
 
   const revenuecatSource = config.sources?.revenuecat;
   if (onlyAllows(onlyConnectors, 'revenuecat')) {
-    await runProgressGroup({
-      checks,
-      progressJson,
+    scheduleProgressGroup(tasks, checks, progressJson, {
       key: 'revenuecat',
       label: 'RevenueCat',
       detail: 'API key auth + project read',
-      run: async () => {
+      run: async (groupChecks) => {
       if (sourceEnabled(config, 'revenuecat')) {
         const token = process.env[revenuecatTokenEnv] || '';
         if (!token) {
           addCheck(
-            checks,
+            groupChecks,
             `connection:revenuecat`,
             false,
             `${revenuecatTokenEnv} missing (required for live RevenueCat API test)`,
@@ -862,7 +900,7 @@ async function runConnectionChecks({ checks, config, timeoutMs, progressJson = f
         } else {
           const revenuecatConnection = await testRevenueCatConnection(token, timeoutMs);
           addCheck(
-            checks,
+            groupChecks,
             'connection:revenuecat',
             revenuecatConnection.ok,
             revenuecatConnection.ok
@@ -871,7 +909,7 @@ async function runConnectionChecks({ checks, config, timeoutMs, progressJson = f
           );
         }
       } else {
-        addCheck(checks, 'connection:revenuecat', true, 'source disabled');
+        addCheck(groupChecks, 'connection:revenuecat', true, 'source disabled');
       }
       },
     });
@@ -879,13 +917,11 @@ async function runConnectionChecks({ checks, config, timeoutMs, progressJson = f
 
   const sentrySource = config.sources?.sentry;
   if (onlyAllows(onlyConnectors, 'sentry')) {
-    await runProgressGroup({
-      checks,
-      progressJson,
+    scheduleProgressGroup(tasks, checks, progressJson, {
       key: 'sentry',
       label: 'Sentry / GlitchTip',
       detail: 'token/org API + project discovery',
-      run: async () => {
+      run: async (groupChecks) => {
       if (sourceEnabled(config, 'sentry')) {
         const sentryAccounts = normalizeSentryAccounts(config, sentryTokenEnv);
         for (const account of sentryAccounts) {
@@ -893,7 +929,7 @@ async function runConnectionChecks({ checks, config, timeoutMs, progressJson = f
           const checkName = sentryAccounts.length > 1 ? `connection:sentry:${account.key}` : 'connection:sentry';
           if (!token) {
             addCheck(
-              checks,
+              groupChecks,
               checkName,
               false,
               `${account.tokenEnv} missing (required for live Sentry API test for ${account.label})`,
@@ -903,7 +939,7 @@ async function runConnectionChecks({ checks, config, timeoutMs, progressJson = f
           }
           const sentryConnection = await testSentryConnection(token, timeoutMs, account.baseUrl);
           addCheck(
-            checks,
+            groupChecks,
             checkName,
             sentryConnection.ok,
             sentryConnection.ok
@@ -918,7 +954,7 @@ async function runConnectionChecks({ checks, config, timeoutMs, progressJson = f
           } else {
             const commandCheck = await testCommandSourceJson(command, commandCwd);
             addCheck(
-              checks,
+              groupChecks,
               'connection:sentry-command',
               commandCheck.ok,
               commandCheck.ok
@@ -928,7 +964,7 @@ async function runConnectionChecks({ checks, config, timeoutMs, progressJson = f
           }
         }
       } else {
-        addCheck(checks, 'connection:sentry', true, 'source disabled');
+        addCheck(groupChecks, 'connection:sentry', true, 'source disabled');
       }
       },
     });
@@ -1030,16 +1066,14 @@ async function runConnectionChecks({ checks, config, timeoutMs, progressJson = f
   const githubCheckName =
     actionMode === 'pull_request' ? 'connection:github-pull-requests' : 'connection:github';
   if (onlyAllows(onlyConnectors, 'github')) {
-    await runProgressGroup({
-      checks,
-      progressJson,
+    scheduleProgressGroup(tasks, checks, progressJson, {
       key: 'github',
       label: 'GitHub',
       detail: githubRepo ? `repo access (${githubRepo})` : 'repo access deferred until repo is known',
-      run: async () => {
+      run: async (groupChecks) => {
       if (!requiresGitHubDelivery && (!githubToken || !githubRepo)) {
         addCheck(
-          checks,
+          groupChecks,
           githubCheckName,
           true,
           githubToken
@@ -1048,7 +1082,7 @@ async function runConnectionChecks({ checks, config, timeoutMs, progressJson = f
         );
       } else if (!githubToken) {
         addCheck(
-          checks,
+          groupChecks,
           githubCheckName,
           !requiresGitHubDelivery,
           `${githubTokenEnv} missing (required; ${getGitHubRequirementText(actionMode)})`,
@@ -1057,7 +1091,7 @@ async function runConnectionChecks({ checks, config, timeoutMs, progressJson = f
       } else {
         const githubConnection = await testGitHubConnection(githubToken, githubRepo, timeoutMs, actionMode);
         addCheck(
-          checks,
+          groupChecks,
           githubCheckName,
           githubConnection.ok,
           githubConnection.ok
@@ -1068,6 +1102,8 @@ async function runConnectionChecks({ checks, config, timeoutMs, progressJson = f
       },
     });
   }
+
+  await Promise.all(tasks);
 }
 
 async function main() {
