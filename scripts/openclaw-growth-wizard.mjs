@@ -9,6 +9,7 @@ import { createPrivateKey } from 'node:crypto';
 import { buildExtraSourceConfig, getDefaultSourceCommand, getDefaultSourceHint, getDefaultSourcePath, } from './openclaw-growth-shared.mjs';
 import { loadOpenClawGrowthSecrets } from './openclaw-growth-env.mjs';
 const DEFAULT_CONFIG_PATH = 'data/openclaw-growth-engineer/config.json';
+const SELF_UPDATE_INTERVAL_MS = 24 * 60 * 60 * 1000;
 const CONNECTOR_KEYS = ['analytics', 'github', 'revenuecat', 'sentry', 'asc'];
 const CONNECTOR_DEFINITIONS = [
     {
@@ -75,11 +76,18 @@ async function writeJsonFile(filePath, value) {
     await ensureDirForFile(filePath);
     await fs.writeFile(filePath, `${JSON.stringify(value, null, 2)}\n`, 'utf8');
 }
+function isTruthyEnv(value) {
+    return ['1', 'true', 'yes', 'y', 'on'].includes(String(value || '').trim().toLowerCase());
+}
+function isFalseyEnv(value) {
+    return ['0', 'false', 'no', 'n', 'off'].includes(String(value || '').trim().toLowerCase());
+}
 function parseArgs(argv) {
     const args = {
         config: DEFAULT_CONFIG_PATH,
         connectorWizard: false,
         connectors: '',
+        noSelfUpdate: false,
         out: DEFAULT_CONFIG_PATH,
     };
     for (let i = 0; i < argv.length; i += 1) {
@@ -105,6 +113,9 @@ function parseArgs(argv) {
             args.config = next;
             i += 1;
         }
+        else if (token === '--no-self-update') {
+            args.noSelfUpdate = true;
+        }
         else if (token === '--help' || token === '-h') {
             printHelpAndExit(0);
         }
@@ -124,6 +135,9 @@ OpenClaw Growth Setup Wizard
 Usage:
   node scripts/openclaw-growth-wizard.mjs [--out <config-path>]
   node scripts/openclaw-growth-wizard.mjs --connectors [analytics,github,revenuecat,sentry,asc] [--config <config-path>]
+
+Options:
+  --no-self-update   Skip the ClawHub skill update check for this run
 `);
     process.exit(exitCode);
 }
@@ -552,6 +566,44 @@ async function runCommandCapture(command, options = {}) {
             resolve({ ok: false, stdout, stderr: error.message, code: null });
         });
         child.on('close', (code) => {
+            resolve({ ok: code === 0, stdout, stderr, code });
+        });
+    });
+}
+async function runCommandCaptureWithTimeout(command, options = {}) {
+    return await new Promise((resolve) => {
+        const child = spawn('/bin/sh', ['-lc', command], {
+            env: options.env ?? process.env,
+            stdio: ['ignore', 'pipe', 'pipe'],
+        });
+        let stdout = '';
+        let stderr = '';
+        let settled = false;
+        const timer = setTimeout(() => {
+            if (settled)
+                return;
+            settled = true;
+            child.kill('SIGTERM');
+            resolve({ ok: false, stdout, stderr: `${stderr}\nTimed out after ${options.timeoutMs}ms`, code: null });
+        }, options.timeoutMs ?? 60_000);
+        child.stdout.on('data', (chunk) => {
+            stdout += String(chunk);
+        });
+        child.stderr.on('data', (chunk) => {
+            stderr += String(chunk);
+        });
+        child.on('error', (error) => {
+            if (settled)
+                return;
+            settled = true;
+            clearTimeout(timer);
+            resolve({ ok: false, stdout, stderr: error.message, code: null });
+        });
+        child.on('close', (code) => {
+            if (settled)
+                return;
+            settled = true;
+            clearTimeout(timer);
             resolve({ ok: code === 0, stdout, stderr, code });
         });
     });
@@ -1619,6 +1671,100 @@ async function guideAscConnector(rl, secrets) {
             secrets.ASC_PRIVATE_KEY_PATH = privateKeyPath.trim();
     }
 }
+async function shouldRunSelfUpdate(workspaceRoot, force) {
+    if (force)
+        return true;
+    const statePath = path.join(workspaceRoot, 'data/openclaw-growth-engineer/self-update.json');
+    const state = await readJsonIfPresent(statePath).catch(() => null);
+    const lastCheckedAt = Date.parse(String(state?.lastCheckedAt || ''));
+    return !Number.isFinite(lastCheckedAt) || Date.now() - lastCheckedAt > SELF_UPDATE_INTERVAL_MS;
+}
+async function writeSelfUpdateState(workspaceRoot, value) {
+    const statePath = path.join(workspaceRoot, 'data/openclaw-growth-engineer/self-update.json');
+    await writeJsonFile(statePath, {
+        version: 1,
+        checkedAt: new Date().toISOString(),
+        ...value,
+    });
+}
+async function rerunCurrentWizardWithoutSelfUpdate() {
+    return await new Promise((resolve) => {
+        const child = spawn(process.execPath, process.argv.slice(1), {
+            env: {
+                ...process.env,
+                OPENCLAW_GROWTH_SKIP_SELF_UPDATE: '1',
+            },
+            stdio: 'inherit',
+        });
+        child.on('error', () => resolve(1));
+        child.on('close', (code) => resolve(code));
+    });
+}
+async function filesHaveSameContent(leftPath, rightPath) {
+    try {
+        const [left, right] = await Promise.all([fs.readFile(leftPath), fs.readFile(rightPath)]);
+        return left.equals(right);
+    }
+    catch {
+        return false;
+    }
+}
+async function maybeSelfUpdateFromClawHub(args) {
+    if (args.noSelfUpdate)
+        return false;
+    if (isTruthyEnv(process.env.OPENCLAW_GROWTH_SKIP_SELF_UPDATE))
+        return false;
+    if (isTruthyEnv(process.env.OPENCLAW_GROWTH_DISABLE_SELF_UPDATE))
+        return false;
+    if (isFalseyEnv(process.env.OPENCLAW_GROWTH_SELF_UPDATE))
+        return false;
+    const workspaceRoot = process.cwd();
+    const skillOriginPath = path.join(workspaceRoot, 'skills/openclaw-growth-engineer/.clawhub/origin.json');
+    if (!(await fileExists(skillOriginPath)))
+        return false;
+    if (!(await commandExists('npx')))
+        return false;
+    const force = String(process.env.OPENCLAW_GROWTH_SELF_UPDATE || '').trim().toLowerCase() === 'always';
+    if (!(await shouldRunSelfUpdate(workspaceRoot, force)))
+        return false;
+    const beforeOrigin = await readJsonIfPresent(skillOriginPath).catch(() => null);
+    const beforeVersion = String(beforeOrigin?.installedVersion || '');
+    process.stdout.write('Checking for OpenClaw Growth Engineer skill updates...\n');
+    const updateResult = await runCommandCaptureWithTimeout('npx -y clawhub --no-input --dir skills update openclaw-growth-engineer --force', { timeoutMs: 120_000 });
+    const afterOrigin = await readJsonIfPresent(skillOriginPath).catch(() => null);
+    const afterVersion = String(afterOrigin?.installedVersion || beforeVersion || '');
+    const workspaceWizardPath = path.resolve(process.argv[1] || 'scripts/openclaw-growth-wizard.mjs');
+    const skillWizardPath = path.join(workspaceRoot, 'skills/openclaw-growth-engineer/scripts/openclaw-growth-wizard.mjs');
+    const runtimeOutdated = !(await filesHaveSameContent(workspaceWizardPath, skillWizardPath));
+    await writeSelfUpdateState(workspaceRoot, {
+        lastCheckedAt: new Date().toISOString(),
+        ok: updateResult.ok,
+        previousVersion: beforeVersion || null,
+        installedVersion: afterVersion || null,
+    }).catch(() => { });
+    if (!updateResult.ok) {
+        const detail = String(updateResult.stderr || updateResult.stdout || 'update failed').trim().split(/\r?\n/).pop();
+        process.stdout.write(`${ANSI.dim}Skill update check skipped: ${detail}${ANSI.reset}\n`);
+        return false;
+    }
+    if ((!afterVersion || afterVersion === beforeVersion) && !runtimeOutdated) {
+        return false;
+    }
+    if (afterVersion && afterVersion !== beforeVersion) {
+        process.stdout.write(`Updated OpenClaw Growth Engineer skill ${beforeVersion || 'unknown'} -> ${afterVersion}. Refreshing workspace runtime...\n`);
+    }
+    else {
+        process.stdout.write('Refreshing workspace runtime from the installed OpenClaw Growth Engineer skill...\n');
+    }
+    const bootstrapResult = await runCommandCaptureWithTimeout('bash skills/openclaw-growth-engineer/scripts/bootstrap-openclaw-workspace.sh', { timeoutMs: 60_000 });
+    if (!bootstrapResult.ok) {
+        process.stdout.write(`${ANSI.dim}Workspace runtime refresh failed; continuing with current process.${ANSI.reset}\n`);
+        return false;
+    }
+    process.stdout.write('Restarting wizard with refreshed runtime...\n');
+    const code = await rerunCurrentWizardWithoutSelfUpdate();
+    process.exit(code ?? 0);
+}
 async function runConnectorSetupWizard(args) {
     if (!process.stdin.isTTY || !process.stdout.isTTY) {
         throw new Error('Connector wizard requires an interactive terminal.');
@@ -1787,6 +1933,7 @@ async function askSourceConfig(rl, sourceName, defaultPath, hint, options = {}) 
 async function main() {
     await loadOpenClawGrowthSecrets();
     const args = parseArgs(process.argv.slice(2));
+    await maybeSelfUpdateFromClawHub(args);
     if (args.connectorWizard) {
         await runConnectorSetupWizard(args);
         return;

@@ -23,6 +23,14 @@ fi
 
 WORKSPACE="$(cd "${SKILL_ROOT}/../.." && pwd)"
 
+if [[ "${skill_slug}" == "openclaw-growth-engineer" && -f "${SKILL_ROOT}/.clawhub/origin.json" && "${OPENCLAW_GROWTH_DISABLE_SELF_UPDATE:-}" != "1" && "${OPENCLAW_GROWTH_BOOTSTRAP_SKIP_UPDATE:-}" != "1" ]]; then
+  if command -v clawhub >/dev/null 2>&1; then
+    (cd "${WORKSPACE}" && clawhub --no-input --dir skills update openclaw-growth-engineer --force) || true
+  elif command -v npx >/dev/null 2>&1; then
+    (cd "${WORKSPACE}" && npx -y clawhub --no-input --dir skills update openclaw-growth-engineer --force) || true
+  fi
+fi
+
 mkdir -p "${WORKSPACE}/scripts" "${WORKSPACE}/data/openclaw-growth-engineer"
 
 shopt -s nullglob
