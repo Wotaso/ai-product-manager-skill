@@ -208,11 +208,16 @@ async function askConnectorSelectionWithHealth(rl, healthByConnector = {}, initi
 }
 async function askConnectorSelectionByText(rl, healthByConnector = {}) {
     printConnectorIntro();
-    CONNECTOR_DEFINITIONS.forEach((connector, index) => {
-        process.stdout.write(`  ${index + 1}) ${connector.label}\n`);
-        process.stdout.write(`     ${connector.summary}\n`);
-        process.stdout.write(`     ${formatConnectorHealthLine(connector.key, healthByConnector)}\n`);
-    });
+    for (const group of connectorPickerGroups(healthByConnector)) {
+        process.stdout.write(`${ANSI.bold}${group.title}${ANSI.reset}\n`);
+        for (const connector of group.connectors) {
+            const number = CONNECTOR_DEFINITIONS.findIndex((entry) => entry.key === connector.key) + 1;
+            process.stdout.write(`  ${number}) ${connector.label}\n`);
+            process.stdout.write(`     ${formatConnectorHealthLine(connector.key, healthByConnector)}\n`);
+            process.stdout.write(`     ${connector.summary}\n`);
+        }
+        process.stdout.write('\n');
+    }
     while (true) {
         const answer = await ask(rl, 'Select connectors (comma-separated numbers/names, or all)', 'all');
         const selected = parseConnectorAnswer(answer);
@@ -243,6 +248,22 @@ function orderConnectors(keys) {
 function printConnectorIntro() {
     process.stdout.write(`\n${ANSI.bold}OpenClaw connector setup${ANSI.reset}\n`);
     process.stdout.write(`${ANSI.dim}Secrets stay local on this host. Do not paste them into any chat or social channel.${ANSI.reset}\n\n`);
+}
+async function withTerminalLoading(message, task) {
+    const frames = ['-', '\\', '|', '/'];
+    let index = 0;
+    process.stdout.write(`${message} ${frames[index]}`);
+    const timer = setInterval(() => {
+        index = (index + 1) % frames.length;
+        process.stdout.write(`\r${message} ${frames[index]}`);
+    }, 120);
+    try {
+        return await task;
+    }
+    finally {
+        clearInterval(timer);
+        process.stdout.write(`\r${message} done\n`);
+    }
 }
 function connectorLabel(key) {
     return CONNECTOR_DEFINITIONS.find((connector) => connector.key === key)?.label ?? key;
@@ -277,55 +298,103 @@ function connectorHealthLabel(status) {
         return 'unknown';
     return status || 'not checked';
 }
+function getConnectorHealth(key, healthByConnector = {}) {
+    const fallbackStatus = isConnectorLocallyConfigured(key) ? 'unknown' : 'not_connected';
+    const fallbackDetail = isConnectorLocallyConfigured(key)
+        ? 'credentials exist, but live health was not verified'
+        : '';
+    return healthByConnector[key] || { status: fallbackStatus, detail: fallbackDetail };
+}
+function connectorStatusLabel(key, healthByConnector = {}) {
+    const health = getConnectorHealth(key, healthByConnector);
+    const configured = isConnectorLocallyConfigured(key);
+    if (health.status === 'connected')
+        return configured ? 'configured, healthy' : 'healthy via local tool auth';
+    if (!configured)
+        return 'not configured';
+    return `configured, ${connectorHealthLabel(health.status)}`;
+}
 function formatConnectorHealthLine(key, healthByConnector = {}) {
-    const health = healthByConnector[key];
-    if (!health)
-        return `${ANSI.dim}Health: not checked yet.${ANSI.reset}`;
-    const label = connectorHealthLabel(health.status);
+    const health = getConnectorHealth(key, healthByConnector);
+    const label = connectorStatusLabel(key, healthByConnector);
     const detail = health.detail ? ` - ${health.detail}` : '';
-    return `${ANSI.dim}Health: ${label}${detail}${ANSI.reset}`;
+    return `${ANSI.dim}Status: ${label}${detail}${ANSI.reset}`;
+}
+function connectorPickerGroups(healthByConnector = {}) {
+    const groups = [
+        { title: 'Configured - needs attention', connectors: [] },
+        { title: 'Configured - healthy', connectors: [] },
+        { title: 'Not configured', connectors: [] },
+    ];
+    for (const connector of CONNECTOR_DEFINITIONS) {
+        const configured = isConnectorLocallyConfigured(connector.key);
+        const health = getConnectorHealth(connector.key, healthByConnector);
+        if (!configured && health.status !== 'connected') {
+            groups[2].connectors.push(connector);
+        }
+        else if (health.status === 'connected') {
+            groups[1].connectors.push(connector);
+        }
+        else {
+            groups[0].connectors.push(connector);
+        }
+    }
+    return groups.filter((group) => group.connectors.length > 0);
+}
+function connectorPickerDisplayItems(healthByConnector = {}) {
+    return connectorPickerGroups(healthByConnector).flatMap((group) => group.connectors);
 }
 function connectorKeysNeedingAttention(healthByConnector = {}) {
-    return CONNECTOR_KEYS.filter((key) => ['blocked', 'partial', 'unknown', 'not_connected'].includes(String(healthByConnector[key]?.status || '')));
+    return CONNECTOR_KEYS.filter((key) => ['blocked', 'partial', 'unknown', 'not_connected'].includes(String(getConnectorHealth(key, healthByConnector).status || '')));
 }
 async function getConnectorPickerHealth(configPath) {
-    if (!(await fileExists(configPath)))
-        return {};
+    if (!(await fileExists(configPath))) {
+        return Object.fromEntries(CONNECTOR_KEYS.map((key) => [
+            key,
+            {
+                status: isConnectorLocallyConfigured(key) ? 'unknown' : 'not_connected',
+                detail: isConnectorLocallyConfigured(key)
+                    ? `config file not found at ${configPath}; live check could not run`
+                    : '',
+            },
+        ]));
+    }
     const result = await runCommandCapture(`node scripts/openclaw-growth-status.mjs --config ${quote(configPath)} --json`);
     const payload = parseJsonFromStdout(result.stdout);
     const connectors = payload?.connectors && typeof payload.connectors === 'object' ? payload.connectors : {};
-    return {
+    const healthByConnector = {
         analytics: connectors.analyticscli,
         github: connectors.github,
         revenuecat: connectors.revenuecat,
         sentry: connectors.sentry,
         asc: connectors.appStoreConnect,
     };
+    return Object.fromEntries(CONNECTOR_KEYS.map((key) => [key, getConnectorHealth(key, healthByConnector)]));
 }
 function renderConnectorPicker(cursorIndex, selected, required, healthByConnector = {}, warning = '') {
     process.stdout.write('\x1b[2J\x1b[H');
     printConnectorIntro();
     process.stdout.write(`${ANSI.bold}Select connectors to set up or overwrite now${ANSI.reset}\n`);
     process.stdout.write(`${ANSI.dim}Use Up/Down to move, Space to toggle optional connectors, A to toggle all optional connectors, Enter to continue.${ANSI.reset}\n\n`);
-    CONNECTOR_DEFINITIONS.forEach((connector, index) => {
-        const active = index === cursorIndex;
-        const isRequired = required.has(connector.key);
-        const configured = isConnectorLocallyConfigured(connector.key);
-        const checked = isRequired || selected.has(connector.key);
-        const pointer = active ? `${ANSI.cyan}>${ANSI.reset}` : ' ';
-        const box = checked ? `${ANSI.green}[x]${ANSI.reset}` : '[ ]';
-        const suffix = isRequired ? ' (required baseline, missing)' : configured ? ' (local values found)' : '';
-        const label = `${connector.label}${suffix}`;
-        const title = active ? `${ANSI.bold}${label}${ANSI.reset}` : label;
-        process.stdout.write(`${pointer} ${box} ${title}\n`);
-        process.stdout.write(`    ${connector.summary}\n`);
-        process.stdout.write(`    ${formatConnectorHealthLine(connector.key, healthByConnector)}\n`);
-        process.stdout.write(`    ${ANSI.dim}Needs: ${connector.needs}${ANSI.reset}\n`);
-        if (configured && !checked) {
-            process.stdout.write(`    ${ANSI.dim}Local secrets/env values exist; unchecked keeps them unchanged.${ANSI.reset}\n`);
+    let index = 0;
+    for (const group of connectorPickerGroups(healthByConnector)) {
+        process.stdout.write(`${ANSI.bold}${group.title}${ANSI.reset}\n`);
+        for (const connector of group.connectors) {
+            const active = index === cursorIndex;
+            const isRequired = required.has(connector.key);
+            const checked = isRequired || selected.has(connector.key);
+            const pointer = active ? `${ANSI.cyan}>${ANSI.reset}` : ' ';
+            const box = checked ? `${ANSI.green}[x]${ANSI.reset}` : '[ ]';
+            const suffix = isRequired ? ' (required baseline)' : '';
+            const label = `${connector.label}${suffix}`;
+            const title = active ? `${ANSI.bold}${label}${ANSI.reset}` : label;
+            process.stdout.write(`${pointer} ${box} ${title}\n`);
+            process.stdout.write(`    ${formatConnectorHealthLine(connector.key, healthByConnector)}\n`);
+            process.stdout.write(`    ${connector.summary}\n`);
+            process.stdout.write('\n');
+            index += 1;
         }
-        process.stdout.write('\n');
-    });
+    }
     if (warning) {
         process.stdout.write(`${ANSI.bold}${warning}${ANSI.reset}\n\n`);
     }
@@ -343,6 +412,9 @@ async function askConnectorSelectionByKeys(healthByConnector = {}, initialSelect
     const selected = new Set(CONNECTOR_KEYS.filter((key) => required.has(key) || initial.has(key) || !isConnectorLocallyConfigured(key)));
     let warning = '';
     return await new Promise((resolve, reject) => {
+        const displayItems = () => connectorPickerDisplayItems(healthByConnector);
+        const selectedDisplayConnector = () => displayItems()[cursorIndex] || displayItems()[0];
+        const displayIndexForConnector = (key) => Math.max(0, displayItems().findIndex((connector) => connector.key === key));
         const cleanup = () => {
             process.stdin.off('keypress', onKeypress);
             process.stdin.setRawMode(Boolean(wasRaw));
@@ -368,7 +440,10 @@ async function askConnectorSelectionByKeys(healthByConnector = {}, initialSelect
             reject(new Error('Connector setup cancelled.'));
         };
         const toggleCurrent = () => {
-            const key = CONNECTOR_DEFINITIONS[cursorIndex].key;
+            const connector = selectedDisplayConnector();
+            if (!connector)
+                return;
+            const key = connector.key;
             if (required.has(key)) {
                 selected.add(key);
                 warning = 'AnalyticsCLI is missing and required for the Growth Engineer baseline.';
@@ -400,11 +475,13 @@ async function askConnectorSelectionByKeys(healthByConnector = {}, initialSelect
                 return;
             }
             if (key?.name === 'up' || key?.name === 'k') {
-                cursorIndex = (cursorIndex - 1 + CONNECTOR_DEFINITIONS.length) % CONNECTOR_DEFINITIONS.length;
+                const itemCount = displayItems().length || CONNECTOR_DEFINITIONS.length;
+                cursorIndex = (cursorIndex - 1 + itemCount) % itemCount;
                 warning = '';
             }
             else if (key?.name === 'down' || key?.name === 'j') {
-                cursorIndex = (cursorIndex + 1) % CONNECTOR_DEFINITIONS.length;
+                const itemCount = displayItems().length || CONNECTOR_DEFINITIONS.length;
+                cursorIndex = (cursorIndex + 1) % itemCount;
                 warning = '';
             }
             else if (key?.name === 'space') {
@@ -421,7 +498,7 @@ async function askConnectorSelectionByKeys(healthByConnector = {}, initialSelect
                 const index = Number(_text) - 1;
                 const connector = CONNECTOR_DEFINITIONS[index];
                 if (connector) {
-                    cursorIndex = index;
+                    cursorIndex = displayIndexForConnector(connector.key);
                     if (required.has(connector.key)) {
                         selected.add(connector.key);
                         warning = 'AnalyticsCLI is missing and required for the Growth Engineer baseline.';
@@ -1550,8 +1627,7 @@ async function runConnectorSetupWizard(args) {
     try {
         clearTerminal();
         printConnectorIntro();
-        process.stdout.write('Checking live connector health before showing setup options...\n');
-        const healthByConnector = await getConnectorPickerHealth(args.config);
+        const healthByConnector = await withTerminalLoading('Checking live connector health before showing setup options...', getConnectorPickerHealth(args.config));
         const existingFixes = connectorKeysNeedingAttention(healthByConnector);
         const requestedConnectors = args.connectors ? parseConnectorList(args.connectors) : [];
         const chosenConnectors = requestedConnectors.length > 0
