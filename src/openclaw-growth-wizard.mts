@@ -2135,16 +2135,33 @@ async function guideGitHubConnector(rl, secrets: Record<string, string>) {
   }
 }
 
-async function guideAnalyticsConnector(rl, secrets: Record<string, string>) {
+function shouldForceFreshAnalyticsToken(healthByConnector: Record<string, any> = {}) {
+  const health = getConnectorHealth('analytics', healthByConnector);
+  const detail = String(health?.detail || '');
+  return ['blocked', 'partial'].includes(String(health?.status || '')) || /revoked|unauthorized|invalid token/i.test(detail);
+}
+
+async function guideAnalyticsConnector(rl, secrets: Record<string, string>, options: Record<string, any> = {}) {
   printSection('AnalyticsCLI', [
-    'Paste a readonly token. The setup step will validate it and select a project when needed.',
-    'Token page: https://dash.analyticscli.com/',
+    'Create a readonly CLI token in the AnalyticsCLI dashboard, then paste it here.',
+    'Open https://dash.analyticscli.com/ in your browser.',
+    'In the sidebar, click Account.',
+    'Select API Keys.',
+    'Click Create Access Token.',
+    'Copy the Readonly CLI Token shown once in the modal.',
   ]);
-  const token = await maybePromptSecret(
-    rl,
-    'Paste AnalyticsCLI readonly token into this local terminal',
-    'ANALYTICSCLI_ACCESS_TOKEN',
-  );
+  process.stdout.write('Do not paste the token into chat. Paste it only into this local terminal.\n\n');
+  const forceFresh = Boolean(options.forceFresh);
+  if (forceFresh && process.env.ANALYTICSCLI_ACCESS_TOKEN) {
+    process.stdout.write('A previous AnalyticsCLI token is already stored, but the last health check rejected it. Paste the new token from the dashboard now.\n\n');
+  }
+  const token = forceFresh
+    ? await ask(rl, 'Paste the new AnalyticsCLI readonly CLI token into this local terminal', '')
+    : await maybePromptSecret(
+        rl,
+        'Paste AnalyticsCLI readonly CLI token into this local terminal',
+        'ANALYTICSCLI_ACCESS_TOKEN',
+      );
   if (token) {
     secrets.ANALYTICSCLI_ACCESS_TOKEN = token;
     secrets.ANALYTICSCLI_READONLY_TOKEN = token;
@@ -2481,9 +2498,10 @@ async function runConnectorSetupWizard(args) {
     const secrets: Record<string, string> = {};
     let sentryAccounts: any[] = [];
     if (selected.includes('analytics')) {
+      let forceFreshAnalyticsToken = shouldForceFreshAnalyticsToken(healthByConnector);
       while (true) {
         clearTerminal();
-        await guideAnalyticsConnector(rl, secrets);
+        await guideAnalyticsConnector(rl, secrets, { forceFresh: forceFreshAnalyticsToken });
         const check = await runImmediateConnectorHealthCheck({
           rl,
           configPath: args.config,
@@ -2491,6 +2509,7 @@ async function runConnectorSetupWizard(args) {
           secrets,
         });
         if (!check.retry) break;
+        forceFreshAnalyticsToken = true;
       }
     }
     if (selected.includes('github')) {
