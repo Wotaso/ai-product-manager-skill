@@ -3,7 +3,7 @@ name: openclaw-growth-engineer
 description: AI Growth Engineer for mobile apps and agent runtimes including OpenClaw and Hermes. Correlate analytics, crashes, billing, feedback, store signals, and repo context into proposal drafts that can flow into agent chat, GitHub issues, or draft pull requests.
 license: MIT
 homepage: https://github.com/wotaso/analyticscli-skills
-metadata: {"author":"wotaso","version":"1.0.90","analyticscli-target":"@analyticscli/cli","analyticscli-supported-range":">=0.1.2-preview.0 <0.2.0","openclaw":{"emoji":"🚀","homepage":"https://github.com/wotaso/analyticscli-skills","requires":{"bins":["node","analyticscli"]},"install":[{"id":"analyticscli-cli","kind":"node","package":"@analyticscli/cli@preview","bins":["analyticscli"],"label":"Install/update AnalyticsCLI CLI (npm package @analyticscli/cli@preview)"}]},"hermes":{"tags":["Growth","Analytics","Mobile","Product","OpenClaw"],"homepage":"https://github.com/Wotaso/openclaw-growth-engineer-skill","requires":{"bins":["node","analyticscli"]},"install":[{"id":"openclaw-growth-engineer","kind":"skill","package":"Wotaso/openclaw-growth-engineer-skill","label":"Install the shared AI Growth Engineer skill for Hermes"}]}}
+metadata: {"author":"wotaso","version":"1.0.91","analyticscli-target":"@analyticscli/cli","analyticscli-supported-range":">=0.1.2-preview.0 <0.2.0","openclaw":{"emoji":"🚀","homepage":"https://github.com/wotaso/analyticscli-skills","requires":{"bins":["node","analyticscli"]},"install":[{"id":"analyticscli-cli","kind":"node","package":"@analyticscli/cli@preview","bins":["analyticscli"],"label":"Install/update AnalyticsCLI CLI (npm package @analyticscli/cli@preview)"}]},"hermes":{"tags":["Growth","Analytics","Mobile","Product","OpenClaw"],"homepage":"https://github.com/Wotaso/openclaw-growth-engineer-skill","requires":{"bins":["node","analyticscli"]},"install":[{"id":"openclaw-growth-engineer","kind":"skill","package":"Wotaso/openclaw-growth-engineer-skill","label":"Install the shared AI Growth Engineer skill for Hermes"}]}}
 ---
 
 # OpenClaw Growth Engineer
@@ -120,10 +120,14 @@ AnalyticsCLI product feedback:
 - Use Sentry/GlitchTip for production exceptions, crashes, hangs, and backend stack traces.
 - Use `analyticscli feedback submit` for feedback to the AnalyticsCLI SaaS owner about AnalyticsCLI itself: missing features, broken CLI/API/dashboard behavior, confusing errors, poor docs, or workflow friction.
 - Do not confuse this with tenant-owned end-user feedback collected by the AnalyticsCLI feedback feature. Tenant feedback is a product signal for the tenant's app; `analyticscli feedback submit` is operator feedback about AnalyticsCLI/OpenClaw tooling.
-- When an AnalyticsCLI command or API endpoint fails in a way that blocks analysis, submit a bounded report if feedback service credentials are configured. Include command/endpoint, project id when safe, sanitized payload shape, status code, error body, request id if present, expected behavior, and workaround used.
+- When an AnalyticsCLI/OpenClaw/SDK command, endpoint, or documented workflow fails, first try to refetch or update the relevant current version before declaring the behavior broken:
+  - OpenClaw Growth Engineer skill: `npx -y clawhub --no-input --dir skills update openclaw-growth-engineer --force` or reinstall from the canonical skill source, then rerun the workflow.
+  - AnalyticsCLI CLI: update `@analyticscli/cli@preview`, verify `analyticscli --help`, then rerun the exact failing command.
+  - AnalyticsCLI SDK: upgrade `@analyticscli/sdk` within the supported range and rerun the minimal host-app or test repro.
+- If no newer version is available, the update cannot be applied, or the newest version still fails, submit a bounded `analyticscli feedback submit` report if feedback service credentials are configured. Include installed versions checked, command/endpoint, project id when safe, sanitized payload shape, status code, error body, request id if present, expected behavior, workaround used, and whether an update was attempted.
 - Example:
   ```bash
-  analyticscli feedback submit --category bug --message "Retention query returns HTTP 500 for minimal payload" --context "endpoint=/v1/query/retention project=<project_id> anchorEvent=onboarding:start days=[1] last=7d identityQuality=all workaround=funnel+RevenueCat requestId=<request_id_if_present>"
+  analyticscli feedback submit --category bug --message "Retention query returns HTTP 500 for minimal payload" --context "endpoint=/v1/query/retention project=<project_id> anchorEvent=onboarding:start days=[1] last=7d identityQuality=all updateAttempt=cli@preview+skill@latest workaround=funnel+RevenueCat requestId=<request_id_if_present>"
   ```
 
 Growth operating plan:
