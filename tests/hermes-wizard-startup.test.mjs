@@ -5,12 +5,14 @@ import test from 'node:test';
 
 const skillRoot = resolve(import.meta.dirname, '..');
 
-test('Hermes startup instructions route first setup through the connector wizard', () => {
+test('Hermes startup instructions tell chat agents to hand off a full wizard command', () => {
   const skill = readFileSync(join(skillRoot, 'SKILL.md'), 'utf8');
 
   assert.match(skill, /## Hermes Startup Override/);
   assert.match(skill, /node scripts\/openclaw-growth-wizard\.mjs --connectors/);
   assert.match(skill, /Do not satisfy those messages by only installing `analyticscli`/);
+  assert.match(skill, /do not start the interactive wizard process yourself/i);
+  assert.match(skill, /Run this in your VPS\/host shell and paste secrets only there/);
 });
 
 test('runtime auth remediation does not route AnalyticsCLI setup to standalone login', () => {

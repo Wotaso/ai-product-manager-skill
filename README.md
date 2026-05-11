@@ -24,7 +24,7 @@ hermes skills install Wotaso/openclaw-growth-engineer-skill
 
 ## Quick Start
 
-1. Run the wizard from the active app workspace:
+1. Paste this into the VPS/host shell for the active app workspace:
 
 ```bash
 SKILL_DIR="${HERMES_SKILL_DIR}"
@@ -33,7 +33,7 @@ OPENCLAW_GROWTH_WORKSPACE="$PWD" bash "$SKILL_DIR/scripts/bootstrap-openclaw-wor
   node scripts/openclaw-growth-wizard.mjs --connectors
 ```
 
-Secrets stay in the local terminal wizard. Do not use chat or a standalone `analyticscli login` step for first setup.
+Secrets stay in the VPS/host shell wizard. Do not use chat or a standalone `analyticscli login` step for first setup.
 
 2. Run setup:
 

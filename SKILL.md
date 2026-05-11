@@ -3,7 +3,7 @@ name: openclaw-growth-engineer
 description: AI Growth Engineer for mobile apps and agent runtimes including OpenClaw and Hermes. Correlate analytics, crashes, billing, feedback, store signals, and repo context into proposal drafts that can flow into agent chat, GitHub issues, or draft pull requests.
 license: MIT
 homepage: https://github.com/wotaso/analyticscli-skills
-metadata: {"author":"wotaso","version":"1.0.94","analyticscli-target":"@analyticscli/cli","analyticscli-supported-range":">=0.1.2-preview.0 <0.2.0","openclaw":{"emoji":"🚀","homepage":"https://github.com/wotaso/analyticscli-skills","requires":{"bins":["node","analyticscli"]},"install":[{"id":"analyticscli-cli","kind":"node","package":"@analyticscli/cli@preview","bins":["analyticscli"],"label":"Install/update AnalyticsCLI CLI (npm package @analyticscli/cli@preview)"}]},"hermes":{"tags":["Growth","Analytics","Mobile","Product","OpenClaw"],"homepage":"https://github.com/Wotaso/openclaw-growth-engineer-skill","requires":{"bins":["node","analyticscli"]},"install":[{"id":"openclaw-growth-engineer","kind":"skill","package":"Wotaso/openclaw-growth-engineer-skill","label":"Install the shared AI Growth Engineer skill for Hermes"}]}}
+metadata: {"author":"wotaso","version":"1.0.95","analyticscli-target":"@analyticscli/cli","analyticscli-supported-range":">=0.1.2-preview.0 <0.2.0","openclaw":{"emoji":"🚀","homepage":"https://github.com/wotaso/analyticscli-skills","requires":{"bins":["node","analyticscli"]},"install":[{"id":"analyticscli-cli","kind":"node","package":"@analyticscli/cli@preview","bins":["analyticscli"],"label":"Install/update AnalyticsCLI CLI (npm package @analyticscli/cli@preview)"}]},"hermes":{"tags":["Growth","Analytics","Mobile","Product","OpenClaw"],"homepage":"https://github.com/Wotaso/openclaw-growth-engineer-skill","requires":{"bins":["node","analyticscli"]},"install":[{"id":"openclaw-growth-engineer","kind":"skill","package":"Wotaso/openclaw-growth-engineer-skill","label":"Install the shared AI Growth Engineer skill for Hermes"}]}}
 ---
 
 # OpenClaw Growth Engineer
@@ -29,7 +29,9 @@ Hermes must treat user messages such as "ja los", "starte den Growth Engineer", 
 
 Do not satisfy those messages by only installing `analyticscli`, running `analyticscli login`, or telling the user to run `analyticscli login` manually. The Growth Engineer setup path is the bundled local terminal wizard because it handles connector selection, secret storage, project/app discovery, cadence, and smoke tests.
 
-For Hermes, use this exact active-workspace command shape after skill installation:
+When Hermes is running from chat/Discord or any non-interactive agent terminal, do not start the interactive wizard process yourself. Reply with one complete copy/paste command and tell the user to run it in the VPS or host shell where Hermes/OpenClaw should be configured. Secrets must be pasted into that shell only, not into chat.
+
+Use this exact command block in the reply after skill installation:
 
 ```bash
 SKILL_DIR="${HERMES_SKILL_DIR}"
@@ -38,6 +40,8 @@ if [ ! -d "$SKILL_DIR/scripts" ]; then SKILL_DIR="skills/openclaw-growth-enginee
 OPENCLAW_GROWTH_WORKSPACE="$PWD" bash "$SKILL_DIR/scripts/bootstrap-openclaw-workspace.sh" && \
   node scripts/openclaw-growth-wizard.mjs --connectors
 ```
+
+Then add exactly one short instruction sentence: "Run this in your VPS/host shell and paste secrets only there."
 
 If AnalyticsCLI auth is missing or invalid, the next action is still the wizard command above. The wizard should ask for the readonly token in the local terminal and persist it as `ANALYTICSCLI_ACCESS_TOKEN`; chat should not ask the user to paste tokens or detour into a separate `analyticscli login` flow.
 
@@ -545,7 +549,9 @@ Do not list GlitchTip or ASC CLI as mobile extras in setup answers. GlitchTip be
 When the user says "start", "run", or "kick off" the skill:
 
 1. Run the Dependency Refresh Protocol first. It must update this skill, the `analyticscli-cli` skill when available, and the `@analyticscli/cli@preview` npm package, then verify `command -v analyticscli`.
-2. If setup is incomplete, connectors are not selected, AnalyticsCLI auth is missing/invalid, or the host is Hermes, run the bundled wizard from the active workspace before any preflight/start run:
+2. If setup is incomplete, connectors are not selected, AnalyticsCLI auth is missing/invalid, or the host is Hermes, route the user to the bundled wizard before any preflight/start run.
+   - In Hermes chat/Discord/non-interactive terminals, do not run the wizard yourself. Show the full command below and tell the user to paste it into the VPS/host shell.
+   - Only run this command yourself when you are already operating inside an interactive user terminal that can safely receive secret input outside chat.
    ```bash
    SKILL_DIR="${HERMES_SKILL_DIR}"
    if [ -z "$SKILL_DIR" ] || [ ! -d "$SKILL_DIR/scripts" ]; then SKILL_DIR="$HOME/.hermes/skills/openclaw-growth-engineer"; fi
