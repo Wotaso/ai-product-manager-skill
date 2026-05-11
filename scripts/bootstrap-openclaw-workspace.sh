@@ -54,9 +54,42 @@ for f in "${SKILL_ROOT}/data/openclaw-growth-engineer/"*.json; do
   cp "${f}" "${WORKSPACE}/data/openclaw-growth-engineer/$(basename "${f}")"
 done
 
+heartbeat_path="${WORKSPACE}/HEARTBEAT.md"
+heartbeat_has_work="0"
+if [[ -f "${heartbeat_path}" ]]; then
+  if awk '
+    {
+      line=$0
+      sub(/^[[:space:]]+/, "", line)
+      sub(/[[:space:]]+$/, "", line)
+      if (line != "" && line !~ /^#/ && line !~ /^<!--/ && line !~ /^-->/) found=1
+    }
+    END { exit found ? 0 : 1 }
+  ' "${heartbeat_path}"; then
+    heartbeat_has_work="1"
+  fi
+fi
+
+if [[ ! -f "${heartbeat_path}" || "${heartbeat_has_work}" != "1" ]]; then
+  cat > "${heartbeat_path}" <<'EOF'
+# OpenClaw heartbeat checklist
+
+<!-- openclaw-growth-engineer:start -->
+tasks:
+
+- name: openclaw-growth-engineer-run
+  interval: 1d
+  prompt: "Run `node scripts/openclaw-growth-runner.mjs --config data/openclaw-growth-engineer/config.json` from the workspace if the config and runtime files exist. The runner owns schedule.cadences, connectorHealthCheckIntervalMinutes, skipIfNoDataChange, and skipIfIssueSetUnchanged. If it reports connector-health alerts, production crashes, generated issues, or actionable growth findings, summarize only the action and evidence. If setup files are missing, tell the user to run `node scripts/openclaw-growth-wizard.mjs --connectors`. If there is no actionable output, reply HEARTBEAT_OK."
+
+# Keep this section small. Do not put secrets in HEARTBEAT.md.
+<!-- openclaw-growth-engineer:end -->
+EOF
+fi
+
 echo "Copied ${skill_slug} runtime into workspace:"
 echo "  ${WORKSPACE}/scripts"
 echo "  ${WORKSPACE}/data/openclaw-growth-engineer"
+echo "  ${WORKSPACE}/HEARTBEAT.md"
 echo "Next:"
 echo "  cd ${WORKSPACE} && node scripts/openclaw-growth-wizard.mjs --connectors"
 echo "Then:"

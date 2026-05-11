@@ -63,6 +63,8 @@ bash skills/openclaw-growth-engineer/scripts/install-analyticscli-cli.sh
 openclaw start --config openclaw.config.json
 ```
 
+For recurring OpenClaw checks, setup/start also keeps a non-empty workspace `HEARTBEAT.md` in place. OpenClaw skips heartbeat runs when that file is empty or comment-only, so the heartbeat task is the wake-up trigger and the Growth Engineer runner remains the source of truth for daily, weekly, monthly, quarterly, six-month, and yearly cadence decisions.
+
 Setup should guide the developer through each missing piece. When something is blocked, the agent should explain what was detected, why the missing value matters, where to get it, and the minimum permission needed instead of returning a generic failure.
 Before requesting optional credentials, ask which connections the user wants to set up: AnalyticsCLI baseline with feedback summaries, GitHub code access, ASC / App Store Connect CLI, RevenueCat, Sentry-compatible crash monitoring including Sentry Cloud and GlitchTip accounts, or skip.
 The setup wizard also asks how the user wants the tool to operate and whether to keep or edit the default cadence plan:

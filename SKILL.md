@@ -3,7 +3,7 @@ name: openclaw-growth-engineer
 description: AI Growth Engineer for mobile apps and agent runtimes including OpenClaw and Hermes. Correlate analytics, crashes, billing, feedback, store signals, and repo context into proposal drafts that can flow into agent chat, GitHub issues, or draft pull requests.
 license: MIT
 homepage: https://github.com/wotaso/analyticscli-skills
-metadata: {"author":"wotaso","version":"1.0.92","analyticscli-target":"@analyticscli/cli","analyticscli-supported-range":">=0.1.2-preview.0 <0.2.0","openclaw":{"emoji":"🚀","homepage":"https://github.com/wotaso/analyticscli-skills","requires":{"bins":["node","analyticscli"]},"install":[{"id":"analyticscli-cli","kind":"node","package":"@analyticscli/cli@preview","bins":["analyticscli"],"label":"Install/update AnalyticsCLI CLI (npm package @analyticscli/cli@preview)"}]},"hermes":{"tags":["Growth","Analytics","Mobile","Product","OpenClaw"],"homepage":"https://github.com/Wotaso/openclaw-growth-engineer-skill","requires":{"bins":["node","analyticscli"]},"install":[{"id":"openclaw-growth-engineer","kind":"skill","package":"Wotaso/openclaw-growth-engineer-skill","label":"Install the shared AI Growth Engineer skill for Hermes"}]}}
+metadata: {"author":"wotaso","version":"1.0.93","analyticscli-target":"@analyticscli/cli","analyticscli-supported-range":">=0.1.2-preview.0 <0.2.0","openclaw":{"emoji":"🚀","homepage":"https://github.com/wotaso/analyticscli-skills","requires":{"bins":["node","analyticscli"]},"install":[{"id":"analyticscli-cli","kind":"node","package":"@analyticscli/cli@preview","bins":["analyticscli"],"label":"Install/update AnalyticsCLI CLI (npm package @analyticscli/cli@preview)"}]},"hermes":{"tags":["Growth","Analytics","Mobile","Product","OpenClaw"],"homepage":"https://github.com/Wotaso/openclaw-growth-engineer-skill","requires":{"bins":["node","analyticscli"]},"install":[{"id":"openclaw-growth-engineer","kind":"skill","package":"Wotaso/openclaw-growth-engineer-skill","label":"Install the shared AI Growth Engineer skill for Hermes"}]}}
 ---
 
 # OpenClaw Growth Engineer
@@ -58,6 +58,16 @@ Prefer the standalone `openclaw` CLI as the runtime surface when it is available
 The CLI is intentionally non-AI. The host agent should stay the only conversational/implementation layer.
 Use the CLI to gather signals, generate proposals, schedule checks, and send deliveries.
 If the user later asks the agent to implement a proposal, the agent should inspect the generated drafts and then use its own AI/runtime to do the work.
+
+## Heartbeat / Recurring Run Contract
+
+OpenClaw heartbeats are the wake-up mechanism for recurring main-session checks. The Growth Engineer schedule in `config.json` only decides what is due after the runner is invoked; it does not wake the agent by itself unless `openclaw run --loop` or a host scheduler is running.
+
+- Bootstrap/start must create or repair a non-empty workspace `HEARTBEAT.md` with an `openclaw-growth-engineer-run` task.
+- Do not leave `HEARTBEAT.md` empty or comment-only after the user enabled automatic growth checks, because OpenClaw skips empty heartbeat files to avoid API calls.
+- The heartbeat task should invoke `node scripts/openclaw-growth-runner.mjs --config data/openclaw-growth-engineer/config.json` or the configured equivalent. The runner remains the source of truth for `schedule.intervalMinutes`, daily/weekly/monthly/quarterly/six-month/yearly cadences, connector health intervals, data-change skipping, and notification delivery.
+- If a user asks whether automatic checks are enabled, inspect both sides: `HEARTBEAT.md` must contain a real task, and the config must contain the expected `schedule` cadences. If either side is missing, fix the reusable setup/bootstrap path instead of telling the user scheduling is active.
+- Keep `HEARTBEAT.md` tiny and secret-free. It should say to reply `HEARTBEAT_OK` when no connector alert, production crash, generated issue, or actionable growth finding exists.
 
 Implementation PR rule:
 

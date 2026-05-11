@@ -171,6 +171,22 @@ Loop:
 node scripts/openclaw-growth-runner.mjs --config data/openclaw-growth-engineer/config.json --loop
 ```
 
+OpenClaw heartbeat:
+
+The setup/bootstrap path must also leave a real workspace `HEARTBEAT.md` task in place. OpenClaw skips heartbeat runs when `HEARTBEAT.md` is empty or comment-only, so an enabled Growth Engineer schedule is not sufficient by itself.
+
+Expected heartbeat task:
+
+```yaml
+tasks:
+
+- name: openclaw-growth-engineer-run
+  interval: 1d
+  prompt: "Run `node scripts/openclaw-growth-runner.mjs --config data/openclaw-growth-engineer/config.json` from the workspace if the config and runtime files exist. The runner owns schedule.cadences, connectorHealthCheckIntervalMinutes, skipIfNoDataChange, and skipIfIssueSetUnchanged. If it reports connector-health alerts, production crashes, generated issues, or actionable growth findings, summarize only the action and evidence. If setup files are missing, tell the user to run `node scripts/openclaw-growth-wizard.mjs --connectors`. If there is no actionable output, reply HEARTBEAT_OK."
+```
+
+When `schedule.intervalMinutes` is customized, `openclaw-growth-start.mjs` should rewrite this task interval to the same cadence. The heartbeat wakes OpenClaw; the runner decides whether daily, weekly, monthly, quarterly, six-month, or yearly work is due.
+
 ## 7a) Production Health And Growth Cadence
 
 The default loop interval is one day (`schedule.intervalMinutes = 1440`). Daily runs should cover public production apps only.
