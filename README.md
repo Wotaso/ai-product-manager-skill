@@ -27,8 +27,17 @@ hermes skills install Wotaso/openclaw-growth-engineer-skill
 1. Paste this into the VPS/host shell for the active app workspace:
 
 ```bash
+set -e
+if command -v hermes >/dev/null 2>&1; then
+  hermes skills install clawhub/openclaw-growth-engineer || hermes skills update openclaw-growth-engineer || true
+  hermes skills check openclaw-growth-engineer || true
+fi
 SKILL_DIR="${HERMES_SKILL_DIR}"
 if [ -z "$SKILL_DIR" ] || [ ! -d "$SKILL_DIR/scripts" ]; then SKILL_DIR="skills/openclaw-growth-engineer"; fi
+if [ ! -d "$SKILL_DIR/scripts" ]; then SKILL_DIR="$HOME/.hermes/skills/openclaw-growth-engineer"; fi
+if [ ! -d "$SKILL_DIR/scripts" ]; then SKILL_DIR="$HOME/.hermes/hermes-agent/skills/openclaw-growth-engineer"; fi
+printf 'Using Growth Engineer skill: %s\n' "$SKILL_DIR"
+grep -m1 '"version"' "$SKILL_DIR/SKILL.md" || true
 OPENCLAW_GROWTH_WORKSPACE="$PWD" bash "$SKILL_DIR/scripts/bootstrap-openclaw-workspace.sh" && \
   node scripts/openclaw-growth-wizard.mjs --connectors
 ```

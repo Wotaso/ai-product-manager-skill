@@ -3,7 +3,7 @@ name: openclaw-growth-engineer
 description: AI Growth Engineer for mobile apps and agent runtimes including OpenClaw and Hermes. Correlate analytics, crashes, billing, feedback, store signals, and repo context into proposal drafts that can flow into agent chat, GitHub issues, or draft pull requests.
 license: MIT
 homepage: https://github.com/wotaso/analyticscli-skills
-metadata: {"author":"wotaso","version":"1.0.96","analyticscli-target":"@analyticscli/cli","analyticscli-supported-range":">=0.1.2-preview.0 <0.2.0","openclaw":{"emoji":"🚀","homepage":"https://github.com/wotaso/analyticscli-skills","requires":{"bins":["node","analyticscli"]},"install":[{"id":"analyticscli-cli","kind":"node","package":"@analyticscli/cli@preview","bins":["analyticscli"],"label":"Install/update AnalyticsCLI CLI (npm package @analyticscli/cli@preview)"}]},"hermes":{"tags":["Growth","Analytics","Mobile","Product","OpenClaw"],"homepage":"https://github.com/Wotaso/openclaw-growth-engineer-skill","requires":{"bins":["node","analyticscli"]},"install":[{"id":"openclaw-growth-engineer","kind":"skill","package":"Wotaso/openclaw-growth-engineer-skill","label":"Install the shared AI Growth Engineer skill for Hermes"}]}}
+metadata: {"author":"wotaso","version":"1.0.97","analyticscli-target":"@analyticscli/cli","analyticscli-supported-range":">=0.1.2-preview.0 <0.2.0","openclaw":{"emoji":"🚀","homepage":"https://github.com/wotaso/analyticscli-skills","requires":{"bins":["node","analyticscli"]},"install":[{"id":"analyticscli-cli","kind":"node","package":"@analyticscli/cli@preview","bins":["analyticscli"],"label":"Install/update AnalyticsCLI CLI (npm package @analyticscli/cli@preview)"}]},"hermes":{"tags":["Growth","Analytics","Mobile","Product","OpenClaw"],"homepage":"https://github.com/Wotaso/openclaw-growth-engineer-skill","requires":{"bins":["node","analyticscli"]},"install":[{"id":"openclaw-growth-engineer","kind":"skill","package":"Wotaso/openclaw-growth-engineer-skill","label":"Install the shared AI Growth Engineer skill for Hermes"}]}}
 ---
 
 # OpenClaw Growth Engineer
@@ -34,9 +34,17 @@ When Hermes is running from chat/Discord or any non-interactive agent terminal, 
 Use this exact command block in the reply after skill installation:
 
 ```bash
+set -e
+if command -v hermes >/dev/null 2>&1; then
+  hermes skills install clawhub/openclaw-growth-engineer || hermes skills update openclaw-growth-engineer || true
+  hermes skills check openclaw-growth-engineer || true
+fi
 SKILL_DIR="${HERMES_SKILL_DIR}"
 if [ -z "$SKILL_DIR" ] || [ ! -d "$SKILL_DIR/scripts" ]; then SKILL_DIR="$HOME/.hermes/skills/openclaw-growth-engineer"; fi
+if [ ! -d "$SKILL_DIR/scripts" ]; then SKILL_DIR="$HOME/.hermes/hermes-agent/skills/openclaw-growth-engineer"; fi
 if [ ! -d "$SKILL_DIR/scripts" ]; then SKILL_DIR="skills/openclaw-growth-engineer"; fi
+printf 'Using Growth Engineer skill: %s\n' "$SKILL_DIR"
+grep -m1 '"version"' "$SKILL_DIR/SKILL.md" || true
 OPENCLAW_GROWTH_WORKSPACE="$PWD" bash "$SKILL_DIR/scripts/bootstrap-openclaw-workspace.sh" && \
   node scripts/openclaw-growth-wizard.mjs --connectors
 ```
@@ -553,9 +561,17 @@ When the user says "start", "run", or "kick off" the skill:
    - In Hermes chat/Discord/non-interactive terminals, do not run the wizard yourself. Show the full command below and tell the user to paste it into the VPS/host shell.
    - Only run this command yourself when you are already operating inside an interactive user terminal that can safely receive secret input outside chat.
    ```bash
+   set -e
+   if command -v hermes >/dev/null 2>&1; then
+     hermes skills install clawhub/openclaw-growth-engineer || hermes skills update openclaw-growth-engineer || true
+     hermes skills check openclaw-growth-engineer || true
+   fi
    SKILL_DIR="${HERMES_SKILL_DIR}"
    if [ -z "$SKILL_DIR" ] || [ ! -d "$SKILL_DIR/scripts" ]; then SKILL_DIR="$HOME/.hermes/skills/openclaw-growth-engineer"; fi
+   if [ ! -d "$SKILL_DIR/scripts" ]; then SKILL_DIR="$HOME/.hermes/hermes-agent/skills/openclaw-growth-engineer"; fi
    if [ ! -d "$SKILL_DIR/scripts" ]; then SKILL_DIR="skills/openclaw-growth-engineer"; fi
+   printf 'Using Growth Engineer skill: %s\n' "$SKILL_DIR"
+   grep -m1 '"version"' "$SKILL_DIR/SKILL.md" || true
    OPENCLAW_GROWTH_WORKSPACE="$PWD" bash "$SKILL_DIR/scripts/bootstrap-openclaw-workspace.sh" && \
      node scripts/openclaw-growth-wizard.mjs --connectors
    ```

@@ -12,6 +12,9 @@ test('Hermes startup instructions tell chat agents to hand off a full wizard com
   assert.match(skill, /node scripts\/openclaw-growth-wizard\.mjs --connectors/);
   assert.match(skill, /Do not satisfy those messages by only installing `analyticscli`/);
   assert.match(skill, /do not start the interactive wizard process yourself/i);
+  assert.match(skill, /hermes skills install clawhub\/openclaw-growth-engineer/);
+  assert.match(skill, /hermes skills check openclaw-growth-engineer/);
+  assert.match(skill, /Using Growth Engineer skill/);
   assert.match(skill, /Run this in your VPS\/host shell and paste secrets only there/);
 });
 
