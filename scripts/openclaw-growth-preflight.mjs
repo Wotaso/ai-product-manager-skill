@@ -564,7 +564,7 @@ async function testRevenueCatConnection(revenuecatToken, timeoutMs) {
 }
 function describeAnalyticsConnectionFailure(detail, analyticsTokenEnv, hasAnalyticsToken) {
     if (!hasAnalyticsToken) {
-        return `AnalyticsCLI needs query access. Create or copy a readonly CLI token in dash.analyticscli.com -> API Keys, then paste it into the wizard or run \`analyticscli login\` and paste it when prompted. Raw error: ${detail}`;
+        return `AnalyticsCLI needs query access. Run \`node scripts/openclaw-growth-wizard.mjs --connectors analytics\`, create or copy a readonly CLI token in dash.analyticscli.com -> API Keys, and paste it into the local terminal wizard. Raw error: ${detail}`;
     }
     return `AnalyticsCLI connection failed with \`${analyticsTokenEnv}\` set. Verify that the pasted readonly CLI token is current and has project access. Raw error: ${detail}`;
 }
@@ -1066,8 +1066,8 @@ async function main() {
             const analyticsTokenEnv = getSecretName(config, 'analyticsTokenEnv', 'ANALYTICSCLI_ACCESS_TOKEN');
             const hasAnalyticsToken = Boolean(process.env[analyticsTokenEnv] || process.env.ANALYTICSCLI_ACCESS_TOKEN);
             addCheck(checks, `secret:${analyticsTokenEnv}`, true, hasAnalyticsToken
-                ? 'set (optional if analyticscli uses stored login)'
-                : `not set; analyticscli stored login is also supported and will be verified by the connection check`);
+                ? 'set'
+                : `not set; run the connector wizard to store AnalyticsCLI query access locally`);
         }
         emitProgress(args.progressJson, {
             phase: 'finish',

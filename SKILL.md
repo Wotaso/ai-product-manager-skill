@@ -3,7 +3,7 @@ name: openclaw-growth-engineer
 description: AI Growth Engineer for mobile apps and agent runtimes including OpenClaw and Hermes. Correlate analytics, crashes, billing, feedback, store signals, and repo context into proposal drafts that can flow into agent chat, GitHub issues, or draft pull requests.
 license: MIT
 homepage: https://github.com/wotaso/analyticscli-skills
-metadata: {"author":"wotaso","version":"1.0.93","analyticscli-target":"@analyticscli/cli","analyticscli-supported-range":">=0.1.2-preview.0 <0.2.0","openclaw":{"emoji":"🚀","homepage":"https://github.com/wotaso/analyticscli-skills","requires":{"bins":["node","analyticscli"]},"install":[{"id":"analyticscli-cli","kind":"node","package":"@analyticscli/cli@preview","bins":["analyticscli"],"label":"Install/update AnalyticsCLI CLI (npm package @analyticscli/cli@preview)"}]},"hermes":{"tags":["Growth","Analytics","Mobile","Product","OpenClaw"],"homepage":"https://github.com/Wotaso/openclaw-growth-engineer-skill","requires":{"bins":["node","analyticscli"]},"install":[{"id":"openclaw-growth-engineer","kind":"skill","package":"Wotaso/openclaw-growth-engineer-skill","label":"Install the shared AI Growth Engineer skill for Hermes"}]}}
+metadata: {"author":"wotaso","version":"1.0.94","analyticscli-target":"@analyticscli/cli","analyticscli-supported-range":">=0.1.2-preview.0 <0.2.0","openclaw":{"emoji":"🚀","homepage":"https://github.com/wotaso/analyticscli-skills","requires":{"bins":["node","analyticscli"]},"install":[{"id":"analyticscli-cli","kind":"node","package":"@analyticscli/cli@preview","bins":["analyticscli"],"label":"Install/update AnalyticsCLI CLI (npm package @analyticscli/cli@preview)"}]},"hermes":{"tags":["Growth","Analytics","Mobile","Product","OpenClaw"],"homepage":"https://github.com/Wotaso/openclaw-growth-engineer-skill","requires":{"bins":["node","analyticscli"]},"install":[{"id":"openclaw-growth-engineer","kind":"skill","package":"Wotaso/openclaw-growth-engineer-skill","label":"Install the shared AI Growth Engineer skill for Hermes"}]}}
 ---
 
 # OpenClaw Growth Engineer
@@ -22,6 +22,24 @@ Use this same skill for OpenClaw and Hermes. Do not create a duplicate Hermes-sp
 - Hermes: install the same public skill repository with `hermes skills install Wotaso/openclaw-growth-engineer-skill`.
 - Generic SKILL.md clients: install or mount the same `skills/openclaw-growth-engineer` folder.
 - All agents should use the same bundled `scripts/`, `references/`, and `data/` files.
+
+## Hermes Startup Override
+
+Hermes must treat user messages such as "ja los", "starte den Growth Engineer", "Connectoren einrichten", "setup", "installieren und starten", or close variants as a wizard setup/start request.
+
+Do not satisfy those messages by only installing `analyticscli`, running `analyticscli login`, or telling the user to run `analyticscli login` manually. The Growth Engineer setup path is the bundled local terminal wizard because it handles connector selection, secret storage, project/app discovery, cadence, and smoke tests.
+
+For Hermes, use this exact active-workspace command shape after skill installation:
+
+```bash
+SKILL_DIR="${HERMES_SKILL_DIR}"
+if [ -z "$SKILL_DIR" ] || [ ! -d "$SKILL_DIR/scripts" ]; then SKILL_DIR="$HOME/.hermes/skills/openclaw-growth-engineer"; fi
+if [ ! -d "$SKILL_DIR/scripts" ]; then SKILL_DIR="skills/openclaw-growth-engineer"; fi
+OPENCLAW_GROWTH_WORKSPACE="$PWD" bash "$SKILL_DIR/scripts/bootstrap-openclaw-workspace.sh" && \
+  node scripts/openclaw-growth-wizard.mjs --connectors
+```
+
+If AnalyticsCLI auth is missing or invalid, the next action is still the wizard command above. The wizard should ask for the readonly token in the local terminal and persist it as `ANALYTICSCLI_ACCESS_TOKEN`; chat should not ask the user to paste tokens or detour into a separate `analyticscli login` flow.
 
 ## Use This Skill When
 
@@ -527,22 +545,31 @@ Do not list GlitchTip or ASC CLI as mobile extras in setup answers. GlitchTip be
 When the user says "start", "run", or "kick off" the skill:
 
 1. Run the Dependency Refresh Protocol first. It must update this skill, the `analyticscli-cli` skill when available, and the `@analyticscli/cli@preview` npm package, then verify `command -v analyticscli`.
-2. Prefer the CLI entrypoint:
+2. If setup is incomplete, connectors are not selected, AnalyticsCLI auth is missing/invalid, or the host is Hermes, run the bundled wizard from the active workspace before any preflight/start run:
+   ```bash
+   SKILL_DIR="${HERMES_SKILL_DIR}"
+   if [ -z "$SKILL_DIR" ] || [ ! -d "$SKILL_DIR/scripts" ]; then SKILL_DIR="$HOME/.hermes/skills/openclaw-growth-engineer"; fi
+   if [ ! -d "$SKILL_DIR/scripts" ]; then SKILL_DIR="skills/openclaw-growth-engineer"; fi
+   OPENCLAW_GROWTH_WORKSPACE="$PWD" bash "$SKILL_DIR/scripts/bootstrap-openclaw-workspace.sh" && \
+     node scripts/openclaw-growth-wizard.mjs --connectors
+   ```
+   Do not tell the user to run `analyticscli login` as the next step; the wizard owns AnalyticsCLI token collection and retesting.
+3. Prefer the CLI entrypoint after the wizard/config exists:
    - `openclaw setup --config openclaw.config.json`
    - this should initialize config and install the shared AnalyticsCLI skills via the canonical AnalyticsCLI setup flow
-3. Then run:
+4. Then run:
    - `openclaw start --config openclaw.config.json`
-4. In this monorepo, use the workspace dev entrypoint when `openclaw` is not installed globally:
+5. In this monorepo, use the workspace dev entrypoint when `openclaw` is not installed globally:
    - `pnpm --filter @analyticscli/openclaw-cli dev start --repo-root <repo-root>`
-5. Run portable checks first when setup is incomplete:
+6. Run portable checks first when setup is incomplete:
    - `command -v analyticscli`
    - `analyticscli projects list`
    - detect `project.githubRepo` from git remote when possible
    - verify readable GitHub repo access when available so analytics findings can be mapped to code
    - verify GitHub issue/PR write scopes only if GitHub delivery is enabled
    - if the user already pasted an AnalyticsCLI token candidate, use it immediately for the check/start attempt instead of asking a follow-up token question first
-6. If preflight fails, return only a concrete blocker checklist
-7. If preflight passes, continue with `openclaw run --config openclaw.config.json`
+7. If preflight fails, return only a concrete blocker checklist, and for AnalyticsCLI auth blockers point back to the wizard command, not `analyticscli login`
+8. If preflight passes, continue with `openclaw run --config openclaw.config.json`
 
 When the user asks for analysis only:
 - run the CLI
@@ -585,7 +612,7 @@ Use the legacy bootstrap-and-copy runtime only when the standalone CLI is unavai
   - require Sales; add Customer Support for reviews, Developer for builds/TestFlight, and App Manager only for app metadata/pricing/release settings
 - `ANALYTICSCLI_ACCESS_TOKEN`
   - recommended for CLI/agent auth when no local CLI login exists
-  - do not ask for `ANALYTICSCLI_READONLY_TOKEN`; the readonly token is passed to `analyticscli login --readonly-token <token>` or stored as `ANALYTICSCLI_ACCESS_TOKEN`
+  - do not ask for `ANALYTICSCLI_READONLY_TOKEN`; the readonly token is collected by the connector wizard and stored as `ANALYTICSCLI_ACCESS_TOKEN`
 - `REVENUECAT_API_KEY`
   - optional; ask before setup
   - use a server-side secret API key for RevenueCat command/API mode

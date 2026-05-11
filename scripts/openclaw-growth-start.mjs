@@ -791,7 +791,7 @@ async function installAnalyticsConnector() {
         connector: 'analytics',
         ok: Boolean(analyticsCliPath),
         detail: analyticsCliPath
-            ? `analyticscli binary found at ${analyticsCliPath}; token is read from ANALYTICSCLI_ACCESS_TOKEN or local analyticscli login`
+            ? `analyticscli binary found at ${analyticsCliPath}; token is read from the wizard-managed AnalyticsCLI environment`
             : 'analyticscli binary missing after dependency setup',
     };
 }
@@ -1272,7 +1272,7 @@ function remediationForCheck(checkName, configPath) {
         return 'Write `data/openclaw-growth-engineer/analytics_summary.json` via your analytics refresh step (API-key based source command/file generation).';
     }
     if (checkName === 'connection:analytics') {
-        return 'Paste a fresh AnalyticsCLI readonly CLI token in the connector wizard, or run `analyticscli login` and paste the token when prompted.';
+        return 'Run `node scripts/openclaw-growth-wizard.mjs --connectors analytics` and paste a fresh AnalyticsCLI readonly CLI token into the local terminal wizard.';
     }
     if (checkName === 'connection:github') {
         return 'Verify `GITHUB_TOKEN` and repo access to `/repos/<owner>/<repo>` + issues API.';
@@ -1402,7 +1402,7 @@ async function main() {
                 remediation: entry.connector === 'analytics'
                     ? 'Paste a fresh AnalyticsCLI readonly token into the connector wizard so it can store ANALYTICSCLI_ACCESS_TOKEN.'
                     : entry.connector === 'github'
-                        ? 'Install GitHub CLI (`gh`) and run `gh auth login`, or provide a fine-grained read-only token for code access.'
+                        ? 'Provide a GitHub token through the connector wizard for code access.'
                         : entry.connector === 'asc'
                             ? 'Install the ASC CLI and provide ASC_KEY_ID, ASC_ISSUER_ID, and ASC_PRIVATE_KEY_PATH or ASC_PRIVATE_KEY. Resolve the app after auth succeeds.'
                             : entry.connector === 'sentry'

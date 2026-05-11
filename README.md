@@ -4,7 +4,7 @@ Shared AI Growth Engineer for mobile apps, centered around a standalone `opencla
 
 It pulls together analytics, monetization, crashes, feedback, store signals, and repo context and turns them into proposal drafts that can be handed to OpenClaw chat, GitHub issues, or draft PRs.
 
-If you only want the normal setup path: run setup once, then start the CLI.
+If you only want the normal setup path: run the local connector wizard once, then start the CLI.
 
 ## Shared Skill Distribution
 
@@ -24,7 +24,18 @@ hermes skills install Wotaso/openclaw-growth-engineer-skill
 
 ## Quick Start
 
-1. Run setup:
+1. Run the wizard from the active app workspace:
+
+```bash
+SKILL_DIR="${HERMES_SKILL_DIR}"
+if [ -z "$SKILL_DIR" ] || [ ! -d "$SKILL_DIR/scripts" ]; then SKILL_DIR="skills/openclaw-growth-engineer"; fi
+OPENCLAW_GROWTH_WORKSPACE="$PWD" bash "$SKILL_DIR/scripts/bootstrap-openclaw-workspace.sh" && \
+  node scripts/openclaw-growth-wizard.mjs --connectors
+```
+
+Secrets stay in the local terminal wizard. Do not use chat or a standalone `analyticscli login` step for first setup.
+
+2. Run setup:
 
 ```bash
 openclaw setup --config openclaw.config.json
@@ -38,7 +49,7 @@ This should:
 - install/update the shared skills like `analyticscli-cli` and `analyticscli-ts-sdk`
 - install the canonical OpenClaw skill path through the shared installer instead of redefining it locally
 
-2. Run preflight:
+3. Run preflight:
 
 ```bash
 openclaw preflight --config openclaw.config.json --test-connections
@@ -57,7 +68,7 @@ For manual repair from a copied skill runtime, run:
 bash skills/openclaw-growth-engineer/scripts/install-analyticscli-cli.sh
 ```
 
-3. Start the first pass:
+4. Start the first pass:
 
 ```bash
 openclaw start --config openclaw.config.json
