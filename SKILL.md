@@ -1,16 +1,16 @@
 ---
-name: openclaw-growth-engineer
-description: AI Growth Engineer for mobile apps and agent runtimes including OpenClaw and Hermes. Correlate analytics, crashes, billing, feedback, store signals, and repo context into proposal drafts that can flow into agent chat, GitHub issues, or draft pull requests.
+name: growth-engineer
+description: Growth Engineer for mobile apps and agent runtimes including OpenClaw and Hermes. Correlate analytics, crashes, billing, feedback, store signals, and repo context into proposal drafts that can flow into agent chat, GitHub issues, or draft pull requests.
 license: MIT
-homepage: https://github.com/wotaso/analyticscli-skills
-metadata: {"author":"wotaso","version":"1.0.97","analyticscli-target":"@analyticscli/cli","analyticscli-supported-range":">=0.1.2-preview.0 <0.2.0","openclaw":{"emoji":"🚀","homepage":"https://github.com/wotaso/analyticscli-skills","requires":{"bins":["node","analyticscli"]},"install":[{"id":"analyticscli-cli","kind":"node","package":"@analyticscli/cli@preview","bins":["analyticscli"],"label":"Install/update AnalyticsCLI CLI (npm package @analyticscli/cli@preview)"}]},"hermes":{"tags":["Growth","Analytics","Mobile","Product","OpenClaw"],"homepage":"https://github.com/Wotaso/openclaw-growth-engineer-skill","requires":{"bins":["node","analyticscli"]},"install":[{"id":"openclaw-growth-engineer","kind":"skill","package":"Wotaso/openclaw-growth-engineer-skill","label":"Install the shared AI Growth Engineer skill for Hermes"}]}}
+homepage: https://github.com/Wotaso/growth-engineer-skill
+metadata: {"author":"wotaso","version":"1.0.97","analyticscli-target":"@analyticscli/cli","analyticscli-supported-range":">=0.1.2-preview.0 <0.2.0","openclaw":{"emoji":"🚀","homepage":"https://github.com/Wotaso/growth-engineer-skill","requires":{"bins":["node","analyticscli"]},"install":[{"id":"analyticscli-cli","kind":"node","package":"@analyticscli/cli@preview","bins":["analyticscli"],"label":"Install/update AnalyticsCLI CLI (npm package @analyticscli/cli@preview)"}]},"hermes":{"tags":["Growth","Analytics","Mobile","Product","OpenClaw","Hermes"],"homepage":"https://github.com/Wotaso/growth-engineer-skill","requires":{"bins":["node","analyticscli"]},"install":[{"id":"growth-engineer","kind":"skill","package":"Wotaso/growth-engineer-skill","label":"Install the shared Growth Engineer for Hermes"}]}}
 ---
 
-# OpenClaw Growth Engineer
+# Growth Engineer
 
 ## Canonical Skill Identity
 
-`openclaw-growth-engineer` is the single canonical AI Growth Engineer skill for agent-driven product and growth work.
+`growth-engineer` is the single canonical Growth Engineer for agent-driven product and growth work.
 The old `ai-product-manager` / `product-manager-skill` package is deprecated and should be used only as a migration alias for existing installs.
 Do not recommend installing or loading both skills.
 
@@ -18,8 +18,8 @@ Use this same skill for OpenClaw and Hermes. Do not create a duplicate Hermes-sp
 
 ## Agent Compatibility
 
-- OpenClaw: install through ClawHub with `clawhub install openclaw-growth-engineer` or `npx clawhub install openclaw-growth-engineer`.
-- Hermes: install the same public skill repository with `hermes skills install Wotaso/openclaw-growth-engineer-skill`.
+- OpenClaw: install through ClawHub with `clawhub install growth-engineer` or `npx clawhub install growth-engineer`.
+- Hermes: install the same public skill repository with `hermes skills install Wotaso/growth-engineer-skill`.
 - Generic SKILL.md clients: install or mount the same `skills/openclaw-growth-engineer` folder.
 - All agents should use the same bundled `scripts/`, `references/`, and `data/` files.
 
@@ -36,14 +36,16 @@ Use this exact command block in the reply after skill installation:
 ```bash
 set -e
 if command -v hermes >/dev/null 2>&1; then
-  hermes skills install clawhub/openclaw-growth-engineer || hermes skills update openclaw-growth-engineer || true
-  hermes skills check openclaw-growth-engineer || true
+  hermes skills install clawhub/growth-engineer || hermes skills update growth-engineer || true
+  hermes skills check growth-engineer || true
 fi
 SKILL_DIR="${HERMES_SKILL_DIR}"
-if [ -z "$SKILL_DIR" ] || [ ! -d "$SKILL_DIR/scripts" ]; then SKILL_DIR="$HOME/.hermes/skills/openclaw-growth-engineer"; fi
+if [ -z "$SKILL_DIR" ] || [ ! -d "$SKILL_DIR/scripts" ]; then SKILL_DIR="$HOME/.hermes/skills/growth-engineer"; fi
+if [ ! -d "$SKILL_DIR/scripts" ]; then SKILL_DIR="$HOME/.hermes/hermes-agent/skills/growth-engineer"; fi
+if [ ! -d "$SKILL_DIR/scripts" ]; then SKILL_DIR="$HOME/.hermes/skills/openclaw-growth-engineer"; fi
 if [ ! -d "$SKILL_DIR/scripts" ]; then SKILL_DIR="$HOME/.hermes/hermes-agent/skills/openclaw-growth-engineer"; fi
 if [ ! -d "$SKILL_DIR/scripts" ]; then SKILL_DIR="skills/openclaw-growth-engineer"; fi
-printf 'Using Growth Engineer skill: %s\n' "$SKILL_DIR"
+printf 'Using Growth Engineer: %s\n' "$SKILL_DIR"
 grep -m1 '"version"' "$SKILL_DIR/SKILL.md" || true
 OPENCLAW_GROWTH_WORKSPACE="$PWD" bash "$SKILL_DIR/scripts/bootstrap-openclaw-workspace.sh" && \
   node scripts/openclaw-growth-wizard.mjs --connectors
@@ -120,7 +122,7 @@ Only modify this skill directly when the change is intended as an upstream reusa
 
 Setup should feel guided for a developer, not like a silent preflight dump.
 
-- Root-cause policy: when connector setup fails for a user, do not hand out VPS-specific workaround commands as the final answer. Fix the reusable AI Growth Engineer skill/CLI/wizard so every future installer gets the corrected flow, then publish/sync the skill and ask the running agent instance to refetch it.
+- Root-cause policy: when connector setup fails for a user, do not hand out VPS-specific workaround commands as the final answer. Fix the reusable Growth Engineer/CLI/wizard so every future installer gets the corrected flow, then publish/sync the skill and ask the running agent instance to refetch it.
 - Prefer auto-detection and direct fixes over asking the user to run generic commands.
 - In chat, explain only what the user needs for the next step. Put provider details, scopes, and secret prompts in the wizard unless the user asks.
 - Ask for the minimum missing value only; do not request issue/PR permissions unless artifact creation is enabled.
@@ -161,7 +163,7 @@ AnalyticsCLI product feedback:
 - Use `analyticscli feedback submit` for feedback to the AnalyticsCLI SaaS owner about AnalyticsCLI itself: missing features, broken CLI/API/dashboard behavior, confusing errors, poor docs, or workflow friction.
 - Do not confuse this with tenant-owned end-user feedback collected by the AnalyticsCLI feedback feature. Tenant feedback is a product signal for the tenant's app; `analyticscli feedback submit` is operator feedback about AnalyticsCLI/OpenClaw tooling.
 - When an AnalyticsCLI/OpenClaw/SDK command, endpoint, or documented workflow fails, first try to refetch or update the relevant current version before declaring the behavior broken:
-  - OpenClaw Growth Engineer skill: `npx -y clawhub --no-input --dir skills update openclaw-growth-engineer --force` or reinstall from the canonical skill source, then rerun the workflow.
+  - Growth Engineer: `npx -y clawhub --no-input --dir skills update growth-engineer --force` or reinstall from the canonical skill source, then rerun the workflow.
   - AnalyticsCLI CLI: update `@analyticscli/cli@preview`, verify `analyticscli --help`, then rerun the exact failing command.
   - AnalyticsCLI SDK: upgrade `@analyticscli/sdk` within the supported range and rerun the minimal host-app or test repro.
 - If no newer version is available, the update cannot be applied, or the newest version still fails, submit a bounded `analyticscli feedback submit` report if feedback service credentials are configured. Include installed versions checked, command/endpoint, project id when safe, sanitized payload shape, status code, error body, request id if present, expected behavior, workaround used, and whether an update was attempted.
@@ -198,18 +200,18 @@ Production crash and ASC growth monitoring:
 - Correlate ASC total crashes with Sentry production data before recommending growth pushes: app version/build, release date, top Sentry issue, affected users/events, funnel step, paywall/purchase path, and recent code changes. If ASC and Sentry disagree, report both and say which connector is more complete for the app.
 - Sentry-compatible crash monitoring is multi-account. Do not assume one global Sentry org/project. Support `sources.sentry.accounts[]` with separate `baseUrl`, `tokenEnv`, `org`, `projects[]`, and `environment` entries, for example Sentry Cloud plus a self-hosted GlitchTip instance with different projects.
 - Daily ASC acquisition check: collect all available ASC overview metrics, including but not limited to `units`, `redownloads`, `conversionRate`, `crashRate`, source page views, app usage, updates, app opens, subscription state, and total crashes. Treat ASC source data as source-level product page views, not source-level download units unless the CLI exposes a true source-download measure.
-- If ASC web analytics is not logged in or the user-owned web session expired, tell the user exactly how to refresh it: run `asc web auth login`, then verify with `asc web auth status --output json --pretty`, then rerun AI Growth Engineer. Do not confuse this with API-key ASC auth.
+- If ASC web analytics is not logged in or the user-owned web session expired, tell the user exactly how to refresh it: run `asc web auth login`, then verify with `asc web auth status --output json --pretty`, then rerun Growth Engineer. Do not confuse this with API-key ASC auth.
 - Do not try to auto-refresh ASC web analytics in unattended runs. Apple web auth is a user-owned browser session; if its TTL is short, the correct automation behavior is to detect expiry, notify the user, and continue using API-key ASC surfaces where available until the user refreshes web auth in the host terminal.
 - Weekly growth review: compare units/downloads, redownloads, conversion rate, source mix, AnalyticsCLI activation/funnels/retention, Sentry stability, RevenueCat monetization, reviews, and recent releases. Turn the strongest cross-source pattern into one implementation-ready Handlungsempfehlung.
 - Monthly growth review: compare month-over-month units, conversion, source quality, reviews, retention, churn, crash totals, and production versions. Decide which acquisition channel, store listing element, onboarding step, paywall, or feature should be built, changed, or deleted next.
 - Handlungsempfehlungen must be source-aware: Search means ASO/keywords/screenshots; Web Referrer means landing pages, UTMs, creator/SEO traffic, and deep links; Browse means category positioning and visual conversion; App Referrer means cross-promotion and in-app referral paths. Always verify the recommendation against units/conversion and downstream activation, not traffic volume alone.
 - For financial data, keep it secondary unless the user asks. Prioritize production crashes, downloads/units, redownloads, conversion, source traffic, activation, retention, and qualitative store/user feedback.
 
-Hard override for AI Growth Engineer connector questions:
+Hard override for Growth Engineer connector questions:
 
 If the user says any of these or close variants, apply this override before any generic OpenClaw, AnalyticsCLI, MCP, messaging-channel, or env-var connector knowledge:
 
-- "AI Growth Engineer connectors"
+- "Growth Engineer connectors"
 - "analyticscli connectors"
 - "AI Product Manager connectors"
 - "I want to setup connectors" in the context of this skill
@@ -219,7 +221,7 @@ If the user says any of these or close variants, apply this override before any 
 Answer only with this shape:
 
 ```text
-AI Growth Engineer connectors:
+Growth Engineer connectors:
 - AnalyticsCLI baseline: product analytics plus built-in feedback summaries
 - GitHub code access: repo context and issue/PR delivery
 - RevenueCat monetization: subscriptions, trials, revenue, and churn
@@ -362,7 +364,7 @@ Child processes cannot mutate the PATH of an already-open parent terminal.
 
 1. Refresh this ClawHub skill:
    ```bash
-   npx -y clawhub install openclaw-growth-engineer
+   npx -y clawhub install growth-engineer
    ```
 2. Refresh the AnalyticsCLI agent skill only when it can run non-interactively:
    ```bash
@@ -563,14 +565,16 @@ When the user says "start", "run", or "kick off" the skill:
    ```bash
    set -e
    if command -v hermes >/dev/null 2>&1; then
-     hermes skills install clawhub/openclaw-growth-engineer || hermes skills update openclaw-growth-engineer || true
-     hermes skills check openclaw-growth-engineer || true
+     hermes skills install clawhub/growth-engineer || hermes skills update growth-engineer || true
+     hermes skills check growth-engineer || true
    fi
    SKILL_DIR="${HERMES_SKILL_DIR}"
-   if [ -z "$SKILL_DIR" ] || [ ! -d "$SKILL_DIR/scripts" ]; then SKILL_DIR="$HOME/.hermes/skills/openclaw-growth-engineer"; fi
+   if [ -z "$SKILL_DIR" ] || [ ! -d "$SKILL_DIR/scripts" ]; then SKILL_DIR="$HOME/.hermes/skills/growth-engineer"; fi
+   if [ ! -d "$SKILL_DIR/scripts" ]; then SKILL_DIR="$HOME/.hermes/hermes-agent/skills/growth-engineer"; fi
+   if [ ! -d "$SKILL_DIR/scripts" ]; then SKILL_DIR="$HOME/.hermes/skills/openclaw-growth-engineer"; fi
    if [ ! -d "$SKILL_DIR/scripts" ]; then SKILL_DIR="$HOME/.hermes/hermes-agent/skills/openclaw-growth-engineer"; fi
    if [ ! -d "$SKILL_DIR/scripts" ]; then SKILL_DIR="skills/openclaw-growth-engineer"; fi
-   printf 'Using Growth Engineer skill: %s\n' "$SKILL_DIR"
+   printf 'Using Growth Engineer: %s\n' "$SKILL_DIR"
    grep -m1 '"version"' "$SKILL_DIR/SKILL.md" || true
    OPENCLAW_GROWTH_WORKSPACE="$PWD" bash "$SKILL_DIR/scripts/bootstrap-openclaw-workspace.sh" && \
      node scripts/openclaw-growth-wizard.mjs --connectors
