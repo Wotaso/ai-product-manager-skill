@@ -43,6 +43,8 @@ The setup flow should be developer-friendly:
 - show a status checklist after setup: configured, optional, blocked, and next command
 - hand off weak or missing app instrumentation to the `analyticscli-ts-sdk` skill with concrete SDK setup steps
 - ask exactly which optional connections the user wants to set up before requesting credentials: AnalyticsCLI baseline with feedback summaries, GitHub code access, ASC / App Store Connect CLI, RevenueCat, Sentry-compatible crash monitoring including Sentry Cloud and GlitchTip accounts, or skip
+- ask how the tool should be used before enabling scheduling: production autopilot, advisory-only summaries, or manual reports
+- ask whether to keep the default cadence plan; if not, collect what should happen daily, weekly, monthly, every 3 months, every 6 months, and yearly
 
 For GitHub, RevenueCat, Sentry, and App Store Connect connector setup, use the connector wizard instead of asking the user to compose setup commands manually:
 
@@ -176,11 +178,13 @@ If ASC web analytics returns a 403 for an app that is not public yet, record it 
 
 Daily:
 
+- Only investigate critical production or business-health issues: Sentry/GlitchTip production errors, crashes, very low users, conversion, purchases, or other urgent drops.
 - Check ASC total production crashes by app version and Sentry production issues/events/users.
 - Notify the OpenClaw user through configured chat/social delivery when total production crashes are non-zero.
-- Check every available ASC overview metric, especially units/downloads, redownloads, conversion rate, app usage, updates, app opens, subscription state, source traffic, and unique product page views by source.
+- Check every available ASC overview metric, especially units/downloads, redownloads, conversion rate, app usage, updates, app opens, subscription state, source traffic, and unique product page views by source, but only alert on severe anomalies during daily-only runs.
 - If the ASC web analytics session is missing or expired, tell the user to run `asc web auth login`, verify with `asc web auth status --output json --pretty`, and rerun OpenClaw Growth.
 - Compare crash movement with release/build data before recommending more acquisition traffic.
+- Inspect memory/state and recent releases/code changes before assigning root cause.
 - Automatically create GitHub issues or implementation PRs when OpenClaw has configured GitHub API write access. Skip only when write access is missing, the finding is too low-confidence, or `actions.disableAutoCreateGitHubArtifacts = true`.
 
 Weekly:
@@ -192,6 +196,27 @@ Monthly:
 
 - Compare month-over-month units/downloads, redownloads, conversion, source quality, crash totals, review themes, retention, and churn.
 - Decide which acquisition channel, listing element, onboarding step, paywall, or feature should be built, changed, or deleted.
+
+Every 3 months:
+
+- Revisit positioning, pricing/packaging, onboarding architecture, roadmap assumptions, tracking quality, and major funnel bets.
+- Look for structural constraints and durable opportunities, not only tactical UI changes.
+
+Every 6 months:
+
+- Audit connector coverage, SDK instrumentation, event taxonomy, data reliability, memory/state quality, and whether growth loops still match the best users.
+- Prioritize measurement and system fixes that make future recommendations more trustworthy.
+
+Yearly:
+
+- Reset strategy from all available evidence: market/channel fit, monetization model, retention ceiling, product scope, and major surfaces/features.
+- Decide whether to double down, reposition, rebuild, or sunset major directions.
+
+Social summaries:
+
+- By default, a meaningful growth run sends a short summary through configured OpenClaw chat, Slack, Discord command, webhook, or equivalent channels.
+- Disable with `notifications.growthRun.enabled=false` or by removing all growth-run notification channels.
+- Never include secrets in social summaries.
 
 ASC source reporting caveat:
 

@@ -111,6 +111,7 @@ function parseArgs(argv) {
         branchPrefix: 'openclaw/proposals',
         draftPullRequests: true,
         allowProposalPullRequests: false,
+        cadencePlan: null,
     };
     for (let i = 0; i < argv.length; i += 1) {
         const token = argv[i];
@@ -195,6 +196,10 @@ function parseArgs(argv) {
         else if (token === '--no-draft-pull-requests') {
             args.draftPullRequests = false;
         }
+        else if (token === '--cadence-plan') {
+            args.cadencePlan = next;
+            i += 1;
+        }
         else if (token === '--help' || token === '-h') {
             printHelpAndExit(0);
         }
@@ -243,6 +248,7 @@ Optional:
   --no-upload-charts     Skip uploading charts to GitHub repo during issue creation
   --branch-prefix <p>    Branch prefix for generated proposal PRs (default: openclaw/proposals)
   --no-draft-pull-requests Create non-draft PRs when using --create-pull-requests
+  --cadence-plan <file>  Optional JSON with due cadence instructions for this run
   --help                 Show this help
 
 Environment:
@@ -559,7 +565,7 @@ function tokenize(text) {
         .split(/[^a-z0-9]+/)
         .filter(Boolean);
 }
-function buildIssueDraft(signal, matchedFiles, titlePrefix) {
+function buildIssueDraft(signal, matchedFiles, titlePrefix, activeCadences = []) {
     const title = `${titlePrefix} ${signal.title}`.trim();
     const proposals = signal.suggestedActions.length > 0
         ? signal.suggestedActions
@@ -581,6 +587,16 @@ function buildIssueDraft(signal, matchedFiles, titlePrefix) {
         '## Problem',
         signal.title,
         '',
+        ...(activeCadences.length > 0
+            ? [
+                '## Operating Cadence',
+                ...activeCadences.map((cadence) => {
+                    const detail = [cadence.objective, cadence.instructions].filter(Boolean).join(' ');
+                    return `- ${cadence.title}: ${detail || 'Focus this investigation around the active cadence.'}`;
+                }),
+                '',
+            ]
+            : []),
         '## Evidence',
         ...evidence.map((line) => `- ${line}`),
         '',
@@ -613,6 +629,7 @@ function buildIssueDraft(signal, matchedFiles, titlePrefix) {
         files: matchedFiles,
         expected_impact: expectedImpact,
         confidence,
+        cadences: activeCadences.map((cadence) => cadence.key),
     };
 }
 function inferExpectedImpact(signal) {
@@ -677,6 +694,100 @@ function dedupeSignals(signals) {
         result.push(signal);
     }
     return result;
+}
+function normalizeCadencePlan(payload) {
+    const rawCadences = Array.isArray(payload?.cadences)
+        ? payload.cadences
+        : Array.isArray(payload)
+            ? payload
+            : [];
+    return rawCadences
+        .filter((cadence) => cadence && typeof cadence === 'object')
+        .map((cadence) => ({
+        key: String(cadence.key || cadence.id || 'custom'),
+        title: String(cadence.title || cadence.label || cadence.key || 'Custom cadence'),
+        objective: String(cadence.objective || ''),
+        instructions: String(cadence.instructions || ''),
+        focusAreas: toStringArray(cadence.focusAreas || cadence.focus_areas).map((value) => value.toLowerCase()),
+        sourcePriorities: toStringArray(cadence.sourcePriorities || cadence.source_priorities).map((value) => value.toLowerCase()),
+        criticalOnly: cadence.criticalOnly === true || cadence.critical_only === true,
+    }));
+}
+function signalSearchText(signal) {
+    return [
+        signal.source,
+        signal.area,
+        signal.title,
+        signal.metric,
+        ...signal.evidence,
+        ...signal.suggestedActions,
+        ...signal.keywords,
+    ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+}
+function cadenceSearchText(cadence) {
+    return [
+        cadence.title,
+        cadence.objective,
+        cadence.instructions,
+        ...cadence.focusAreas,
+        ...cadence.sourcePriorities,
+    ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+}
+function isCriticalSignal(signal) {
+    const text = signalSearchText(signal);
+    const metric = String(signal.metric || '').toLowerCase();
+    if (signal.priority === 'high')
+        return true;
+    if (signal.area === 'crash')
+        return true;
+    if (['sentry', 'glitchtip', 'crashlytics', 'bugsnag'].some((source) => String(signal.source).includes(source))) {
+        return true;
+    }
+    if (/(crash|fatal|exception|error|outage|blocked|regression|failed release|production)/i.test(text)) {
+        return true;
+    }
+    if (/(conversion|purchase|revenue|trial|checkout|paywall|user|active|activation)/i.test(metric)) {
+        const current = Number(signal.currentValue);
+        const baseline = Number(signal.baselineValue);
+        if (Number.isFinite(signal.deltaPercent) && signal.deltaPercent <= -20)
+            return true;
+        if (Number.isFinite(current) && Number.isFinite(baseline) && baseline > 0 && current / baseline <= 0.75) {
+            return true;
+        }
+    }
+    return /(very low|near zero|zero|drop|dropped|collapse|collapsed|anomaly|spike)/i.test(text);
+}
+function cadenceSignalScore(signal, cadences) {
+    if (!cadences.length)
+        return 0;
+    const text = signalSearchText(signal);
+    let score = 0;
+    for (const cadence of cadences) {
+        if (cadence.focusAreas.includes(signal.area))
+            score += 8;
+        if (cadence.sourcePriorities.includes(String(signal.source).toLowerCase()))
+            score += 6;
+        if (cadence.criticalOnly && isCriticalSignal(signal))
+            score += 12;
+        for (const keyword of tokenize(cadenceSearchText(cadence))) {
+            if (keyword.length > 3 && text.includes(keyword))
+                score += 1;
+        }
+    }
+    return score;
+}
+function applyCadencePlan(signals, cadences) {
+    if (!cadences.length)
+        return signals;
+    const allCriticalOnly = cadences.every((cadence) => cadence.criticalOnly);
+    const filtered = allCriticalOnly ? signals.filter(isCriticalSignal) : signals;
+    return [...filtered].sort((a, b) => cadenceSignalScore(b, cadences) - cadenceSignalScore(a, cadences));
 }
 function indexChartsBySignal(manifest, manifestFilePath) {
     const bySignal = new Map();
@@ -991,14 +1102,32 @@ async function main() {
     const chartManifestPath = args.chartManifest ? path.resolve(args.chartManifest) : null;
     const chartManifest = chartManifestPath ? await readJson(chartManifestPath) : null;
     const chartsBySignal = indexChartsBySignal(chartManifest, chartManifestPath);
-    const signals = dedupeSignals(rankSignals([
+    const cadencePlanPath = args.cadencePlan ? path.resolve(args.cadencePlan) : null;
+    const activeCadences = cadencePlanPath ? normalizeCadencePlan(await readJson(cadencePlanPath)) : [];
+    const rankedSignals = dedupeSignals(rankSignals([
         ...normalizeSignals(analytics, 'analytics', 'analytics'),
         ...normalizeSignals(revenuecat, 'revenuecat', 'revenuecat'),
         ...normalizeSignals(sentry, 'sentry', 'sentry'),
         ...normalizeSignals(feedback, 'feedback', 'feedback'),
         ...extraSources.flatMap((source) => normalizeSignals(source.payload, source.key, source.service)),
-    ])).slice(0, args.maxIssues);
+    ]));
+    const signals = applyCadencePlan(rankedSignals, activeCadences).slice(0, args.maxIssues);
     if (signals.length === 0) {
+        const allCriticalOnly = activeCadences.length > 0 && activeCadences.every((cadence) => cadence.criticalOnly);
+        if (allCriticalOnly && rankedSignals.length > 0) {
+            const output = {
+                generated_at: new Date().toISOString(),
+                repo_root: repoRoot,
+                run_cadences: activeCadences,
+                issue_count: 0,
+                issues: [],
+                summary: 'No critical production or business-anomaly signals matched the active cadence.',
+            };
+            await ensureParentDir(outputPath);
+            await fs.writeFile(outputPath, JSON.stringify(output, null, 2), 'utf8');
+            process.stdout.write(`No critical signals matched active cadence. Wrote ${outputPath}\n`);
+            return;
+        }
         throw new Error(buildNoSignalsError([
             { payload: analytics, source: 'analytics', service: 'analytics' },
             ...(revenuecat ? [{ payload: revenuecat, source: 'revenuecat', service: 'revenuecat' }] : []),
@@ -1017,7 +1146,7 @@ async function main() {
     const issueDrafts = [];
     for (const signal of signals) {
         const matchedFiles = await findRelevantFiles(repoRoot, scopedFiles, signal, 6);
-        const draft = buildIssueDraft(signal, matchedFiles, args.titlePrefix);
+        const draft = buildIssueDraft(signal, matchedFiles, args.titlePrefix, activeCadences);
         const localCharts = chartsBySignal.get(draft.signal_id) || [];
         if (localCharts.length > 0) {
             draft.body = appendChartsSection(draft.body, localCharts, 'local');
@@ -1028,6 +1157,7 @@ async function main() {
     const output = {
         generated_at: new Date().toISOString(),
         repo_root: repoRoot,
+        run_cadences: activeCadences,
         issue_count: issueDrafts.length,
         issues: issueDrafts,
     };

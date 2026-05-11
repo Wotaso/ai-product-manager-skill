@@ -59,6 +59,81 @@ const CONNECTOR_DEFINITIONS: ConnectorDefinition[] = [
   },
 ];
 
+const DEFAULT_CADENCE_PLAN = [
+  {
+    key: 'daily',
+    title: 'Daily production guardrail',
+    intervalDays: 1,
+    criticalOnly: true,
+    focusAreas: ['crash', 'conversion', 'paywall'],
+    sourcePriorities: ['sentry', 'glitchtip', 'analytics', 'asc_cli', 'revenuecat'],
+    objective:
+      'Only investigate critical production blockers and business anomalies: Sentry/GlitchTip production errors, crashes, very low users, conversion, purchases, or other urgent drops.',
+    instructions:
+      'Do exact root-cause analysis with connected production data, memory/state, release context, and recent code changes. Produce the fix or next debugging step; avoid generic growth ideas.',
+  },
+  {
+    key: 'weekly',
+    title: 'Weekly conversion, traffic, and RevenueCat review',
+    intervalDays: 7,
+    criticalOnly: false,
+    focusAreas: ['conversion', 'paywall', 'onboarding', 'marketing', 'retention'],
+    sourcePriorities: ['analytics', 'revenuecat', 'asc_cli', 'feedback', 'sentry'],
+    objective:
+      'Analyze total conversion, traffic quality, activation, retention, RevenueCat trials/subscriptions/revenue/churn, source mix, reviews, releases, and stability.',
+    instructions:
+      'Pick one to three high-confidence growth bets with evidence, expected KPI movement, likely code/store surfaces, and verification plan.',
+  },
+  {
+    key: 'monthly',
+    title: 'Monthly business and product review',
+    intervalDays: 30,
+    criticalOnly: false,
+    focusAreas: ['conversion', 'paywall', 'retention', 'marketing', 'onboarding'],
+    sourcePriorities: ['analytics', 'revenuecat', 'asc_cli', 'feedback', 'sentry'],
+    objective:
+      'Compare MRR, trial conversion, churn, acquisition quality, store conversion, retention, review themes, feature usage, and crash totals month-over-month.',
+    instructions:
+      'Decide what should be built, changed, or deleted next and explain why it should move revenue, activation, retention, or acquisition quality.',
+  },
+  {
+    key: 'quarterly',
+    title: 'Quarterly positioning, pricing, and roadmap review',
+    intervalDays: 91,
+    criticalOnly: false,
+    focusAreas: ['marketing', 'paywall', 'retention', 'conversion', 'onboarding'],
+    sourcePriorities: ['analytics', 'revenuecat', 'asc_cli', 'feedback'],
+    objective:
+      'Revisit positioning, pricing/packaging, onboarding architecture, roadmap assumptions, tracking quality, and major funnel bets.',
+    instructions:
+      'Find structural constraints and durable opportunities. Tie recommendations to cohort behavior, monetization, reviews, channel quality, and shipped changes.',
+  },
+  {
+    key: 'six_months',
+    title: 'Six-month instrumentation and growth-system audit',
+    intervalDays: 182,
+    criticalOnly: false,
+    focusAreas: ['retention', 'conversion', 'paywall', 'marketing', 'general'],
+    sourcePriorities: ['analytics', 'revenuecat', 'asc_cli', 'feedback', 'sentry'],
+    objective:
+      'Audit connector coverage, SDK instrumentation, event taxonomy, data reliability, memory, growth loops, and whether strategy still matches the best users.',
+    instructions:
+      'Prioritize measurement fixes and system changes that make future analysis more trustworthy. Identify stale events, missing attribution, weak identity, and misleading dashboards.',
+  },
+  {
+    key: 'yearly',
+    title: 'Yearly evidence reset',
+    intervalDays: 365,
+    criticalOnly: false,
+    focusAreas: ['marketing', 'retention', 'paywall', 'conversion', 'general'],
+    sourcePriorities: ['analytics', 'revenuecat', 'asc_cli', 'feedback', 'sentry'],
+    objective:
+      'Reset strategy from evidence: market/channel fit, monetization model, retention ceiling, product scope, and whether to double down, reposition, rebuild, or sunset major surfaces/features.',
+    instructions:
+      'Use the full year of memory, releases, revenue, acquisition, reviews, code changes, and cohort behavior. Produce strategic experiments and stop-doing decisions.',
+  },
+];
+
 const ANSI = {
   bold: '\x1b[1m',
   cyan: '\x1b[36m',
@@ -2846,6 +2921,57 @@ async function askSourceConfig(rl, sourceName, defaultPath, hint, options: Recor
   };
 }
 
+function printCadencePlan(cadences) {
+  process.stdout.write('\nDefault growth cadence:\n');
+  for (const cadence of cadences) {
+    const critical = cadence.criticalOnly ? 'critical only' : 'full review';
+    process.stdout.write(`- ${cadence.title} (${critical}): ${cadence.objective}\n`);
+  }
+  process.stdout.write('\n');
+}
+
+async function askToolUsage(rl) {
+  process.stdout.write('\nHow should OpenClaw Growth Engineer use this tool?\n');
+  process.stdout.write('  1) Production autopilot: notify, draft issues/PR handoffs, and analyze on schedule\n');
+  process.stdout.write('  2) Advisory only: analyze and write OpenClaw chat summaries, no GitHub artifacts by default\n');
+  process.stdout.write('  3) Manual reports: mostly one-off runs; keep scheduling conservative\n');
+  const answer = await ask(rl, 'Usage mode (1/2/3)', '1');
+  if (answer.trim() === '2') return 'advisory';
+  if (answer.trim() === '3') return 'manual_reports';
+  return 'production_autopilot';
+}
+
+async function askCadencePlan(rl) {
+  const cadences: any[] = DEFAULT_CADENCE_PLAN.map((cadence) => ({ ...cadence }));
+  printCadencePlan(cadences);
+  const customize = await askYesNo(
+    rl,
+    'Use this default cadence plan? Answer no to edit daily/weekly/monthly/3-month/6-month/1-year instructions.',
+    true,
+  );
+  if (customize) return cadences;
+
+  for (const cadence of cadences) {
+    process.stdout.write(`\n${cadence.title}\n`);
+    const enabled = await askYesNo(rl, `Enable ${cadence.key}?`, true);
+    cadence.enabled = enabled;
+    if (!enabled) continue;
+    cadence.objective = await ask(rl, `${cadence.key} objective`, cadence.objective);
+    cadence.instructions = await ask(rl, `${cadence.key} instructions`, cadence.instructions);
+    const focusAreas = await ask(rl, `${cadence.key} focus areas (comma-separated)`, cadence.focusAreas.join(','));
+    cadence.focusAreas = focusAreas.split(',').map((value) => value.trim()).filter(Boolean);
+    const sourcePriorities = await ask(
+      rl,
+      `${cadence.key} source priorities (comma-separated)`,
+      cadence.sourcePriorities.join(','),
+    );
+    cadence.sourcePriorities = sourcePriorities.split(',').map((value) => value.trim()).filter(Boolean);
+    cadence.criticalOnly = await askYesNo(rl, `${cadence.key} should only alert on critical findings?`, cadence.criticalOnly);
+  }
+
+  return cadences;
+}
+
 async function main() {
   await loadOpenClawGrowthSecrets();
   const args = parseArgs(process.argv.slice(2));
@@ -2879,6 +3005,8 @@ async function main() {
       .filter(Boolean);
     const maxIssues = Number.parseInt(await ask(rl, 'Max issues per run', '4'), 10) || 4;
     const intervalMinutes = Number.parseInt(await ask(rl, 'Check interval in minutes', '1440'), 10) || 1440;
+    const usageMode = await askToolUsage(rl);
+    const cadences = await askCadencePlan(rl);
     const actionMode = await askChoice(
       rl,
       'Preferred GitHub output',
@@ -2979,13 +3107,16 @@ async function main() {
       },
       schedule: {
         intervalMinutes,
+        connectorHealthCheckIntervalMinutes: 1440,
         skipIfNoDataChange: true,
         skipIfIssueSetUnchanged: true,
+        cadences,
       },
       actions: {
         autoCreateIssues,
         autoCreatePullRequests,
         mode: actionMode,
+        usageMode,
         draftPullRequests: true,
         proposalBranchPrefix: 'openclaw/proposals',
       },

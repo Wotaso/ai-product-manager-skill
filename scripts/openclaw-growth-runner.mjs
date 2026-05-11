@@ -11,6 +11,68 @@ const DEFAULT_STATE_PATH = 'data/openclaw-growth-engineer/state.json';
 const DEFAULT_RUNTIME_DIR = 'data/openclaw-growth-engineer/runtime';
 const DEFAULT_CONNECTOR_HEALTH_INTERVAL_MINUTES = 1440;
 const SELF_UPDATE_INTERVAL_MS = 24 * 60 * 60 * 1000;
+const DEFAULT_CADENCES = [
+    {
+        key: 'daily',
+        title: 'Daily production guardrail',
+        intervalDays: 1,
+        criticalOnly: true,
+        focusAreas: ['crash', 'conversion', 'paywall'],
+        sourcePriorities: ['sentry', 'glitchtip', 'analytics', 'asc_cli', 'revenuecat'],
+        objective: 'Find only critical production blockers and business anomalies: production crashes/errors, very low users, conversion, purchases, or other urgent drops.',
+        instructions: 'Do root-cause analysis across Sentry/GlitchTip, AnalyticsCLI, RevenueCat, ASC, feedback, release metadata, memory/state, and recent code changes. Produce the exact fix or next debugging step; do not invent generic growth ideas.',
+    },
+    {
+        key: 'weekly',
+        title: 'Weekly conversion, traffic, and revenue review',
+        intervalDays: 7,
+        criticalOnly: false,
+        focusAreas: ['conversion', 'paywall', 'onboarding', 'marketing', 'retention'],
+        sourcePriorities: ['analytics', 'revenuecat', 'asc_cli', 'feedback', 'sentry'],
+        objective: 'Review total conversion, traffic quality, activation, retention movement, RevenueCat trials/subscriptions/revenue/churn, source mix, reviews, releases, and stability.',
+        instructions: 'Choose one to three high-confidence growth bets with evidence, expected KPI movement, likely code/store surfaces, and verification plan. Kill or adjust experiments without signal.',
+    },
+    {
+        key: 'monthly',
+        title: 'Monthly business and product strategy review',
+        intervalDays: 30,
+        criticalOnly: false,
+        focusAreas: ['conversion', 'paywall', 'retention', 'marketing', 'onboarding'],
+        sourcePriorities: ['analytics', 'revenuecat', 'asc_cli', 'feedback', 'sentry'],
+        objective: 'Compare month-over-month MRR, trial conversion, churn, acquisition channel quality, store/listing conversion, retention, review themes, feature usage, and crash totals.',
+        instructions: 'Decide what should be built, changed, or deleted next. Explain why the change is likely to move revenue, activation, retention, or acquisition quality.',
+    },
+    {
+        key: 'quarterly',
+        title: 'Quarterly positioning, pricing, and roadmap review',
+        intervalDays: 91,
+        criticalOnly: false,
+        focusAreas: ['marketing', 'paywall', 'retention', 'conversion', 'onboarding'],
+        sourcePriorities: ['analytics', 'revenuecat', 'asc_cli', 'feedback'],
+        objective: 'Revisit positioning, pricing/packaging, onboarding architecture, roadmap assumptions, tracking quality, and major funnel bets from the last three months.',
+        instructions: 'Find structural constraints and durable opportunities, not small UI tweaks. Tie recommendations to cohort behavior, monetization, reviews, channel quality, and shipped changes.',
+    },
+    {
+        key: 'six_months',
+        title: 'Six-month instrumentation and growth-system audit',
+        intervalDays: 182,
+        criticalOnly: false,
+        focusAreas: ['retention', 'conversion', 'paywall', 'marketing', 'general'],
+        sourcePriorities: ['analytics', 'revenuecat', 'asc_cli', 'feedback', 'sentry'],
+        objective: 'Audit connector coverage, SDK instrumentation, event taxonomy, data reliability, data memory, growth loops, and whether product/marketing strategy still matches the best users.',
+        instructions: 'Prioritize measurement fixes and system changes that make future analysis more trustworthy. Identify stale events, missing attribution, weak identity, broken feedback loops, and misleading dashboards.',
+    },
+    {
+        key: 'yearly',
+        title: 'Yearly evidence reset',
+        intervalDays: 365,
+        criticalOnly: false,
+        focusAreas: ['marketing', 'retention', 'paywall', 'conversion', 'general'],
+        sourcePriorities: ['analytics', 'revenuecat', 'asc_cli', 'feedback', 'sentry'],
+        objective: 'Reset strategy from evidence: market/channel fit, monetization model, retention ceiling, product scope, and whether to double down, reposition, rebuild, or sunset major surfaces/features.',
+        instructions: 'Use the full year of memory, releases, revenue, acquisition, reviews, code changes, and cohort behavior. Produce a strategic operating plan with specific experiments and stop-doing decisions.',
+    },
+];
 function parseArgs(argv) {
     const args = {
         config: DEFAULT_CONFIG_PATH,
@@ -307,6 +369,70 @@ function isDue(lastCheckedAt, intervalMinutes) {
         return true;
     return Date.now() - last >= intervalMinutes * 60_000;
 }
+function normalizeCadenceKey(value) {
+    const normalized = String(value || '')
+        .trim()
+        .toLowerCase()
+        .replace(/[\s-]+/g, '_');
+    if (['3_months', 'three_months', 'quarter', 'quarterly'].includes(normalized))
+        return 'quarterly';
+    if (['6_months', 'six_months', 'half_year', 'half_yearly'].includes(normalized))
+        return 'six_months';
+    if (['1y', '1_year', 'one_year', 'annual', 'annually'].includes(normalized))
+        return 'yearly';
+    return normalized;
+}
+function getCadenceDefinitions(config) {
+    const configured = Array.isArray(config?.schedule?.cadences) ? config.schedule.cadences : [];
+    const byKey = new Map(DEFAULT_CADENCES.map((cadence) => [cadence.key, { ...cadence }]));
+    for (const cadence of configured) {
+        if (!cadence || typeof cadence !== 'object')
+            continue;
+        const key = normalizeCadenceKey(cadence.key || cadence.id || cadence.label);
+        if (!key)
+            continue;
+        const base = byKey.get(key) || { key };
+        byKey.set(key, {
+            ...base,
+            ...cadence,
+            key,
+            enabled: cadence.enabled !== false,
+            focusAreas: Array.isArray(cadence.focusAreas) ? cadence.focusAreas : base.focusAreas || [],
+            sourcePriorities: Array.isArray(cadence.sourcePriorities)
+                ? cadence.sourcePriorities
+                : base.sourcePriorities || [],
+        });
+    }
+    return [...byKey.values()].filter((cadence) => cadence.enabled !== false);
+}
+function cadenceIsDue(cadence, state) {
+    const lastRanAt = state?.cadences?.[cadence.key]?.lastRanAt;
+    const intervalDays = Number(cadence.intervalDays || 1);
+    if (!lastRanAt)
+        return true;
+    const last = Date.parse(String(lastRanAt));
+    if (!Number.isFinite(last))
+        return true;
+    return Date.now() - last >= Math.max(1, intervalDays) * 24 * 60 * 60 * 1000;
+}
+function getDueCadences(config, state) {
+    const due = getCadenceDefinitions(config).filter((cadence) => cadenceIsDue(cadence, state));
+    if (due.length > 0)
+        return due;
+    const daily = getCadenceDefinitions(config).find((cadence) => cadence.key === 'daily');
+    return daily ? [daily] : [];
+}
+function markCadencesRan(state, cadences, ranAt) {
+    const nextCadences = { ...(state?.cadences || {}) };
+    for (const cadence of cadences) {
+        nextCadences[cadence.key] = {
+            ...(nextCadences[cadence.key] || {}),
+            lastRanAt: ranAt,
+            title: cadence.title,
+        };
+    }
+    return nextCadences;
+}
 function getConnectorEntries(statusPayload) {
     return Object.entries(statusPayload?.connectors || {}).map(([key, value]) => ({
         key,
@@ -530,6 +656,197 @@ async function deliverConnectorHealthAlert({ config, configPath, message, status
     }
     return results;
 }
+function getGrowthRunChannels(config) {
+    const configuredChannels = Array.isArray(config?.notifications?.growthRun?.channels)
+        ? config.notifications.growthRun.channels.filter((channel) => channel?.enabled !== false)
+        : [];
+    if (configuredChannels.length > 0)
+        return configuredChannels;
+    const channels = [];
+    const deliveries = config?.deliveries || {};
+    if (deliveries.openclawChat?.enabled) {
+        channels.push({
+            type: 'openclaw-chat',
+            label: 'openclaw_chat',
+            markdownPath: deliveries.openclawChat.growthRunMarkdownPath || '.openclaw/chat/growth-summary.md',
+            jsonPath: deliveries.openclawChat.growthRunJsonPath || '.openclaw/chat/growth-summary.json',
+        });
+    }
+    if (deliveries.slack?.enabled) {
+        channels.push({
+            type: 'slack',
+            label: 'slack',
+            webhookEnv: deliveries.slack.webhookEnv || 'SLACK_WEBHOOK_URL',
+        });
+    }
+    if (deliveries.webhook?.enabled) {
+        channels.push({
+            type: 'webhook',
+            label: 'webhook',
+            urlEnv: deliveries.webhook.urlEnv || 'OPENCLAW_WEBHOOK_URL',
+            method: deliveries.webhook.method || 'POST',
+            headers: deliveries.webhook.headers || {},
+        });
+    }
+    if (deliveries.discord?.enabled) {
+        channels.push({
+            type: 'command',
+            label: 'discord',
+            command: deliveries.discord.command || 'node scripts/discord-openclaw-bridge.mjs send --stdin',
+        });
+    }
+    return channels;
+}
+function buildGrowthRunSummaryMessage({ issuesPayload, activeCadences, sourceFiles, createdGitHubArtifact }) {
+    const issueCount = Number(issuesPayload?.issue_count || 0);
+    const cadenceNames = activeCadences.length > 0
+        ? activeCadences.map((cadence) => cadence.title || cadence.key).join(', ')
+        : 'ad-hoc growth pass';
+    const sourceNames = Object.keys(sourceFiles || {}).sort().join(', ') || 'none';
+    const lines = [
+        `OpenClaw Growth run finished (${new Date().toISOString()}).`,
+        `Cadence: ${cadenceNames}`,
+        `Sources inspected: ${sourceNames}`,
+        `Generated proposals: ${issueCount}`,
+    ];
+    if (issuesPayload?.summary) {
+        lines.push(`Summary: ${issuesPayload.summary}`);
+    }
+    if (createdGitHubArtifact) {
+        lines.push('GitHub artifact creation was attempted for the generated proposals.');
+    }
+    const issues = Array.isArray(issuesPayload?.issues) ? issuesPayload.issues.slice(0, 3) : [];
+    if (issues.length > 0) {
+        lines.push('');
+        lines.push('Top findings:');
+        for (const issue of issues) {
+            lines.push(`- ${issue.title} (${issue.priority || 'medium'}, ${issue.area || 'general'})`);
+        }
+    }
+    lines.push('');
+    lines.push('No secrets were included. Use the generated issue drafts or OpenClaw chat handoff for details.');
+    return `${lines.join('\n')}\n`;
+}
+async function writeConfiguredOpenClawChatGrowthSummary(configPath, channel, message, issuesPayload, activeCadences, fingerprint) {
+    const baseDir = path.dirname(path.resolve(configPath));
+    const markdownPath = path.resolve(baseDir, channel.markdownPath || '.openclaw/chat/growth-summary.md');
+    const jsonPath = path.resolve(baseDir, channel.jsonPath || '.openclaw/chat/growth-summary.json');
+    await fs.mkdir(path.dirname(markdownPath), { recursive: true });
+    await fs.mkdir(path.dirname(jsonPath), { recursive: true });
+    await fs.writeFile(markdownPath, message, 'utf8');
+    await fs.writeFile(jsonPath, JSON.stringify({
+        channel: channel.label || 'openclaw_chat',
+        generatedAt: new Date().toISOString(),
+        fingerprint,
+        activeCadences,
+        issueCount: Number(issuesPayload?.issue_count || 0),
+        issues: Array.isArray(issuesPayload?.issues) ? issuesPayload.issues : [],
+    }, null, 2), 'utf8');
+    return {
+        sent: true,
+        target: channel.label || 'openclaw_chat',
+        detail: `wrote ${markdownPath} and ${jsonPath}`,
+    };
+}
+async function sendSlackGrowthSummary(channel, message) {
+    const webhookEnv = channel.webhookEnv || 'SLACK_WEBHOOK_URL';
+    const webhookUrl = process.env[webhookEnv];
+    if (!webhookUrl) {
+        return { sent: false, target: channel.label || 'slack', detail: `${webhookEnv} not set` };
+    }
+    const response = await fetch(webhookUrl, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ text: message }),
+    });
+    return {
+        sent: response.ok,
+        target: channel.label || 'slack',
+        detail: response.ok ? `HTTP ${response.status}` : `HTTP ${response.status}: ${await response.text()}`,
+    };
+}
+async function sendWebhookGrowthSummary(channel, message, issuesPayload, activeCadences, fingerprint) {
+    const urlEnv = channel.urlEnv || channel.webhookEnv || 'OPENCLAW_WEBHOOK_URL';
+    const webhookUrl = process.env[urlEnv];
+    if (!webhookUrl) {
+        return { sent: false, target: channel.label || 'webhook', detail: `${urlEnv} not set` };
+    }
+    const response = await fetch(webhookUrl, {
+        method: channel.method || 'POST',
+        headers: {
+            'content-type': 'application/json',
+            ...(channel.headers || {}),
+        },
+        body: JSON.stringify({
+            type: 'openclaw.growth_run',
+            generatedAt: new Date().toISOString(),
+            text: message,
+            fingerprint,
+            activeCadences,
+            issueCount: Number(issuesPayload?.issue_count || 0),
+            issues: Array.isArray(issuesPayload?.issues) ? issuesPayload.issues : [],
+        }),
+    });
+    return {
+        sent: response.ok,
+        target: channel.label || 'webhook',
+        detail: response.ok ? `HTTP ${response.status}` : `HTTP ${response.status}: ${await response.text()}`,
+    };
+}
+async function sendCommandGrowthSummary(channel, message) {
+    if (!channel.command) {
+        return { sent: false, target: channel.label || 'command', detail: 'command not configured' };
+    }
+    const result = await runShellCommand(String(channel.command), 60_000, { input: message });
+    return {
+        sent: result.ok,
+        target: channel.label || 'command',
+        detail: result.ok ? result.stdout.trim() : result.stderr.trim() || result.stdout.trim() || `exit ${result.code}`,
+    };
+}
+async function deliverGrowthRunSummary({ config, configPath, issuesPayload, activeCadences, sourceFiles, fingerprint, createdGitHubArtifact, }) {
+    if (config?.notifications?.growthRun?.enabled === false) {
+        return [{ sent: false, target: 'notifications', detail: 'growth run notifications disabled' }];
+    }
+    const channels = getGrowthRunChannels(config);
+    if (channels.length === 0) {
+        return [{ sent: false, target: 'none', detail: 'no growth run notification channels configured' }];
+    }
+    const message = buildGrowthRunSummaryMessage({
+        issuesPayload,
+        activeCadences,
+        sourceFiles,
+        createdGitHubArtifact,
+    });
+    const results = [];
+    for (const channel of channels) {
+        try {
+            if (channel.type === 'openclaw-chat') {
+                results.push(await writeConfiguredOpenClawChatGrowthSummary(configPath, channel, message, issuesPayload, activeCadences, fingerprint));
+            }
+            else if (channel.type === 'slack') {
+                results.push(await sendSlackGrowthSummary(channel, message));
+            }
+            else if (channel.type === 'webhook') {
+                results.push(await sendWebhookGrowthSummary(channel, message, issuesPayload, activeCadences, fingerprint));
+            }
+            else if (channel.type === 'command') {
+                results.push(await sendCommandGrowthSummary(channel, message));
+            }
+            else {
+                results.push({ sent: false, target: channel.label || String(channel.type || 'unknown'), detail: 'unsupported channel type' });
+            }
+        }
+        catch (error) {
+            results.push({
+                sent: false,
+                target: channel.label || String(channel.type || 'unknown'),
+                detail: error instanceof Error ? error.message : String(error),
+            });
+        }
+    }
+    return results;
+}
 async function maybeRunConnectorHealthCheck({ config, configPath, state, statePath, runtimeDir }) {
     const healthState = state?.connectorHealth || {};
     const intervalMinutes = getConnectorHealthIntervalMinutes(config);
@@ -604,7 +921,7 @@ function buildIssueFingerprint(issuesPayload) {
         : [];
     return sha256(titles.join('\n'));
 }
-async function runAnalyzer({ config, runtimeDir, sourceFiles, createGitHubArtifact, chartManifestPath, }) {
+async function runAnalyzer({ config, runtimeDir, sourceFiles, createGitHubArtifact, chartManifestPath, cadencePlanPath, }) {
     await ensureDir(runtimeDir);
     if (!sourceFiles.analytics) {
         throw new Error('Analytics source is required (enable and configure `sources.analytics`).');
@@ -659,6 +976,9 @@ async function runAnalyzer({ config, runtimeDir, sourceFiles, createGitHubArtifa
     }
     if (chartManifestPath) {
         args.push('--chart-manifest', chartManifestPath);
+    }
+    if (cadencePlanPath) {
+        args.push('--cadence-plan', cadencePlanPath);
     }
     const analyzer = await runShellCommand(`node ${args.map(quote).join(' ')}`);
     if (!analyzer.ok) {
@@ -848,6 +1168,7 @@ async function runOnce(configPath, statePath) {
         statePath,
         runtimeDir,
     });
+    const activeCadences = getDueCadences(config, stateAfterHealthCheck);
     const { payloads, sourceCursors } = await loadSourcePayloads(config, stateAfterHealthCheck);
     const currentHashes = computeSourceHashes(payloads);
     const changed = hasSourceChanges(stateAfterHealthCheck.sourceHashes, currentHashes);
@@ -865,6 +1186,11 @@ async function runOnce(configPath, statePath) {
     }
     const createGitHubArtifact = shouldAutoCreateGitHubArtifact(config);
     const sourceFiles = await materializeSourceFiles(config, payloads, runtimeDir);
+    const cadencePlanPath = path.join(runtimeDir, 'cadence-plan.json');
+    await fs.writeFile(cadencePlanPath, JSON.stringify({
+        generatedAt: new Date().toISOString(),
+        cadences: activeCadences,
+    }, null, 2), 'utf8');
     const chartManifestPath = await maybeGenerateCharts({
         config,
         payloads,
@@ -876,6 +1202,7 @@ async function runOnce(configPath, statePath) {
         sourceFiles,
         createGitHubArtifact: false,
         chartManifestPath,
+        cadencePlanPath,
     });
     const issueFingerprint = buildIssueFingerprint(dryRun.issuesPayload);
     const unchangedIssueSet = issueFingerprint === stateAfterHealthCheck.lastIssueFingerprint;
@@ -889,17 +1216,20 @@ async function runOnce(configPath, statePath) {
             lastIssueFingerprint: issueFingerprint,
             lastRunAt: new Date().toISOString(),
             lastOutFile: dryRun.outFile,
+            cadences: markCadencesRan(stateAfterHealthCheck, activeCadences, new Date().toISOString()),
             skippedReason: 'issue_set_unchanged',
         }, null, 2), 'utf8');
         return;
     }
-    if (createGitHubArtifact) {
+    const shouldCreateGitHubArtifact = createGitHubArtifact && Number(dryRun.issuesPayload?.issue_count || 0) > 0;
+    if (shouldCreateGitHubArtifact) {
         await runAnalyzer({
             config,
             runtimeDir,
             sourceFiles,
             createGitHubArtifact: true,
             chartManifestPath,
+            cadencePlanPath,
         });
         process.stdout.write(`[${new Date().toISOString()}] Created GitHub ${getActionMode(config) === 'pull_request' ? 'pull requests' : 'issues'}.\n`);
     }
@@ -914,6 +1244,16 @@ async function runOnce(configPath, statePath) {
         lastIssueFingerprint: issueFingerprint,
         lastRunAt: new Date().toISOString(),
         lastOutFile: dryRun.outFile,
+        cadences: markCadencesRan(stateAfterHealthCheck, activeCadences, new Date().toISOString()),
+        lastGrowthRunNotifications: await deliverGrowthRunSummary({
+            config,
+            configPath,
+            issuesPayload: dryRun.issuesPayload,
+            activeCadences,
+            sourceFiles,
+            fingerprint: issueFingerprint,
+            createdGitHubArtifact: shouldCreateGitHubArtifact,
+        }),
         skippedReason: null,
     }, null, 2), 'utf8');
 }
