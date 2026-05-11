@@ -3107,7 +3107,7 @@ async function main() {
       },
       schedule: {
         intervalMinutes,
-        connectorHealthCheckIntervalMinutes: 1440,
+        connectorHealthCheckIntervalMinutes: 720,
         skipIfNoDataChange: true,
         skipIfIssueSetUnchanged: true,
         cadences,

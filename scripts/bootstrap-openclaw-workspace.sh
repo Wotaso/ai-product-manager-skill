@@ -55,36 +55,48 @@ for f in "${SKILL_ROOT}/data/openclaw-growth-engineer/"*.json; do
 done
 
 heartbeat_path="${WORKSPACE}/HEARTBEAT.md"
-heartbeat_has_work="0"
-if [[ -f "${heartbeat_path}" ]]; then
-  if awk '
-    {
-      line=$0
-      sub(/^[[:space:]]+/, "", line)
-      sub(/[[:space:]]+$/, "", line)
-      if (line != "" && line !~ /^#/ && line !~ /^<!--/ && line !~ /^-->/) found=1
-    }
-    END { exit found ? 0 : 1 }
-  ' "${heartbeat_path}"; then
-    heartbeat_has_work="1"
-  fi
-fi
-
-if [[ ! -f "${heartbeat_path}" || "${heartbeat_has_work}" != "1" ]]; then
-  cat > "${heartbeat_path}" <<'EOF'
-# OpenClaw heartbeat checklist
-
+heartbeat_block="$(cat <<'EOF'
 <!-- openclaw-growth-engineer:start -->
 tasks:
 
 - name: openclaw-growth-engineer-run
-  interval: 1d
+  interval: 12h
   prompt: "Run `node scripts/openclaw-growth-runner.mjs --config data/openclaw-growth-engineer/config.json` from the workspace if the config and runtime files exist. The runner owns schedule.cadences, connectorHealthCheckIntervalMinutes, skipIfNoDataChange, and skipIfIssueSetUnchanged. If it reports connector-health alerts, production crashes, generated issues, or actionable growth findings, summarize only the action and evidence. If setup files are missing, tell the user to run `node scripts/openclaw-growth-wizard.mjs --connectors`. If there is no actionable output, reply HEARTBEAT_OK."
 
 # Keep this section small. Do not put secrets in HEARTBEAT.md.
 <!-- openclaw-growth-engineer:end -->
 EOF
-fi
+)"
+
+HEARTBEAT_PATH="${heartbeat_path}" HEARTBEAT_BLOCK="${heartbeat_block}" node <<'NODE'
+const fs = require('node:fs');
+
+const path = process.env.HEARTBEAT_PATH;
+const block = process.env.HEARTBEAT_BLOCK;
+const markerPattern = /<!-- openclaw-growth-engineer:start -->[\s\S]*?<!-- openclaw-growth-engineer:end -->/;
+
+let existing = '';
+try {
+  existing = fs.readFileSync(path, 'utf8');
+} catch {
+  existing = '';
+}
+
+const hasWork = existing
+  .split(/\r?\n/)
+  .map((line) => line.trim())
+  .some((line) => line && !line.startsWith('#') && !line.startsWith('<!--') && !line.startsWith('-->'));
+
+const next = markerPattern.test(existing)
+  ? existing.replace(markerPattern, block)
+  : hasWork
+    ? `${existing.trimEnd()}\n\n${block}\n`
+    : `# OpenClaw heartbeat checklist\n\n${block}\n`;
+
+if (next !== existing) {
+  fs.writeFileSync(path, next, 'utf8');
+}
+NODE
 
 echo "Copied ${skill_slug} runtime into workspace:"
 echo "  ${WORKSPACE}/scripts"

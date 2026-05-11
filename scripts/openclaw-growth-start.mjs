@@ -437,8 +437,9 @@ function formatHeartbeatInterval(minutes) {
     return `${intervalMinutes}m`;
 }
 function getHeartbeatInterval(config) {
-    const configured = Number(config?.schedule?.intervalMinutes);
-    return Number.isFinite(configured) && configured > 0 ? configured : 1440;
+    const scheduleInterval = Number(config?.schedule?.intervalMinutes);
+    const healthInterval = Number(config?.schedule?.connectorHealthCheckIntervalMinutes);
+    return Math.min(Number.isFinite(scheduleInterval) && scheduleInterval > 0 ? scheduleInterval : 1440, Number.isFinite(healthInterval) && healthInterval > 0 ? healthInterval : 720);
 }
 function relativeWorkspacePath(filePath) {
     const relative = path.relative(process.cwd(), filePath);

@@ -9,7 +9,7 @@ import { loadOpenClawGrowthSecrets } from './openclaw-growth-env.mjs';
 const DEFAULT_CONFIG_PATH = 'data/openclaw-growth-engineer/config.json';
 const DEFAULT_STATE_PATH = 'data/openclaw-growth-engineer/state.json';
 const DEFAULT_RUNTIME_DIR = 'data/openclaw-growth-engineer/runtime';
-const DEFAULT_CONNECTOR_HEALTH_INTERVAL_MINUTES = 1440;
+const DEFAULT_CONNECTOR_HEALTH_INTERVAL_MINUTES = 720;
 const SELF_UPDATE_INTERVAL_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_CADENCES = [
     {
@@ -890,7 +890,9 @@ async function maybeRunConnectorHealthCheck({ config, configPath, state, statePa
         connectedConnectors,
         lastError: null,
     };
-    if (unhealthyConnectors.length > 0 && healthState.lastAlertedFingerprint !== fingerprint) {
+    if (unhealthyConnectors.length > 0 &&
+        (healthState.lastAlertedFingerprint !== fingerprint ||
+            isDue(healthState.lastAlertedAt, intervalMinutes))) {
         const message = buildConnectorHealthAlert(statusPayload, unhealthyConnectors);
         const paths = await writeConnectorHealthAlert(runtimeDir, message, statusPayload, unhealthyConnectors, fingerprint);
         const deliveries = await deliverConnectorHealthAlert({
