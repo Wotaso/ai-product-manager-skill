@@ -3,6 +3,7 @@ import { existsSync, promises as fs } from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import { spawn } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { getActionMode, getDefaultSourceCommand } from './openclaw-growth-shared.mjs';
 import { applyOpenClawSecretRefs, loadOpenClawGrowthSecrets } from './openclaw-growth-env.mjs';
 const DEFAULT_CONFIG_PATH = 'data/openclaw-growth-engineer/config.json';
@@ -13,6 +14,7 @@ const HEARTBEAT_MARKER_END = '<!-- openclaw-growth-engineer:end -->';
 const ANALYTICSCLI_PACKAGE_SPEC = process.env.ANALYTICSCLI_CLI_PACKAGE || '@analyticscli/cli@preview';
 const ANALYTICSCLI_NPM_PREFIX = process.env.ANALYTICSCLI_NPM_PREFIX ||
     (process.env.HOME ? path.join(process.env.HOME, '.local') : path.join(process.cwd(), '.analyticscli-npm'));
+const RUNTIME_DIR = path.dirname(fileURLToPath(import.meta.url));
 function printHelpAndExit(exitCode, reason = null) {
     if (reason) {
         process.stderr.write(`${reason}\n\n`);
@@ -142,6 +144,17 @@ function quote(value) {
         return String(value);
     }
     return `'${String(value).replace(/'/g, `'\\''`)}'`;
+}
+function resolveRuntimeScriptPath(scriptName) {
+    const candidates = [
+        path.join(RUNTIME_DIR, scriptName),
+        path.resolve('scripts', scriptName),
+        path.resolve('skills/openclaw-growth-engineer/scripts', scriptName),
+    ];
+    return candidates.find((candidate) => existsSync(candidate)) || path.join(RUNTIME_DIR, scriptName);
+}
+function nodeRuntimeScriptCommand(scriptName) {
+    return `node ${quote(resolveRuntimeScriptPath(scriptName))}`;
 }
 function truncate(value, max = 240) {
     const text = String(value || '');
@@ -1303,8 +1316,7 @@ function remediateAscAppSetupFailure(error) {
 }
 async function runPreflight(configPath, testConnections, progressJson = false, onlyConnectors = []) {
     const commandParts = [
-        'node',
-        'scripts/openclaw-growth-preflight.mjs',
+        nodeRuntimeScriptCommand('openclaw-growth-preflight.mjs'),
         '--config',
         quote(configPath),
     ];
@@ -1334,7 +1346,7 @@ async function runPreflight(configPath, testConnections, progressJson = false, o
     };
 }
 async function runFirstPass(configPath) {
-    const command = `node scripts/openclaw-growth-runner.mjs --config ${quote(configPath)}`;
+    const command = `${nodeRuntimeScriptCommand('openclaw-growth-runner.mjs')} --config ${quote(configPath)}`;
     return runShellCommand(command, 300_000);
 }
 async function main() {

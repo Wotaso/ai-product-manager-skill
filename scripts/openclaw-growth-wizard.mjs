@@ -1,11 +1,12 @@
 #!/usr/bin/env node
-import { promises as fs } from 'node:fs';
+import { existsSync, promises as fs } from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline/promises';
 import { emitKeypressEvents } from 'node:readline';
 import { createPrivateKey } from 'node:crypto';
+import { fileURLToPath } from 'node:url';
 import { buildExtraSourceConfig, getDefaultSourceCommand, } from './openclaw-growth-shared.mjs';
 import { loadOpenClawGrowthSecrets } from './openclaw-growth-env.mjs';
 const DEFAULT_CONFIG_PATH = 'data/openclaw-growth-engineer/config.json';
@@ -13,6 +14,8 @@ const SELF_UPDATE_INTERVAL_MS = 24 * 60 * 60 * 1000;
 const ENABLE_ISOLATED_SECRET_RUNNER_WIZARD = false;
 const DEFAULT_GROWTH_INTERVAL_MINUTES = 1440;
 const DEFAULT_CONNECTOR_HEALTH_INTERVAL_MINUTES = 360;
+const GROWTH_ENGINEER_PACKAGE_SPEC = process.env.OPENCLAW_GROWTH_ENGINEER_PACKAGE || '@analyticscli/growth-engineer@preview';
+const RUNTIME_DIR = path.dirname(fileURLToPath(import.meta.url));
 const CONNECTOR_KEYS = ['analytics', 'github', 'revenuecat', 'sentry', 'asc'];
 class WizardAbortError extends Error {
     exitCode;
@@ -219,6 +222,39 @@ function quote(value) {
         return String(value);
     }
     return `'${String(value).replace(/'/g, `'\\''`)}'`;
+}
+function resolveRuntimeScriptPath(scriptName) {
+    const candidates = [
+        path.join(RUNTIME_DIR, scriptName),
+        path.resolve('scripts', scriptName),
+        path.resolve('skills/openclaw-growth-engineer/scripts', scriptName),
+    ];
+    return candidates.find((candidate) => existsSync(candidate)) || path.join(RUNTIME_DIR, scriptName);
+}
+function nodeRuntimeScriptCommand(scriptName) {
+    return `node ${quote(resolveRuntimeScriptPath(scriptName))}`;
+}
+function growthEngineerPackageCommand(args) {
+    return `npx -y ${quote(GROWTH_ENGINEER_PACKAGE_SPEC)} ${args}`;
+}
+function getWizardDefaultSourceCommand(sourceName) {
+    const normalized = String(sourceName || '').trim().toLowerCase();
+    if (normalized === 'analytics' || normalized === 'analyticscli') {
+        return nodeRuntimeScriptCommand('export-analytics-summary.mjs');
+    }
+    if (normalized === 'revenuecat' || normalized === 'revenue-cat') {
+        return nodeRuntimeScriptCommand('export-revenuecat-summary.mjs');
+    }
+    if (normalized === 'sentry' || normalized === 'glitchtip') {
+        return nodeRuntimeScriptCommand('export-sentry-summary.mjs');
+    }
+    if (normalized === 'feedback') {
+        return getDefaultSourceCommand('feedback');
+    }
+    if (['asc', 'asc-cli', 'app-store-connect', 'app_store_connect'].includes(normalized)) {
+        return nodeRuntimeScriptCommand('export-asc-summary.mjs');
+    }
+    return getDefaultSourceCommand(sourceName);
 }
 function normalizeConnectorKey(value) {
     const normalized = String(value || '').trim().toLowerCase().replace(/[_\s]+/g, '-');
@@ -620,7 +656,7 @@ async function getConnectorPickerHealth(configPath, onProgress = () => { }) {
             },
         ]));
     }
-    const result = await runCommandCaptureWithProgress(`node scripts/openclaw-growth-status.mjs --config ${quote(configPath)} --json --progress-json`, onProgress);
+    const result = await runCommandCaptureWithProgress(`${nodeRuntimeScriptCommand('openclaw-growth-status.mjs')} --config ${quote(configPath)} --json --progress-json`, onProgress);
     const payload = parseJsonFromStdout(result.stdout);
     const connectors = payload?.connectors && typeof payload.connectors === 'object' ? payload.connectors : {};
     const healthByConnector = {
@@ -1366,7 +1402,7 @@ async function runImmediateConnectorHealthCheck({ rl, configPath, connector, sec
         ...process.env,
         ...secrets,
     };
-    const command = `node scripts/openclaw-growth-start.mjs --config ${quote(configPath)} --setup-only --connectors ${quote(connector)} --only-connectors ${quote(connector)}`;
+    const command = `${nodeRuntimeScriptCommand('openclaw-growth-start.mjs')} --config ${quote(configPath)} --setup-only --connectors ${quote(connector)} --only-connectors ${quote(connector)}`;
     let result = await runSetupCommandWithProgress(command, env, [connector], `Checking ${connectorLabel(connector)} immediately after setup...`);
     let payload = parseJsonFromStdout(result.stdout);
     if (connector === 'asc') {
@@ -1748,13 +1784,13 @@ function getGrowthRunCommand(config, displayConfigPath) {
     if (config?.security?.connectorSecrets?.mode === 'isolated-runner' && config.security.connectorSecrets.runCommand) {
         return config.security.connectorSecrets.runCommand;
     }
-    return `node scripts/openclaw-growth-runner.mjs --config ${displayConfigPath}`;
+    return growthEngineerPackageCommand(`run --config ${quote(displayConfigPath)}`);
 }
 function getConnectorHealthCommand(config, displayConfigPath) {
     if (config?.security?.connectorSecrets?.mode === 'isolated-runner' && config.security.connectorSecrets.healthCommand) {
         return config.security.connectorSecrets.healthCommand;
     }
-    return `node scripts/openclaw-growth-runner.mjs --config ${displayConfigPath}`;
+    return growthEngineerPackageCommand(`run --config ${quote(displayConfigPath)}`);
 }
 async function maybePromptSecret(rl, label, envName) {
     const existing = process.env[envName]?.trim();
@@ -2701,7 +2737,7 @@ async function runConnectorSetupSteps({ rl, args, selected, healthByConnector, a
         ...process.env,
         ...secrets,
     };
-    const command = `node scripts/openclaw-growth-start.mjs --config ${quote(args.config)} --setup-only --connectors ${quote(selected.join(','))}`;
+    const command = `${nodeRuntimeScriptCommand('openclaw-growth-start.mjs')} --config ${quote(args.config)} --setup-only --connectors ${quote(selected.join(','))}`;
     let setupResult = await runSetupCommandWithProgress(command, env, selected, 'Testing connector setup...');
     let setupPayload = parseJsonFromStdout(setupResult.stdout);
     if (sentryAccounts.length > 0 && await upsertSentryAccountsConfig(args.config, sentryAccounts)) {
@@ -2900,17 +2936,17 @@ async function buildDefaultWizardConfig() {
             analytics: {
                 enabled: true,
                 mode: 'command',
-                command: getDefaultSourceCommand('analytics'),
+                command: getWizardDefaultSourceCommand('analytics'),
             },
             revenuecat: {
                 enabled: false,
                 mode: 'command',
-                command: getDefaultSourceCommand('revenuecat'),
+                command: getWizardDefaultSourceCommand('revenuecat'),
             },
             sentry: {
                 enabled: true,
                 mode: 'command',
-                command: getDefaultSourceCommand('sentry'),
+                command: getWizardDefaultSourceCommand('sentry'),
             },
             feedback: {
                 enabled: true,
@@ -2920,7 +2956,7 @@ async function buildDefaultWizardConfig() {
                 initialLookback: '30d',
             },
             extra: [
-                buildExtraSourceConfig('asc-cli', { enabled: false, mode: 'command', command: getDefaultSourceCommand('asc') }),
+                buildExtraSourceConfig('asc-cli', { enabled: false, mode: 'command', command: getWizardDefaultSourceCommand('asc') }),
             ],
         },
         schedule: {
@@ -3013,17 +3049,17 @@ function buildRecommendedSourceConfig() {
         analytics: {
             enabled: true,
             mode: 'command',
-            command: getDefaultSourceCommand('analytics'),
+            command: getWizardDefaultSourceCommand('analytics'),
         },
         revenuecat: {
             enabled: false,
             mode: 'command',
-            command: getDefaultSourceCommand('revenuecat'),
+            command: getWizardDefaultSourceCommand('revenuecat'),
         },
         sentry: {
             enabled: true,
             mode: 'command',
-            command: getDefaultSourceCommand('sentry'),
+            command: getWizardDefaultSourceCommand('sentry'),
         },
         feedback: {
             enabled: true,
@@ -3033,7 +3069,7 @@ function buildRecommendedSourceConfig() {
             initialLookback: '30d',
         },
         extra: [
-            buildExtraSourceConfig('asc-cli', { enabled: false, mode: 'command', command: getDefaultSourceCommand('asc') }),
+            buildExtraSourceConfig('asc-cli', { enabled: false, mode: 'command', command: getWizardDefaultSourceCommand('asc') }),
         ],
     };
 }
@@ -3096,7 +3132,7 @@ function buildSourceConfigFromInputChannels(selectedConnectors, existingSources 
                 ...buildExtraSourceConfig('asc-cli', {
                     enabled: selected.has('asc'),
                     mode: 'command',
-                    command: getDefaultSourceCommand('asc'),
+                    command: getWizardDefaultSourceCommand('asc'),
                 }),
                 ...(ascSource || {}),
                 enabled: selected.has('asc'),
@@ -3461,8 +3497,8 @@ async function main() {
         printSecretRunnerKitInstructions(secretAccess.kit);
         process.stdout.write('\nNext steps:\n');
         process.stdout.write(`1) Set secrets in OpenClaw secret store (env var names in config.secrets)\n`);
-        process.stdout.write(`2) Run once: node scripts/openclaw-growth-runner.mjs --config ${configPath}\n`);
-        process.stdout.write(`3) Run interval loop: node scripts/openclaw-growth-runner.mjs --config ${configPath} --loop\n`);
+        process.stdout.write(`2) Run once: ${growthEngineerPackageCommand(`run --config ${quote(configPath)}`)}\n`);
+        process.stdout.write(`3) Run interval loop: ${growthEngineerPackageCommand(`run --config ${quote(configPath)} --loop`)}\n`);
     }
     finally {
         rl.close();
