@@ -47,7 +47,12 @@ test('wizard exposes connector and output interval setup paths', () => {
   assert.match(wizard, /once_per_unhealthy_incident_until_recovery_or_changed_fingerprint/);
   assert.doesNotMatch(wizard, /GitHub repo \(owner\/name/);
   assert.doesNotMatch(wizard, /Project slugs for/);
+  assert.doesNotMatch(wizard, /Issue labels \(comma-separated\)/);
+  assert.doesNotMatch(wizard, /Preferred GitHub artifact mode/);
   assert.match(wizard, /Project scope remains unpinned/);
+  assert.match(wizard, /Input channels/);
+  assert.match(wizard, /Use recommended input channels and default fetch commands/);
+  assert.match(wizard, /Customize GitHub issue\/PR limits, labels, or chart attachment settings/);
 });
 
 test('config example stores connector credentials as OpenClaw-style secret refs', () => {
