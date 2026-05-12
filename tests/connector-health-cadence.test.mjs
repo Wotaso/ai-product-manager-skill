@@ -49,9 +49,11 @@ test('wizard exposes connector and output interval setup paths', () => {
   assert.doesNotMatch(wizard, /Project slugs for/);
   assert.doesNotMatch(wizard, /Issue labels \(comma-separated\)/);
   assert.doesNotMatch(wizard, /Preferred GitHub artifact mode/);
+  assert.doesNotMatch(wizard, /Use recommended input channels and default fetch commands/);
+  assert.doesNotMatch(wizard, /Connector credentials are configured through the connector setup/);
   assert.match(wizard, /Project scope remains unpinned/);
   assert.match(wizard, /Input channels/);
-  assert.match(wizard, /Use recommended input channels and default fetch commands/);
+  assert.match(wizard, /Select input channels/);
   assert.match(wizard, /Customize GitHub issue\/PR limits, labels, or chart attachment settings/);
 });
 

@@ -6,7 +6,7 @@ import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline/promises';
 import { emitKeypressEvents } from 'node:readline';
 import { createPrivateKey } from 'node:crypto';
-import { buildExtraSourceConfig, getDefaultSourceCommand, getDefaultSourceHint, getDefaultSourcePath, } from './openclaw-growth-shared.mjs';
+import { buildExtraSourceConfig, getDefaultSourceCommand, } from './openclaw-growth-shared.mjs';
 import { loadOpenClawGrowthSecrets } from './openclaw-growth-env.mjs';
 const DEFAULT_CONFIG_PATH = 'data/openclaw-growth-engineer/config.json';
 const SELF_UPDATE_INTERVAL_MS = 24 * 60 * 60 * 1000;
@@ -278,14 +278,14 @@ function withMissingRequiredAnalyticsConnector(selected) {
         return orderConnectors(selected);
     return orderConnectors(['analytics', ...selected]);
 }
-async function askConnectorSelectionWithHealth(rl, healthByConnector = {}, initialSelected = []) {
+async function askConnectorSelectionWithHealth(rl, healthByConnector = {}, initialSelected = [], copy = {}) {
     if (!process.stdin.isTTY || !process.stdout.isTTY || !process.stdin.setRawMode) {
-        return await askConnectorSelectionByText(rl, healthByConnector);
+        return await askConnectorSelectionByText(rl, healthByConnector, copy);
     }
     rl.pause();
     let completed = false;
     try {
-        const selected = await askConnectorSelectionByKeys(healthByConnector, initialSelected);
+        const selected = await askConnectorSelectionByKeys(healthByConnector, initialSelected, copy);
         completed = true;
         return selected;
     }
@@ -298,8 +298,8 @@ async function askConnectorSelectionWithHealth(rl, healthByConnector = {}, initi
         }
     }
 }
-async function askConnectorSelectionByText(rl, healthByConnector = {}) {
-    printConnectorIntro();
+async function askConnectorSelectionByText(rl, healthByConnector = {}, copy = {}) {
+    printConnectorIntro(copy);
     for (const group of connectorPickerGroups(healthByConnector)) {
         process.stdout.write(`${ANSI.bold}${group.title}${ANSI.reset}\n`);
         for (const connector of group.connectors) {
@@ -337,9 +337,15 @@ function orderConnectors(keys) {
     const selected = new Set(keys);
     return CONNECTOR_KEYS.filter((key) => selected.has(key));
 }
-function printConnectorIntro() {
-    process.stdout.write(`\n${ANSI.bold}OpenClaw connector setup${ANSI.reset}\n`);
-    process.stdout.write(`${ANSI.dim}You can configure connector secrets here. API keys stay in this host's local secrets file, not in chat or config JSON.${ANSI.reset}\n\n`);
+function printConnectorIntro(copy = {}) {
+    process.stdout.write(`\n${ANSI.bold}${copy.introTitle || 'OpenClaw connector setup'}${ANSI.reset}\n`);
+    const detail = copy.introDetail === undefined
+        ? 'You can configure connector secrets here. API keys stay in this host\'s local secrets file, not in chat or config JSON.'
+        : copy.introDetail;
+    if (detail) {
+        process.stdout.write(`${ANSI.dim}${detail}${ANSI.reset}\n`);
+    }
+    process.stdout.write('\n');
 }
 async function askMenuChoice(rl, { title, subtitle = 'Use Up/Down to move, Enter to continue.', options, defaultValue, renderHeader, }) {
     if (!process.stdin.isTTY || !process.stdout.isTTY || !process.stdin.setRawMode) {
@@ -626,11 +632,11 @@ async function getConnectorPickerHealth(configPath, onProgress = () => { }) {
     };
     return Object.fromEntries(CONNECTOR_KEYS.map((key) => [key, getConnectorHealth(key, healthByConnector)]));
 }
-function renderConnectorPicker(cursorIndex, selected, required, healthByConnector = {}, warning = '') {
+function renderConnectorPicker(cursorIndex, selected, required, healthByConnector = {}, warning = '', copy = {}) {
     process.stdout.write('\x1b[2J\x1b[H');
-    printConnectorIntro();
-    process.stdout.write(`${ANSI.bold}Select connectors to set up or overwrite now${ANSI.reset}\n`);
-    writeWrapped('Use Up/Down to move, Space to toggle optional connectors, A to toggle all optional connectors, Enter to continue.', '', ANSI.dim);
+    printConnectorIntro(copy);
+    process.stdout.write(`${ANSI.bold}${copy.actionTitle || 'Select connectors to set up or overwrite now'}${ANSI.reset}\n`);
+    writeWrapped(copy.helpText || 'Use Up/Down to move, Space to toggle optional connectors, A to toggle all optional connectors, Enter to continue.', '', ANSI.dim);
     process.stdout.write('\n');
     let index = 0;
     for (const group of connectorPickerGroups(healthByConnector)) {
@@ -656,16 +662,18 @@ function renderConnectorPicker(cursorIndex, selected, required, healthByConnecto
     }
     process.stdout.write(`${ANSI.dim}Esc/Q cancels. Number keys 1-${CONNECTOR_DEFINITIONS.length} also toggle connectors.${ANSI.reset}\n`);
 }
-async function askConnectorSelectionByKeys(healthByConnector = {}, initialSelected = []) {
+async function askConnectorSelectionByKeys(healthByConnector = {}, initialSelected = [], copy = {}) {
     emitKeypressEvents(process.stdin);
     const wasRaw = process.stdin.isRaw;
     const wasPaused = process.stdin.isPaused();
     process.stdin.setRawMode(true);
     process.stdin.resume();
     let cursorIndex = 0;
-    const required = getRequiredConnectorKeys();
+    const required = copy.mode === 'input' ? new Set() : getRequiredConnectorKeys();
     const initial = new Set(initialSelected);
-    const selected = new Set(CONNECTOR_KEYS.filter((key) => required.has(key) || initial.has(key) || !isConnectorLocallyConfigured(key)));
+    const selected = new Set(CONNECTOR_KEYS.filter((key) => required.has(key) ||
+        initial.has(key) ||
+        (copy.mode !== 'input' && !isConnectorLocallyConfigured(key))));
     let warning = '';
     return await new Promise((resolve, reject) => {
         const displayItems = () => connectorPickerDisplayItems(healthByConnector);
@@ -683,7 +691,7 @@ async function askConnectorSelectionByKeys(healthByConnector = {}, initialSelect
             required.forEach((key) => selected.add(key));
             if (selected.size === 0) {
                 warning = 'No connectors selected. Select a connector to update or press Esc to cancel.';
-                renderConnectorPicker(cursorIndex, selected, required, healthByConnector, warning);
+                renderConnectorPicker(cursorIndex, selected, required, healthByConnector, warning, copy);
                 return;
             }
             cleanup();
@@ -768,11 +776,11 @@ async function askConnectorSelectionByKeys(healthByConnector = {}, initialSelect
                     }
                 }
             }
-            renderConnectorPicker(cursorIndex, selected, required, healthByConnector, warning);
+            renderConnectorPicker(cursorIndex, selected, required, healthByConnector, warning, copy);
         };
         process.stdin.on('keypress', onKeypress);
         process.stdout.write(ANSI.hideCursor);
-        renderConnectorPicker(cursorIndex, selected, required, healthByConnector, warning);
+        renderConnectorPicker(cursorIndex, selected, required, healthByConnector, warning, copy);
     });
 }
 async function commandExists(commandName) {
@@ -2784,43 +2792,6 @@ async function askYesNo(rl, label, defaultYes = true) {
         }
     }
 }
-async function askSourceConfig(rl, sourceName, defaultPath, hint, options = {}) {
-    const forceEnabled = Boolean(options.forceEnabled);
-    const defaultCommand = String(options.defaultCommand || getDefaultSourceCommand(sourceName) || '').trim();
-    const defaultMode = defaultCommand ? 'command' : 'file';
-    const defaultEnabled = options.defaultEnabled ?? sourceName === 'analytics';
-    const enabled = forceEnabled
-        ? true
-        : await askYesNo(rl, `Enable source "${sourceName}"?`, defaultEnabled);
-    if (!enabled) {
-        return {
-            enabled: false,
-            mode: 'file',
-            path: defaultPath,
-            hint,
-        };
-    }
-    process.stdout.write(`Where to get ${sourceName} data:\n${hint}\n`);
-    const modeInput = await ask(rl, 'Mode (file/command)', defaultMode);
-    const mode = modeInput.toLowerCase() === 'command' ? 'command' : 'file';
-    const value = await ask(rl, mode === 'file' ? `${sourceName} JSON file path` : `${sourceName} command`, mode === 'file' ? defaultPath : defaultCommand);
-    if (mode === 'file') {
-        return {
-            enabled: true,
-            mode,
-            path: value,
-            hint,
-        };
-    }
-    return {
-        enabled: true,
-        mode,
-        command: value,
-        hint,
-        ...(options.cursorMode ? { cursorMode: options.cursorMode } : {}),
-        ...(options.initialLookback ? { initialLookback: options.initialLookback } : {}),
-    };
-}
 function printCadencePlan(cadences) {
     process.stdout.write('\nDefault growth cadence:\n');
     for (const cadence of cadences) {
@@ -3050,6 +3021,73 @@ function buildRecommendedSourceConfig() {
         ],
     };
 }
+function getInputChannelInitialSelection(config) {
+    const sources = config?.sources || {};
+    const extraSources = Array.isArray(sources.extra) ? sources.extra : [];
+    const selected = new Set();
+    const hasExplicitSources = Boolean(config?.sources);
+    if (!hasExplicitSources || sources.analytics?.enabled !== false)
+        selected.add('analytics');
+    if (sources.revenuecat?.enabled === true || isConnectorLocallyConfigured('revenuecat'))
+        selected.add('revenuecat');
+    if (!hasExplicitSources || sources.sentry?.enabled !== false)
+        selected.add('sentry');
+    if (extraSources.some((source) => ['asc', 'asc-cli', 'app-store-connect', 'app_store_connect'].includes(String(source?.service || source?.key || '').toLowerCase()) &&
+        source?.enabled !== false) ||
+        isConnectorLocallyConfigured('asc')) {
+        selected.add('asc');
+    }
+    if (config?.deliveries?.github?.enabled ||
+        config?.actions?.autoCreateIssues ||
+        config?.actions?.autoCreatePullRequests ||
+        isConnectorLocallyConfigured('github')) {
+        selected.add('github');
+    }
+    return orderConnectors([...selected]);
+}
+function buildSourceConfigFromInputChannels(selectedConnectors, existingSources = {}) {
+    const selected = new Set(selectedConnectors);
+    const recommended = buildRecommendedSourceConfig();
+    const existingExtra = Array.isArray(existingSources.extra) ? existingSources.extra : [];
+    const ascSource = existingExtra.find((source) => ['asc', 'asc-cli', 'app-store-connect', 'app_store_connect'].includes(String(source?.service || source?.key || '').toLowerCase()));
+    const nonAscExtra = existingExtra.filter((source) => source !== ascSource);
+    return {
+        ...recommended,
+        ...existingSources,
+        analytics: {
+            ...recommended.analytics,
+            ...(existingSources.analytics || {}),
+            enabled: selected.has('analytics'),
+        },
+        revenuecat: {
+            ...recommended.revenuecat,
+            ...(existingSources.revenuecat || {}),
+            enabled: selected.has('revenuecat'),
+        },
+        sentry: {
+            ...recommended.sentry,
+            ...(existingSources.sentry || {}),
+            enabled: selected.has('sentry'),
+        },
+        feedback: {
+            ...recommended.feedback,
+            ...(existingSources.feedback || {}),
+            enabled: selected.has('analytics'),
+        },
+        extra: [
+            ...nonAscExtra,
+            {
+                ...buildExtraSourceConfig('asc-cli', {
+                    enabled: selected.has('asc'),
+                    mode: 'command',
+                    command: getDefaultSourceCommand('asc'),
+                }),
+                ...(ascSource || {}),
+                enabled: selected.has('asc'),
+            },
+        ],
+    };
+}
 async function loadEditableConfig(configPath) {
     const existing = await readJsonIfPresent(configPath).catch(() => null);
     if (existing && typeof existing === 'object')
@@ -3262,75 +3300,16 @@ async function askOutputsAndIntervalsConfig(rl, config) {
     const withOutput = await askOutputConfig(rl, withIntervals);
     return await askGitHubArtifactDetails(rl, withOutput);
 }
-async function askInputSourceConfig(rl, config) {
-    printSection('Input channels', [
-        'These are the data streams Growth Engineer will read during scheduled runs.',
-        'Connector credentials are configured through the connector setup; this section only chooses which inputs are enabled and how the runner fetches them.',
-    ]);
-    process.stdout.write('Recommended defaults: AnalyticsCLI product analytics, Sentry-compatible production stability, and feedback are enabled. RevenueCat and App Store Connect are ready to enable once their connectors are configured.\n\n');
-    const useRecommended = await askYesNo(rl, 'Use recommended input channels and default fetch commands?', true);
-    if (useRecommended) {
-        config.sources = {
-            ...buildRecommendedSourceConfig(),
-            ...(config.sources || {}),
-            analytics: {
-                ...buildRecommendedSourceConfig().analytics,
-                ...(config.sources?.analytics || {}),
-                enabled: config.sources?.analytics?.enabled !== false,
-            },
-            sentry: {
-                ...buildRecommendedSourceConfig().sentry,
-                ...(config.sources?.sentry || {}),
-                enabled: config.sources?.sentry?.enabled !== false,
-            },
-            feedback: {
-                ...buildRecommendedSourceConfig().feedback,
-                ...(config.sources?.feedback || {}),
-                enabled: config.sources?.feedback?.enabled !== false,
-            },
-            revenuecat: {
-                ...buildRecommendedSourceConfig().revenuecat,
-                ...(config.sources?.revenuecat || {}),
-            },
-            extra: Array.isArray(config.sources?.extra)
-                ? config.sources.extra
-                : buildRecommendedSourceConfig().extra,
-        };
-        return config;
-    }
-    process.stdout.write('\nAdvanced input setup\n');
-    process.stdout.write('Only change these when the default CLI exporters do not match this host.\n');
-    const analytics = await askSourceConfig(rl, 'analytics', 'data/openclaw-growth-engineer/analytics_summary.example.json', getDefaultSourceHint('analytics'), {
-        forceEnabled: true,
-        defaultCommand: getDefaultSourceCommand('analytics'),
+async function askInputSourceConfig(rl, config, configPath) {
+    const healthByConnector = await withConnectorHealthLoading((onProgress) => getConnectorPickerHealth(configPath, onProgress));
+    const selected = await askConnectorSelectionWithHealth(rl, healthByConnector, getInputChannelInitialSelection(config), {
+        introTitle: 'Input channels',
+        introDetail: null,
+        actionTitle: 'Select input channels',
+        helpText: 'Use Up/Down to move, Space to toggle channels, A to toggle all channels, Enter to continue.',
+        mode: 'input',
     });
-    const revenuecat = await askSourceConfig(rl, 'revenuecat', 'data/openclaw-growth-engineer/revenuecat_summary.example.json', getDefaultSourceHint('revenuecat'));
-    const sentry = await askSourceConfig(rl, 'sentry', 'data/openclaw-growth-engineer/sentry_summary.example.json', getDefaultSourceHint('sentry'), {
-        defaultEnabled: true,
-        defaultCommand: getDefaultSourceCommand('sentry'),
-    });
-    const feedback = await askSourceConfig(rl, 'feedback', 'data/openclaw-growth-engineer/feedback_summary.example.json', getDefaultSourceHint('feedback'), {
-        defaultEnabled: true,
-        defaultCommand: getDefaultSourceCommand('feedback'),
-        cursorMode: 'auto_since_last_fetch',
-        initialLookback: '30d',
-    });
-    const extraSourcesRaw = await ask(rl, 'Extra input connectors to define now', '');
-    const extraSources = extraSourcesRaw
-        .split(',')
-        .map((value) => value.trim())
-        .filter(Boolean)
-        .map((service) => {
-        const defaultCommand = getDefaultSourceCommand(service);
-        return buildExtraSourceConfig(service, defaultCommand ? {} : { mode: 'file', path: getDefaultSourcePath(service) });
-    });
-    config.sources = {
-        analytics,
-        revenuecat,
-        sentry,
-        feedback,
-        extra: extraSources,
-    };
+    config.sources = buildSourceConfigFromInputChannels(selected, config.sources || {});
     return config;
 }
 async function writeOpenClawJobManifest(configPath, config) {
@@ -3424,7 +3403,7 @@ async function main() {
         let config = await loadEditableConfig(configPath);
         config.version = Number(config.version || 7);
         config.generatedAt = new Date().toISOString();
-        config = await askInputSourceConfig(rl, config);
+        config = await askInputSourceConfig(rl, config, configPath);
         config = await askIntervalConfig(rl, config);
         config = await askOutputConfig(rl, config);
         config = await askGitHubArtifactDetails(rl, config);
