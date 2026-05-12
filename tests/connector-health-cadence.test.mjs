@@ -51,9 +51,14 @@ test('wizard exposes connector and output interval setup paths', () => {
   assert.doesNotMatch(wizard, /Preferred GitHub artifact mode/);
   assert.doesNotMatch(wizard, /Use recommended input channels and default fetch commands/);
   assert.doesNotMatch(wizard, /Connector credentials are configured through the connector setup/);
+  assert.doesNotMatch(wizard, /Usage mode \(1\/2\/3\)/);
+  assert.doesNotMatch(wizard, /Output type \(1\/2\/3\)/);
   assert.match(wizard, /Project scope remains unpinned/);
   assert.match(wizard, /Input channels/);
   assert.match(wizard, /Select input channels/);
+  assert.match(wizard, /runConnectorSetupSteps/);
+  assert.match(wizard, /How should OpenClaw Growth Engineer run/);
+  assert.match(wizard, /Output mode/);
   assert.match(wizard, /Customize GitHub issue\/PR limits, labels, or chart attachment settings/);
 });
 
