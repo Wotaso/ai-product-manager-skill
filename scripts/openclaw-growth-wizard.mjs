@@ -256,6 +256,58 @@ function getWizardDefaultSourceCommand(sourceName) {
     }
     return getDefaultSourceCommand(sourceName);
 }
+function replaceLegacyRuntimeScriptCommand(command) {
+    const trimmed = String(command || '').trim();
+    if (!trimmed)
+        return trimmed;
+    return trimmed.replace(/^node\s+scripts\/(export-analytics-summary\.mjs|export-revenuecat-summary\.mjs|export-sentry-summary\.mjs|export-asc-summary\.mjs|openclaw-growth-start\.mjs|openclaw-growth-status\.mjs|openclaw-growth-runner\.mjs|openclaw-growth-preflight\.mjs)(?=\s|$)/, (_match, scriptName) => nodeRuntimeScriptCommand(scriptName));
+}
+function normalizeWizardSourceCommand(sourceName, source) {
+    const current = replaceLegacyRuntimeScriptCommand(source?.command || '');
+    return current || getWizardDefaultSourceCommand(sourceName);
+}
+function migrateRuntimeSourceCommands(config) {
+    if (!config || typeof config !== 'object')
+        return config;
+    const sources = config.sources && typeof config.sources === 'object' ? config.sources : {};
+    const nextSources = { ...sources };
+    for (const sourceName of ['analytics', 'revenuecat', 'sentry']) {
+        if (nextSources[sourceName]?.mode === 'command') {
+            nextSources[sourceName] = {
+                ...nextSources[sourceName],
+                command: normalizeWizardSourceCommand(sourceName, nextSources[sourceName]),
+            };
+        }
+    }
+    if (Array.isArray(nextSources.extra)) {
+        nextSources.extra = nextSources.extra.map((source) => {
+            if (!source || source.mode !== 'command')
+                return source;
+            const service = String(source.service || source.key || '').toLowerCase();
+            const sourceName = ['asc', 'asc-cli', 'app-store-connect', 'app_store_connect'].includes(service)
+                ? 'asc'
+                : service;
+            return {
+                ...source,
+                command: normalizeWizardSourceCommand(sourceName, source),
+            };
+        });
+    }
+    return {
+        ...config,
+        sources: nextSources,
+    };
+}
+async function migrateRuntimeSourceCommandsFile(configPath) {
+    const existing = await readJsonIfPresent(configPath).catch(() => null);
+    if (!existing || typeof existing !== 'object')
+        return null;
+    const migrated = migrateRuntimeSourceCommands(existing);
+    if (JSON.stringify(existing.sources || {}) !== JSON.stringify(migrated.sources || {})) {
+        await writeJsonFile(configPath, migrated);
+    }
+    return migrated;
+}
 function normalizeConnectorKey(value) {
     const normalized = String(value || '').trim().toLowerCase().replace(/[_\s]+/g, '-');
     if (!normalized)
@@ -2029,7 +2081,7 @@ async function upsertSentryAccountsConfig(configPath, accounts) {
             ...(config.sources?.sentry || {}),
             enabled: true,
             mode: 'command',
-            command: getDefaultSourceCommand('sentry'),
+            command: getWizardDefaultSourceCommand('sentry'),
             accounts: [...merged.values()],
         },
     };
@@ -2783,6 +2835,7 @@ async function runConnectorSetupWizard(args) {
     try {
         clearTerminal();
         printConnectorIntro();
+        await migrateRuntimeSourceCommandsFile(args.config);
         const healthByConnector = await withConnectorHealthLoading((onProgress) => getConnectorPickerHealth(args.config, onProgress));
         const existingFixes = connectorKeysNeedingAttention(healthByConnector);
         const requestedConnectors = args.connectors ? parseConnectorList(args.connectors) : [];
@@ -3100,30 +3153,43 @@ function getInputChannelInitialSelection(config) {
 function buildSourceConfigFromInputChannels(selectedConnectors, existingSources = {}) {
     const selected = new Set(selectedConnectors);
     const recommended = buildRecommendedSourceConfig();
-    const existingExtra = Array.isArray(existingSources.extra) ? existingSources.extra : [];
+    const migratedSources = migrateRuntimeSourceCommands({ sources: existingSources }).sources || {};
+    const existingExtra = Array.isArray(migratedSources.extra) ? migratedSources.extra : [];
     const ascSource = existingExtra.find((source) => ['asc', 'asc-cli', 'app-store-connect', 'app_store_connect'].includes(String(source?.service || source?.key || '').toLowerCase()));
     const nonAscExtra = existingExtra.filter((source) => source !== ascSource);
     return {
         ...recommended,
-        ...existingSources,
+        ...migratedSources,
         analytics: {
             ...recommended.analytics,
-            ...(existingSources.analytics || {}),
+            ...(migratedSources.analytics || {}),
+            command: normalizeWizardSourceCommand('analytics', {
+                ...recommended.analytics,
+                ...(migratedSources.analytics || {}),
+            }),
             enabled: selected.has('analytics'),
         },
         revenuecat: {
             ...recommended.revenuecat,
-            ...(existingSources.revenuecat || {}),
+            ...(migratedSources.revenuecat || {}),
+            command: normalizeWizardSourceCommand('revenuecat', {
+                ...recommended.revenuecat,
+                ...(migratedSources.revenuecat || {}),
+            }),
             enabled: selected.has('revenuecat'),
         },
         sentry: {
             ...recommended.sentry,
-            ...(existingSources.sentry || {}),
+            ...(migratedSources.sentry || {}),
+            command: normalizeWizardSourceCommand('sentry', {
+                ...recommended.sentry,
+                ...(migratedSources.sentry || {}),
+            }),
             enabled: selected.has('sentry'),
         },
         feedback: {
             ...recommended.feedback,
-            ...(existingSources.feedback || {}),
+            ...(migratedSources.feedback || {}),
             enabled: selected.has('analytics'),
         },
         extra: [
@@ -3135,6 +3201,14 @@ function buildSourceConfigFromInputChannels(selectedConnectors, existingSources 
                     command: getWizardDefaultSourceCommand('asc'),
                 }),
                 ...(ascSource || {}),
+                command: normalizeWizardSourceCommand('asc', {
+                    ...buildExtraSourceConfig('asc-cli', {
+                        enabled: selected.has('asc'),
+                        mode: 'command',
+                        command: getWizardDefaultSourceCommand('asc'),
+                    }),
+                    ...(ascSource || {}),
+                }),
                 enabled: selected.has('asc'),
             },
         ],
@@ -3143,7 +3217,7 @@ function buildSourceConfigFromInputChannels(selectedConnectors, existingSources 
 async function loadEditableConfig(configPath) {
     const existing = await readJsonIfPresent(configPath).catch(() => null);
     if (existing && typeof existing === 'object')
-        return existing;
+        return migrateRuntimeSourceCommands(existing);
     return await buildDefaultWizardConfig();
 }
 function mergeNotificationChannels(baseChannels, extraChannels) {
@@ -3366,6 +3440,9 @@ async function askOutputsAndIntervalsConfig(rl, config) {
     return await askGitHubArtifactDetails(rl, withOutput);
 }
 async function askInputSourceConfig(rl, config, configPath) {
+    config = migrateRuntimeSourceCommands(config);
+    await ensureDirForFile(configPath);
+    await writeJsonFile(configPath, config);
     const healthByConnector = await withConnectorHealthLoading((onProgress) => getConnectorPickerHealth(configPath, onProgress));
     const selected = await askConnectorSelectionWithHealth(rl, healthByConnector, getInputChannelInitialSelection(config), {
         introTitle: 'Input channels',

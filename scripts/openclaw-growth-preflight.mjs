@@ -3,10 +3,12 @@ import { existsSync, promises as fs } from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import { spawn } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { classifyServiceKind, getActionMode, getAllSourceEntries, getDefaultSourceCommand, getGitHubActionNoun, getGitHubConnectionSummary, getGitHubRequirementText, shouldAutoCreateGitHubArtifact, } from './openclaw-growth-shared.mjs';
 import { applyOpenClawSecretRefs, loadOpenClawGrowthSecrets } from './openclaw-growth-env.mjs';
 const DEFAULT_CONFIG_PATH = 'data/openclaw-growth-engineer/config.json';
 const DEFAULT_CONNECTION_TIMEOUT_MS = 15_000;
+const RUNTIME_DIR = path.dirname(fileURLToPath(import.meta.url));
 const ANALYTICSCLI_PACKAGE_SPEC = process.env.ANALYTICSCLI_CLI_PACKAGE || '@analyticscli/cli@preview';
 const ANALYTICSCLI_NPM_PREFIX = process.env.ANALYTICSCLI_NPM_PREFIX ||
     (process.env.HOME ? path.join(process.env.HOME, '.local') : path.join(process.cwd(), '.analyticscli-npm'));
@@ -128,6 +130,27 @@ function shellQuote(value) {
         return String(value);
     }
     return `'${String(value).replace(/'/g, `'\\''`)}'`;
+}
+function resolveRuntimeScriptPath(scriptName) {
+    const candidates = [
+        path.join(RUNTIME_DIR, scriptName),
+        path.join(process.cwd(), 'scripts', scriptName),
+        path.join(process.cwd(), 'skills', 'openclaw-growth-engineer', 'scripts', scriptName),
+    ];
+    for (const candidate of candidates) {
+        if (existsSync(candidate))
+            return candidate;
+    }
+    return path.join(RUNTIME_DIR, scriptName);
+}
+function nodeRuntimeScriptCommand(scriptName) {
+    return `node ${shellQuote(resolveRuntimeScriptPath(scriptName))}`;
+}
+function replaceLegacyRuntimeScriptCommand(command) {
+    const trimmed = String(command || '').trim();
+    if (!trimmed)
+        return trimmed;
+    return trimmed.replace(/^node\s+scripts\/(export-analytics-summary\.mjs|export-revenuecat-summary\.mjs|export-sentry-summary\.mjs|export-asc-summary\.mjs|openclaw-growth-start\.mjs|openclaw-growth-status\.mjs|openclaw-growth-preflight\.mjs|openclaw-growth-runner\.mjs|openclaw-growth-engineer\.mjs)(?=\s|$)/, (_match, scriptName) => nodeRuntimeScriptCommand(scriptName));
 }
 function resolveShellCommand() {
     const candidates = [
@@ -388,7 +411,8 @@ function isPortableCommandDefault(sourceName, command) {
     const expected = getDefaultSourceCommand(sourceName);
     if (!expected)
         return false;
-    return String(command || '').trim().startsWith(expected);
+    const trimmed = String(command || '').trim();
+    return trimmed.startsWith(expected) || replaceLegacyRuntimeScriptCommand(trimmed) !== trimmed;
 }
 function truncate(value, max = 240) {
     const text = String(value || '');
@@ -755,7 +779,7 @@ async function runConnectionChecks({ checks, config, timeoutMs, progressJson = f
                         ? analyticsConnection.detail
                         : describeAnalyticsConnectionFailure(analyticsConnection.detail, analyticsTokenEnv, hasAnalyticsToken), analyticsConnection.ok ? 'pass' : analyticsSource?.mode === 'command' ? 'fail' : 'warn');
                     if (analyticsSource?.mode === 'command') {
-                        const command = String(analyticsSource.command || '').trim();
+                        const command = replaceLegacyRuntimeScriptCommand(String(analyticsSource.command || '').trim());
                         if (!command) {
                             addCheck(checks, 'connection:analytics-command', false, 'analytics source uses command mode but no command configured');
                         }
@@ -820,7 +844,7 @@ async function runConnectionChecks({ checks, config, timeoutMs, progressJson = f
                             : `${account.label} auth check failed (${sentryConnection.detail})`);
                     }
                     if (sentrySource?.mode === 'command') {
-                        const command = String(sentrySource.command || '').trim();
+                        const command = replaceLegacyRuntimeScriptCommand(String(sentrySource.command || '').trim());
                         if (!command) {
                             addCheck(groupChecks, 'connection:sentry-command', false, 'sentry source uses command mode but no command configured');
                         }
@@ -843,7 +867,7 @@ async function runConnectionChecks({ checks, config, timeoutMs, progressJson = f
         // Skip feedback during focused connector checks.
     }
     else if (sourceEnabled(config, 'feedback') && feedbackSource?.mode === 'command') {
-        const command = String(feedbackSource.command || '').trim();
+        const command = replaceLegacyRuntimeScriptCommand(String(feedbackSource.command || '').trim());
         if (!command) {
             addCheck(checks, 'connection:feedback', false, 'feedback source uses command mode but no command configured');
         }
@@ -882,7 +906,7 @@ async function runConnectionChecks({ checks, config, timeoutMs, progressJson = f
             continue;
         }
         if (extraSource.mode === 'command') {
-            const command = String(extraSource.command || '').trim();
+            const command = replaceLegacyRuntimeScriptCommand(String(extraSource.command || '').trim());
             if (!command) {
                 addCheck(checks, checkName, false, 'source uses command mode but no command configured');
                 continue;
@@ -999,7 +1023,7 @@ async function main() {
                 continue;
             }
             if (source.mode === 'command') {
-                const command = String(source.command || '').trim();
+                const command = replaceLegacyRuntimeScriptCommand(String(source.command || '').trim());
                 if (!command) {
                     addCheck(checks, `source:${sourceName}:command`, false, 'mode=command but no command configured');
                     continue;

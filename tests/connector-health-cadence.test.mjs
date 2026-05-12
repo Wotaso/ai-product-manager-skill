@@ -57,6 +57,9 @@ test('wizard exposes connector and output interval setup paths', () => {
   assert.match(wizard, /Input channels/);
   assert.match(wizard, /Select input channels/);
   assert.match(wizard, /runConnectorSetupSteps/);
+  assert.match(wizard, /migrateRuntimeSourceCommandsFile/);
+  assert.match(wizard, /replaceLegacyRuntimeScriptCommand/);
+  assert.match(wizard, /export-analytics-summary\.mjs/);
   assert.match(wizard, /How should OpenClaw Growth Engineer run/);
   assert.match(wizard, /Output mode/);
   assert.match(wizard, /Customize GitHub issue\/PR limits, labels, or chart attachment settings/);
