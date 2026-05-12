@@ -5,7 +5,7 @@ import process from 'node:process';
 import { createHash } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { getActionMode, getAllSourceEntries, getGitHubRequirementText, shouldAutoCreateGitHubArtifact, } from './openclaw-growth-shared.mjs';
+import { getActionMode, getAllSourceEntries, getGitHubArtifactModes, getGitHubRequirementText, shouldAutoCreateGitHubArtifact, } from './openclaw-growth-shared.mjs';
 import { applyOpenClawSecretRefs, loadOpenClawGrowthSecrets } from './openclaw-growth-env.mjs';
 const DEFAULT_CONFIG_PATH = 'data/openclaw-growth-engineer/config.json';
 const DEFAULT_STATE_PATH = 'data/openclaw-growth-engineer/state.json';
@@ -980,7 +980,7 @@ function buildIssueFingerprint(issuesPayload) {
         : [];
     return sha256(titles.join('\n'));
 }
-async function runAnalyzer({ config, runtimeDir, sourceFiles, createGitHubArtifact, chartManifestPath, cadencePlanPath, }) {
+async function runAnalyzer({ config, runtimeDir, sourceFiles, createGitHubArtifact, githubArtifactMode = getActionMode(config), chartManifestPath, cadencePlanPath, }) {
     await ensureDir(runtimeDir);
     if (!sourceFiles.analytics) {
         throw new Error('Analytics source is required (enable and configure `sources.analytics`).');
@@ -1015,8 +1015,8 @@ async function runAnalyzer({ config, runtimeDir, sourceFiles, createGitHubArtifa
     }
     if (createGitHubArtifact) {
         const repo = String(config.project?.githubRepo || '').trim();
-        args.push(getActionMode(config) === 'pull_request' ? '--create-pull-requests' : '--create-issues', '--repo', repo);
-        if (getActionMode(config) === 'pull_request') {
+        args.push(githubArtifactMode === 'pull_request' ? '--create-pull-requests' : '--create-issues', '--repo', repo);
+        if (githubArtifactMode === 'pull_request') {
             args.push('--allow-proposal-pull-requests');
         }
         const labels = Array.isArray(config.project?.labels) ? config.project.labels : [];
@@ -1248,7 +1248,8 @@ async function runOnce(configPath, statePath) {
         }, null, 2), 'utf8');
         return;
     }
-    const createGitHubArtifact = shouldAutoCreateGitHubArtifact(config) && Boolean(String(config.project?.githubRepo || '').trim());
+    const githubArtifactModes = getGitHubArtifactModes(config).filter((mode) => shouldAutoCreateGitHubArtifact(config, mode));
+    const createGitHubArtifact = githubArtifactModes.length > 0 && Boolean(String(config.project?.githubRepo || '').trim());
     const sourceFiles = await materializeSourceFiles(config, payloads, runtimeDir);
     const cadencePlanPath = path.join(runtimeDir, 'cadence-plan.json');
     await fs.writeFile(cadencePlanPath, JSON.stringify({
@@ -1287,15 +1288,18 @@ async function runOnce(configPath, statePath) {
     }
     const shouldCreateGitHubArtifact = createGitHubArtifact && Number(dryRun.issuesPayload?.issue_count || 0) > 0;
     if (shouldCreateGitHubArtifact) {
-        await runAnalyzer({
-            config,
-            runtimeDir,
-            sourceFiles,
-            createGitHubArtifact: true,
-            chartManifestPath,
-            cadencePlanPath,
-        });
-        process.stdout.write(`[${new Date().toISOString()}] Created GitHub ${getActionMode(config) === 'pull_request' ? 'pull requests' : 'issues'}.\n`);
+        for (const githubArtifactMode of githubArtifactModes) {
+            await runAnalyzer({
+                config,
+                runtimeDir,
+                sourceFiles,
+                createGitHubArtifact: true,
+                githubArtifactMode,
+                chartManifestPath,
+                cadencePlanPath,
+            });
+        }
+        process.stdout.write(`[${new Date().toISOString()}] Created GitHub ${githubArtifactModes.map((mode) => (mode === 'pull_request' ? 'pull requests' : 'issues')).join(' and ')}.\n`);
     }
     else {
         process.stdout.write(`[${new Date().toISOString()}] Drafts generated only (${getActionMode(config)} auto-create disabled).\n`);
