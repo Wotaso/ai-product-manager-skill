@@ -3,7 +3,7 @@ name: growth-engineer
 description: Growth Engineer for mobile apps and agent runtimes including OpenClaw and Hermes. Correlate analytics, crashes, billing, feedback, store signals, and repo context into proposal drafts that can flow into agent chat, GitHub issues, or draft pull requests.
 license: MIT
 homepage: https://github.com/Wotaso/growth-engineer-skill
-metadata: {"author":"wotaso","version":"1.0.98","analyticscli-target":"@analyticscli/cli","analyticscli-supported-range":">=0.1.2-preview.0 <0.2.0","openclaw":{"emoji":"🚀","homepage":"https://github.com/Wotaso/growth-engineer-skill","requires":{"bins":["node","analyticscli"]},"install":[{"id":"analyticscli-cli","kind":"node","package":"@analyticscli/cli@preview","bins":["analyticscli"],"label":"Install/update AnalyticsCLI CLI (npm package @analyticscli/cli@preview)"}]},"hermes":{"tags":["Growth","Analytics","Mobile","Product","OpenClaw","Hermes"],"homepage":"https://github.com/Wotaso/growth-engineer-skill","requires":{"bins":["node","analyticscli"]},"install":[{"id":"growth-engineer","kind":"skill","package":"Wotaso/growth-engineer-skill","label":"Install the shared Growth Engineer for Hermes"}]}}
+metadata: {"author":"wotaso","version":"1.0.99","analyticscli-target":"@analyticscli/cli","analyticscli-supported-range":">=0.1.2-preview.0 <0.2.0","openclaw":{"emoji":"🚀","homepage":"https://github.com/Wotaso/growth-engineer-skill","requires":{"bins":["node","analyticscli"]},"install":[{"id":"analyticscli-cli","kind":"node","package":"@analyticscli/cli@preview","bins":["analyticscli"],"label":"Install/update AnalyticsCLI CLI (npm package @analyticscli/cli@preview)"}]},"hermes":{"tags":["Growth","Analytics","Mobile","Product","OpenClaw","Hermes"],"homepage":"https://github.com/Wotaso/growth-engineer-skill","requires":{"bins":["node","analyticscli"]},"install":[{"id":"growth-engineer","kind":"skill","package":"Wotaso/growth-engineer-skill","label":"Install the shared Growth Engineer for Hermes"}]}}
 ---
 
 # Growth Engineer
@@ -22,6 +22,26 @@ Use this same skill for OpenClaw and Hermes. Do not create a duplicate Hermes-sp
 - Hermes: install the same public skill repository with `hermes skills install Wotaso/growth-engineer-skill`.
 - Generic SKILL.md clients: install or mount the same `skills/openclaw-growth-engineer` folder.
 - All agents should use the same bundled `scripts/`, `references/`, and `data/` files.
+- macOS hosts, including Mac mini machines, are supported as normal local hosts. Use the same terminal wizard from the app workspace. For recurring unattended runs on macOS, use OpenClaw heartbeats, `openclaw run --loop`, or a host scheduler such as `launchd`; keep secrets in the host terminal/env/secret file, not in chat.
+
+## Post-Install Reply Contract
+
+After installing this skill from ClawHub, OpenClaw or Hermes must not stop at "installed and ready" when setup is not complete. The next reply should be short and should immediately route the user to connector setup.
+
+Use this minimal reply shape:
+
+1. Say the skill is installed.
+2. Say one short sentence: "Next, run the local wizard so you can choose connectors, intervals, output type, and paste secrets only in the host terminal."
+3. Provide exactly one copy/paste command block for the VPS, Mac mini, or host shell.
+4. Do not ask for API keys, private keys, or tokens in chat. Do not list provider docs unless the user asks.
+
+Use this command block for OpenClaw, Hermes, VPS, Linux, and macOS hosts:
+
+```bash
+npx -y @analyticscli/growth-engineer@preview wizard --connectors
+```
+
+If npm/npx is unavailable, fall back to the bundled installed skill script path and run `node scripts/openclaw-growth-wizard.mjs --connectors` only after bootstrapping the workspace from the installed skill root.
 
 ## Hermes Startup Override
 
@@ -34,21 +54,7 @@ When Hermes is running from chat/Discord or any non-interactive agent terminal, 
 Use this exact command block in the reply after skill installation:
 
 ```bash
-set -e
-if command -v hermes >/dev/null 2>&1; then
-  hermes skills install clawhub/growth-engineer || hermes skills update growth-engineer || true
-  hermes skills check growth-engineer || true
-fi
-SKILL_DIR="${HERMES_SKILL_DIR}"
-if [ -z "$SKILL_DIR" ] || [ ! -d "$SKILL_DIR/scripts" ]; then SKILL_DIR="$HOME/.hermes/skills/growth-engineer"; fi
-if [ ! -d "$SKILL_DIR/scripts" ]; then SKILL_DIR="$HOME/.hermes/hermes-agent/skills/growth-engineer"; fi
-if [ ! -d "$SKILL_DIR/scripts" ]; then SKILL_DIR="$HOME/.hermes/skills/openclaw-growth-engineer"; fi
-if [ ! -d "$SKILL_DIR/scripts" ]; then SKILL_DIR="$HOME/.hermes/hermes-agent/skills/openclaw-growth-engineer"; fi
-if [ ! -d "$SKILL_DIR/scripts" ]; then SKILL_DIR="skills/openclaw-growth-engineer"; fi
-printf 'Using Growth Engineer: %s\n' "$SKILL_DIR"
-grep -m1 '"version"' "$SKILL_DIR/SKILL.md" || true
-OPENCLAW_GROWTH_WORKSPACE="$PWD" bash "$SKILL_DIR/scripts/bootstrap-openclaw-workspace.sh" && \
-  node scripts/openclaw-growth-wizard.mjs --connectors
+npx -y @analyticscli/growth-engineer@preview wizard --connectors
 ```
 
 Then add exactly one short instruction sentence: "Run this in your VPS/host shell and paste secrets only there."
@@ -80,10 +86,12 @@ Treat this as a private-repo-first skill. The setup and connector wizards should
 
 ## Preferred Runtime
 
-Prefer the standalone `openclaw` CLI as the runtime surface when it is available.
+Prefer the standalone `growth-engineer` CLI as the user-facing runtime surface when it is available. `openclaw` remains the lower-level compatibility runtime.
 
-- Setup path: `openclaw setup --config openclaw.config.json`
-- Primary path: `openclaw start --config openclaw.config.json`
+- Wizard path: `growth-engineer wizard --connectors`
+- Setup path: `growth-engineer setup --config openclaw.config.json`
+- Primary path: `growth-engineer start --config openclaw.config.json`
+- Compatibility path: `openclaw setup --config openclaw.config.json` and `openclaw start --config openclaw.config.json`
 - Local monorepo path: `pnpm --filter @analyticscli/openclaw-cli dev start --repo-root <repo-root>`
 - Copied-runtime scripts under `scripts/openclaw-growth-*.mjs` remain the compatibility path for agents that install this as a plain `SKILL.md` folder
 
@@ -232,10 +240,7 @@ Run the wizard from the active agent workspace:
 ```
 
 ```bash
-SKILL_DIR="${HERMES_SKILL_DIR}"
-if [ -z "$SKILL_DIR" ] || [ ! -d "$SKILL_DIR/scripts" ]; then SKILL_DIR="skills/openclaw-growth-engineer"; fi
-OPENCLAW_GROWTH_WORKSPACE="$PWD" bash "$SKILL_DIR/scripts/bootstrap-openclaw-workspace.sh" && \
-  node scripts/openclaw-growth-wizard.mjs --connectors
+npx -y @analyticscli/growth-engineer@preview wizard --connectors
 ```
 
 Then add only: "Select the connectors in the wizard. Secrets stay in the terminal."
@@ -257,10 +262,7 @@ Run the wizard from the active agent workspace:
 ```
 
 ```bash
-SKILL_DIR="${HERMES_SKILL_DIR}"
-if [ -z "$SKILL_DIR" ] || [ ! -d "$SKILL_DIR/scripts" ]; then SKILL_DIR="skills/openclaw-growth-engineer"; fi
-OPENCLAW_GROWTH_WORKSPACE="$PWD" bash "$SKILL_DIR/scripts/bootstrap-openclaw-workspace.sh" && \
-  node scripts/openclaw-growth-wizard.mjs --connectors
+npx -y @analyticscli/growth-engineer@preview wizard --connectors
 ```
 
 Then add one sentence: "The wizard will ask for the selected connectors and any secrets in the local terminal only."
@@ -270,10 +272,7 @@ If the user asks which connectors exist, list only the connector names and one s
 If the user already names specific connectors, still prefer the checkbox wizard unless they explicitly ask for a non-interactive command. For explicit connector setup, use one copy-paste command from the active agent workspace:
 
 ```bash
-SKILL_DIR="${HERMES_SKILL_DIR}"
-if [ -z "$SKILL_DIR" ] || [ ! -d "$SKILL_DIR/scripts" ]; then SKILL_DIR="skills/openclaw-growth-engineer"; fi
-OPENCLAW_GROWTH_WORKSPACE="$PWD" bash "$SKILL_DIR/scripts/bootstrap-openclaw-workspace.sh" && \
-  node scripts/openclaw-growth-wizard.mjs --connectors analytics,github,revenuecat,sentry,asc
+npx -y @analyticscli/growth-engineer@preview wizard --connectors analytics,github,revenuecat,sentry,asc
 ```
 
 Use only the connectors the user accepted. The wizard owns provider-specific instructions, local-terminal secret prompts, helper setup, and smoke tests. Chat should only summarize results after the wizard finishes or when the user asks.
@@ -563,28 +562,14 @@ When the user says "start", "run", or "kick off" the skill:
    - In Hermes chat/Discord/non-interactive terminals, do not run the wizard yourself. Show the full command below and tell the user to paste it into the VPS/host shell.
    - Only run this command yourself when you are already operating inside an interactive user terminal that can safely receive secret input outside chat.
    ```bash
-   set -e
-   if command -v hermes >/dev/null 2>&1; then
-     hermes skills install clawhub/growth-engineer || hermes skills update growth-engineer || true
-     hermes skills check growth-engineer || true
-   fi
-   SKILL_DIR="${HERMES_SKILL_DIR}"
-   if [ -z "$SKILL_DIR" ] || [ ! -d "$SKILL_DIR/scripts" ]; then SKILL_DIR="$HOME/.hermes/skills/growth-engineer"; fi
-   if [ ! -d "$SKILL_DIR/scripts" ]; then SKILL_DIR="$HOME/.hermes/hermes-agent/skills/growth-engineer"; fi
-   if [ ! -d "$SKILL_DIR/scripts" ]; then SKILL_DIR="$HOME/.hermes/skills/openclaw-growth-engineer"; fi
-   if [ ! -d "$SKILL_DIR/scripts" ]; then SKILL_DIR="$HOME/.hermes/hermes-agent/skills/openclaw-growth-engineer"; fi
-   if [ ! -d "$SKILL_DIR/scripts" ]; then SKILL_DIR="skills/openclaw-growth-engineer"; fi
-   printf 'Using Growth Engineer: %s\n' "$SKILL_DIR"
-   grep -m1 '"version"' "$SKILL_DIR/SKILL.md" || true
-   OPENCLAW_GROWTH_WORKSPACE="$PWD" bash "$SKILL_DIR/scripts/bootstrap-openclaw-workspace.sh" && \
-     node scripts/openclaw-growth-wizard.mjs --connectors
+   npx -y @analyticscli/growth-engineer@preview wizard --connectors
    ```
    Do not tell the user to run `analyticscli login` as the next step; the wizard owns AnalyticsCLI token collection and retesting.
 3. Prefer the CLI entrypoint after the wizard/config exists:
-   - `openclaw setup --config openclaw.config.json`
+   - `growth-engineer setup --config openclaw.config.json`
    - this should initialize config and install the shared AnalyticsCLI skills via the canonical AnalyticsCLI setup flow
 4. Then run:
-   - `openclaw start --config openclaw.config.json`
+   - `growth-engineer start --config openclaw.config.json`
 5. In this monorepo, use the workspace dev entrypoint when `openclaw` is not installed globally:
    - `pnpm --filter @analyticscli/openclaw-cli dev start --repo-root <repo-root>`
 6. Run portable checks first when setup is incomplete:

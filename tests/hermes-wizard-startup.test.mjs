@@ -9,12 +9,11 @@ test('Hermes startup instructions tell chat agents to hand off a full wizard com
   const skill = readFileSync(join(skillRoot, 'SKILL.md'), 'utf8');
 
   assert.match(skill, /## Hermes Startup Override/);
-  assert.match(skill, /node scripts\/openclaw-growth-wizard\.mjs --connectors/);
+  assert.match(skill, /npx -y @analyticscli\/growth-engineer@preview wizard --connectors/);
   assert.match(skill, /Do not satisfy those messages by only installing `analyticscli`/);
   assert.match(skill, /do not start the interactive wizard process yourself/i);
-  assert.match(skill, /hermes skills install clawhub\/growth-engineer/);
-  assert.match(skill, /hermes skills check growth-engineer/);
-  assert.match(skill, /Using Growth Engineer:/);
+  assert.match(skill, /Post-Install Reply Contract/);
+  assert.match(skill, /Mac mini/);
   assert.match(skill, /Run this in your VPS\/host shell and paste secrets only there/);
 });
 
