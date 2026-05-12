@@ -161,6 +161,37 @@ async function commandExists(commandName) {
     const result = await runShellCommand(`command -v ${quote(commandName)} >/dev/null 2>&1`, 10_000);
     return result.ok;
 }
+function parseGitHubRepoFromRemote(remoteUrl) {
+    const value = String(remoteUrl || '').trim();
+    if (!value)
+        return null;
+    const sshMatch = value.match(/^git@github\.com:([^/]+\/[^/]+?)(?:\.git)?$/i);
+    if (sshMatch)
+        return sshMatch[1];
+    const httpsMatch = value.match(/^https?:\/\/github\.com\/([^/]+\/[^/]+?)(?:\.git)?$/i);
+    if (httpsMatch)
+        return httpsMatch[1];
+    return null;
+}
+function isConfiguredGitHubRepo(value) {
+    const repo = String(value || '').trim();
+    return Boolean(repo && repo !== 'owner/repo' && /^[^/\s]+\/[^/\s]+$/.test(repo));
+}
+async function inferGitHubRepo(config) {
+    const configured = String(config?.project?.githubRepo || '').trim();
+    if (isConfiguredGitHubRepo(configured))
+        return configured;
+    const explicit = String(process.env.OPENCLAW_GITHUB_REPO || '').trim();
+    if (isConfiguredGitHubRepo(explicit))
+        return explicit;
+    const repoRoot = path.resolve(config?.project?.repoRoot || '.');
+    const remoteResult = await runShellCommand('git config --get remote.origin.url', 10_000, {
+        cwd: repoRoot,
+    });
+    if (!remoteResult.ok)
+        return '';
+    return parseGitHubRepoFromRemote(remoteResult.stdout.trim()) || '';
+}
 async function filesHaveSameContent(leftPath, rightPath) {
     try {
         const [left, right] = await Promise.all([fs.readFile(leftPath), fs.readFile(rightPath)]);
@@ -322,11 +353,8 @@ async function assertHardRequirements(config) {
     }
     if (requiresGitHubDelivery) {
         const githubRepo = String(config?.project?.githubRepo || '').trim();
-        if (!githubRepo) {
-            missing.push('project.githubRepo is required when GitHub auto-create is enabled');
-        }
         const githubTokenEnv = getSecretName(config, 'githubTokenEnv', 'GITHUB_TOKEN');
-        if (!process.env[githubTokenEnv]) {
+        if (githubRepo && !process.env[githubTokenEnv]) {
             missing.push(`${githubTokenEnv} env var is required (${getGitHubRequirementText(actionMode)})`);
         }
     }
@@ -969,9 +997,6 @@ async function runAnalyzer({ config, runtimeDir, sourceFiles, createGitHubArtifa
     }
     if (createGitHubArtifact) {
         const repo = String(config.project?.githubRepo || '').trim();
-        if (!repo) {
-            throw new Error(`actions.mode=${getActionMode(config)} requires project.githubRepo.`);
-        }
         args.push(getActionMode(config) === 'pull_request' ? '--create-pull-requests' : '--create-issues', '--repo', repo);
         if (getActionMode(config) === 'pull_request') {
             args.push('--allow-proposal-pull-requests');
@@ -1167,6 +1192,13 @@ function hasSourceChanges(previousHashes, currentHashes) {
 async function runOnce(configPath, statePath) {
     const config = await readJson(configPath);
     await applyOpenClawSecretRefs(config);
+    const inferredGitHubRepo = await inferGitHubRepo(config);
+    if (inferredGitHubRepo) {
+        config.project = {
+            ...(config.project || {}),
+            githubRepo: inferredGitHubRepo,
+        };
+    }
     await assertHardRequirements(config);
     const state = await readJsonOptional(statePath, {
         sourceHashes: {},
@@ -1198,7 +1230,7 @@ async function runOnce(configPath, statePath) {
         }, null, 2), 'utf8');
         return;
     }
-    const createGitHubArtifact = shouldAutoCreateGitHubArtifact(config);
+    const createGitHubArtifact = shouldAutoCreateGitHubArtifact(config) && Boolean(String(config.project?.githubRepo || '').trim());
     const sourceFiles = await materializeSourceFiles(config, payloads, runtimeDir);
     const cadencePlanPath = path.join(runtimeDir, 'cadence-plan.json');
     await fs.writeFile(cadencePlanPath, JSON.stringify({

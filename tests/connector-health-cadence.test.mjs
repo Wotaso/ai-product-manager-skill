@@ -45,6 +45,9 @@ test('wizard exposes connector and output interval setup paths', () => {
   assert.match(wizard, /mode: 'openclaw-secret-refs'/);
   assert.match(wizard, /analyticsTokenRef: \{ source: 'env', provider: 'default', id: 'ANALYTICSCLI_ACCESS_TOKEN' \}/);
   assert.match(wizard, /once_per_unhealthy_incident_until_recovery_or_changed_fingerprint/);
+  assert.doesNotMatch(wizard, /GitHub repo \(owner\/name/);
+  assert.doesNotMatch(wizard, /Project slugs for/);
+  assert.match(wizard, /Project scope remains unpinned/);
 });
 
 test('config example stores connector credentials as OpenClaw-style secret refs', () => {
