@@ -5,7 +5,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { spawn } from 'node:child_process';
 import { getActionMode, getDefaultSourceCommand } from './openclaw-growth-shared.mjs';
-import { loadOpenClawGrowthSecrets } from './openclaw-growth-env.mjs';
+import { applyOpenClawSecretRefs, loadOpenClawGrowthSecrets } from './openclaw-growth-env.mjs';
 
 const DEFAULT_CONFIG_PATH = 'data/openclaw-growth-engineer/config.json';
 const DEFAULT_TEMPLATE_PATH = 'data/openclaw-growth-engineer/config.example.json';
@@ -1435,7 +1435,9 @@ async function main() {
   const configPath = path.resolve(args.config);
 
   const configResult = await ensureConfig(configPath);
-  const heartbeat = await ensureGrowthHeartbeat(configPath, await readJson(configPath));
+  const initialConfig = await readJson(configPath);
+  await applyOpenClawSecretRefs(initialConfig);
+  const heartbeat = await ensureGrowthHeartbeat(configPath, initialConfig);
   const projectConfigured = await configureAnalyticsProject(configPath, args.project);
   const ascAppConfiguredFromArg = await configureAscApp(configPath, args.ascApp);
   const analyticscliEnsure = await ensureAnalyticsCliInstalled();

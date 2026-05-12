@@ -169,10 +169,22 @@
       ]
     }
   },
+  "security": {
+    "connectorSecrets": {
+      "mode": "openclaw-secret-refs",
+      "persisted": true,
+      "agentReadable": "runtime_resolves_secret_refs",
+      "secretsFile": "~/.config/openclaw-growth/secrets.env"
+    }
+  },
   "secrets": {
     "githubTokenEnv": "GITHUB_TOKEN",
+    "githubTokenRef": { "source": "env", "provider": "default", "id": "GITHUB_TOKEN" },
     "analyticsTokenEnv": "ANALYTICSCLI_ACCESS_TOKEN",
+    "analyticsTokenRef": { "source": "env", "provider": "default", "id": "ANALYTICSCLI_ACCESS_TOKEN" },
     "revenuecatTokenEnv": "REVENUECAT_API_KEY",
-    "sentryTokenEnv": "SENTRY_AUTH_TOKEN"
+    "revenuecatTokenRef": { "source": "env", "provider": "default", "id": "REVENUECAT_API_KEY" },
+    "sentryTokenEnv": "SENTRY_AUTH_TOKEN",
+    "sentryTokenRef": { "source": "env", "provider": "default", "id": "SENTRY_AUTH_TOKEN" }
   }
 }

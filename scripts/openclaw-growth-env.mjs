@@ -24,6 +24,73 @@ function decodeEnvValue(rawValue) {
     }
     return value;
 }
+function normalizeSecretRef(value) {
+    if (!value || typeof value !== 'object')
+        return null;
+    const ref = value;
+    const source = String(ref.source || '').trim();
+    const id = String(ref.id || '').trim();
+    if (!source || !id)
+        return null;
+    return {
+        source,
+        provider: String(ref.provider || 'default').trim() || 'default',
+        id,
+    };
+}
+function getConfiguredSecretRefs(config) {
+    const secrets = config?.secrets && typeof config.secrets === 'object' ? config.secrets : {};
+    const pairs = [
+        ['githubTokenEnv', 'githubTokenRef', 'GITHUB_TOKEN'],
+        ['analyticsTokenEnv', 'analyticsTokenRef', 'ANALYTICSCLI_ACCESS_TOKEN'],
+        ['revenuecatTokenEnv', 'revenuecatTokenRef', 'REVENUECAT_API_KEY'],
+        ['sentryTokenEnv', 'sentryTokenRef', 'SENTRY_AUTH_TOKEN'],
+    ];
+    return pairs
+        .map(([envKey, refKey, fallbackEnv]) => {
+        const envName = String(secrets?.[envKey] || fallbackEnv).trim();
+        const ref = normalizeSecretRef(secrets?.[refKey]);
+        return envName && ref ? { envName, ref } : null;
+    })
+        .filter(Boolean);
+}
+async function resolveSecretRef(ref) {
+    const source = String(ref.source || '').trim();
+    const id = String(ref.id || '').trim();
+    if (!id)
+        return '';
+    if (source === 'env') {
+        return process.env[id] || '';
+    }
+    if (source === 'file') {
+        return (await fs.readFile(path.resolve(id), 'utf8')).trim();
+    }
+    return '';
+}
+export async function applyOpenClawSecretRefs(config) {
+    const applied = [];
+    const skipped = [];
+    for (const { envName, ref } of getConfiguredSecretRefs(config)) {
+        if (process.env[envName]) {
+            skipped.push(envName);
+            continue;
+        }
+        try {
+            const value = await resolveSecretRef(ref);
+            if (value) {
+                process.env[envName] = value;
+                applied.push(envName);
+            }
+            else {
+                skipped.push(envName);
+            }
+        }
+        catch {
+            skipped.push(envName);
+        }
+    }
+    return { applied, skipped };
+}
 export async function loadOpenClawGrowthSecrets() {
     const filePath = resolveOpenClawGrowthSecretsFile();
     let raw = '';

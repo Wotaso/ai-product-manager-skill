@@ -4,7 +4,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { spawn } from 'node:child_process';
 import { classifyServiceKind, getActionMode, getAllSourceEntries, getDefaultSourceCommand, getGitHubActionNoun, getGitHubConnectionSummary, getGitHubRequirementText, shouldAutoCreateGitHubArtifact, } from './openclaw-growth-shared.mjs';
-import { loadOpenClawGrowthSecrets } from './openclaw-growth-env.mjs';
+import { applyOpenClawSecretRefs, loadOpenClawGrowthSecrets } from './openclaw-growth-env.mjs';
 const DEFAULT_CONFIG_PATH = 'data/openclaw-growth-engineer/config.json';
 const DEFAULT_CONNECTION_TIMEOUT_MS = 15_000;
 const ANALYTICSCLI_PACKAGE_SPEC = process.env.ANALYTICSCLI_CLI_PACKAGE || '@analyticscli/cli@preview';
@@ -949,6 +949,7 @@ async function main() {
         addCheck(checks, 'config-file', false, `Could not read config at ${configPath}: ${error instanceof Error ? error.message : String(error)}`);
     }
     if (config) {
+        await applyOpenClawSecretRefs(config);
         emitProgress(args.progressJson, {
             phase: 'start',
             key: 'preflight',

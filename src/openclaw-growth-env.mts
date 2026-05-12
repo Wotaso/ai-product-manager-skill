@@ -2,6 +2,12 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 
+type SecretRef = {
+  source?: string;
+  provider?: string;
+  id?: string;
+};
+
 function resolveOpenClawGrowthSecretsFile() {
   const explicit = process.env.OPENCLAW_GROWTH_SECRETS_FILE?.trim();
   if (explicit) return path.resolve(explicit);
@@ -23,6 +29,73 @@ function decodeEnvValue(rawValue) {
     return value.slice(1, -1);
   }
   return value;
+}
+
+function normalizeSecretRef(value): SecretRef | null {
+  if (!value || typeof value !== 'object') return null;
+  const ref = value as SecretRef;
+  const source = String(ref.source || '').trim();
+  const id = String(ref.id || '').trim();
+  if (!source || !id) return null;
+  return {
+    source,
+    provider: String(ref.provider || 'default').trim() || 'default',
+    id,
+  };
+}
+
+function getConfiguredSecretRefs(config): Array<{ envName: string; ref: SecretRef }> {
+  const secrets = config?.secrets && typeof config.secrets === 'object' ? config.secrets : {};
+  const pairs = [
+    ['githubTokenEnv', 'githubTokenRef', 'GITHUB_TOKEN'],
+    ['analyticsTokenEnv', 'analyticsTokenRef', 'ANALYTICSCLI_ACCESS_TOKEN'],
+    ['revenuecatTokenEnv', 'revenuecatTokenRef', 'REVENUECAT_API_KEY'],
+    ['sentryTokenEnv', 'sentryTokenRef', 'SENTRY_AUTH_TOKEN'],
+  ];
+
+  return pairs
+    .map(([envKey, refKey, fallbackEnv]) => {
+      const envName = String(secrets?.[envKey] || fallbackEnv).trim();
+      const ref = normalizeSecretRef(secrets?.[refKey]);
+      return envName && ref ? { envName, ref } : null;
+    })
+    .filter(Boolean) as Array<{ envName: string; ref: SecretRef }>;
+}
+
+async function resolveSecretRef(ref: SecretRef): Promise<string> {
+  const source = String(ref.source || '').trim();
+  const id = String(ref.id || '').trim();
+  if (!id) return '';
+  if (source === 'env') {
+    return process.env[id] || '';
+  }
+  if (source === 'file') {
+    return (await fs.readFile(path.resolve(id), 'utf8')).trim();
+  }
+  return '';
+}
+
+export async function applyOpenClawSecretRefs(config) {
+  const applied: string[] = [];
+  const skipped: string[] = [];
+  for (const { envName, ref } of getConfiguredSecretRefs(config)) {
+    if (process.env[envName]) {
+      skipped.push(envName);
+      continue;
+    }
+    try {
+      const value = await resolveSecretRef(ref);
+      if (value) {
+        process.env[envName] = value;
+        applied.push(envName);
+      } else {
+        skipped.push(envName);
+      }
+    } catch {
+      skipped.push(envName);
+    }
+  }
+  return { applied, skipped };
 }
 
 export async function loadOpenClawGrowthSecrets() {

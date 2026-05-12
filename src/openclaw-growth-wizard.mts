@@ -17,6 +17,7 @@ import { loadOpenClawGrowthSecrets } from './openclaw-growth-env.mjs';
 
 const DEFAULT_CONFIG_PATH = 'data/openclaw-growth-engineer/config.json';
 const SELF_UPDATE_INTERVAL_MS = 24 * 60 * 60 * 1000;
+const ENABLE_ISOLATED_SECRET_RUNNER_WIZARD = false;
 const CONNECTOR_KEYS = ['analytics', 'github', 'revenuecat', 'sentry', 'asc'] as const;
 type ConnectorKey = (typeof CONNECTOR_KEYS)[number];
 type ConnectorDefinition = {
@@ -1723,6 +1724,245 @@ async function writeSecretsFile(filePath, nextValues: Record<string, string>) {
   await fs.chmod(filePath, 0o600);
 }
 
+function renderBashSingleQuoted(value) {
+  return `'${String(value).replace(/'/g, `'\\''`)}'`;
+}
+
+function renderIsolatedSecretRunnerInstallScript({
+  workspaceRoot,
+  configPath,
+  serviceUser,
+  agentUser,
+}) {
+  const workspaceLiteral = renderBashSingleQuoted(workspaceRoot);
+  const configLiteral = renderBashSingleQuoted(path.relative(workspaceRoot, configPath) || configPath);
+  const serviceUserLiteral = renderBashSingleQuoted(serviceUser);
+  const agentUserLiteral = renderBashSingleQuoted(agentUser);
+  return `#!/usr/bin/env bash
+set -euo pipefail
+
+SERVICE_USER=\${OPENCLAW_GROWTH_SERVICE_USER:-${serviceUserLiteral}}
+AGENT_USER=\${OPENCLAW_GROWTH_AGENT_USER:-${agentUserLiteral}}
+WORKSPACE=${workspaceLiteral}
+CONFIG_PATH=\${OPENCLAW_GROWTH_CONFIG_PATH:-${configLiteral}}
+STATE_PATH=\${OPENCLAW_GROWTH_STATE_PATH:-data/openclaw-growth-engineer/state.json}
+RUNTIME_DIR=/var/lib/openclaw-growth
+SECRETS_FILE="\${RUNTIME_DIR}/secrets.env"
+LOCAL_SECRETS_FILE="\${OPENCLAW_GROWTH_LOCAL_SECRETS_FILE:-\${HOME}/.config/openclaw-growth/secrets.env}"
+SUDOERS_FILE=/etc/sudoers.d/openclaw-growth
+
+if [ "$(id -u)" -ne 0 ]; then
+  echo "Run with sudo: sudo bash .openclaw/secret-runner/install.sh" >&2
+  exit 1
+fi
+
+if ! id "$SERVICE_USER" >/dev/null 2>&1; then
+  if command -v useradd >/dev/null 2>&1; then
+    useradd --system --create-home --home-dir "$RUNTIME_DIR" --shell /usr/sbin/nologin "$SERVICE_USER"
+  elif command -v dscl >/dev/null 2>&1; then
+    echo "macOS service-user creation is not automated by this script. Create $SERVICE_USER manually or use launchd/keychain." >&2
+    exit 1
+  else
+    echo "No supported user creation tool found." >&2
+    exit 1
+  fi
+fi
+
+install -d -m 0750 -o "$SERVICE_USER" -g "$SERVICE_USER" "$RUNTIME_DIR"
+install -d -m 0750 -o "$SERVICE_USER" -g "$SERVICE_USER" "$RUNTIME_DIR/keys"
+install -d -m 0775 -o "$AGENT_USER" -g "$SERVICE_USER" "$WORKSPACE/data/openclaw-growth-engineer" "$WORKSPACE/.openclaw"
+chmod g+rwX "$WORKSPACE/data/openclaw-growth-engineer" "$WORKSPACE/.openclaw"
+
+if [ ! -f "$SECRETS_FILE" ]; then
+  install -m 0600 -o "$SERVICE_USER" -g "$SERVICE_USER" /dev/null "$SECRETS_FILE"
+fi
+
+if [ -s "$LOCAL_SECRETS_FILE" ] && [ ! -s "$SECRETS_FILE" ]; then
+  cp "$LOCAL_SECRETS_FILE" "$SECRETS_FILE"
+  chown "$SERVICE_USER:$SERVICE_USER" "$SECRETS_FILE"
+  chmod 0600 "$SECRETS_FILE"
+  echo "Migrated existing local secrets into $SECRETS_FILE."
+  echo "After verifying the isolated runner, delete the old local file if OpenClaw runs as that same user:"
+  echo "  rm -f $LOCAL_SECRETS_FILE"
+fi
+
+cat >/usr/local/bin/openclaw-growth-health <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+WORKSPACE="\${OPENCLAW_GROWTH_WORKSPACE:-__WORKSPACE__}"
+CONFIG_PATH="\${OPENCLAW_GROWTH_CONFIG_PATH:-__CONFIG_PATH__}"
+cd "$WORKSPACE"
+export OPENCLAW_GROWTH_SECRETS_FILE="\${OPENCLAW_GROWTH_SECRETS_FILE:-/var/lib/openclaw-growth/secrets.env}"
+exec node scripts/openclaw-growth-status.mjs --config "$CONFIG_PATH" --timeout-ms "\${OPENCLAW_GROWTH_STATUS_TIMEOUT_MS:-15000}" --json "$@"
+EOF
+sed -i.bak "s#__WORKSPACE__#$WORKSPACE#g; s#__CONFIG_PATH__#$CONFIG_PATH#g" /usr/local/bin/openclaw-growth-health
+rm -f /usr/local/bin/openclaw-growth-health.bak
+
+cat >/usr/local/bin/openclaw-growth-run <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+WORKSPACE="\${OPENCLAW_GROWTH_WORKSPACE:-__WORKSPACE__}"
+CONFIG_PATH="\${OPENCLAW_GROWTH_CONFIG_PATH:-__CONFIG_PATH__}"
+STATE_PATH="\${OPENCLAW_GROWTH_STATE_PATH:-data/openclaw-growth-engineer/state.json}"
+cd "$WORKSPACE"
+export OPENCLAW_GROWTH_SECRETS_FILE="\${OPENCLAW_GROWTH_SECRETS_FILE:-/var/lib/openclaw-growth/secrets.env}"
+exec node scripts/openclaw-growth-runner.mjs --config "$CONFIG_PATH" --state "$STATE_PATH" "$@"
+EOF
+sed -i.bak "s#__WORKSPACE__#$WORKSPACE#g; s#__CONFIG_PATH__#$CONFIG_PATH#g" /usr/local/bin/openclaw-growth-run
+rm -f /usr/local/bin/openclaw-growth-run.bak
+
+chown root:root /usr/local/bin/openclaw-growth-health /usr/local/bin/openclaw-growth-run
+chmod 0755 /usr/local/bin/openclaw-growth-health /usr/local/bin/openclaw-growth-run
+
+cat >"$SUDOERS_FILE" <<EOF
+# OpenClaw Growth isolated secret runner.
+# Allows the agent user to run only the sanitized Growth Engineer wrappers as the secret-owning service user.
+$AGENT_USER ALL=($SERVICE_USER) NOPASSWD: /usr/local/bin/openclaw-growth-health
+$AGENT_USER ALL=($SERVICE_USER) NOPASSWD: /usr/local/bin/openclaw-growth-run
+EOF
+chmod 0440 "$SUDOERS_FILE"
+if command -v visudo >/dev/null 2>&1; then
+  visudo -cf "$SUDOERS_FILE"
+fi
+
+echo "Installed isolated OpenClaw Growth secret runner."
+echo "Persisted secret file: $SECRETS_FILE"
+echo "Edit secrets as root/service operator only:"
+echo "  sudoedit $SECRETS_FILE"
+echo "OpenClaw may run:"
+echo "  sudo -n -u $SERVICE_USER /usr/local/bin/openclaw-growth-health"
+echo "  sudo -n -u $SERVICE_USER /usr/local/bin/openclaw-growth-run"
+`;
+}
+
+async function writeIsolatedSecretRunnerKit(configPath, config, options: Record<string, any> = {}) {
+  const serviceUser = String(options.serviceUser || config?.security?.connectorSecrets?.serviceUser || 'openclaw-growth');
+  const agentUser = String(
+    options.agentUser ||
+      config?.security?.connectorSecrets?.agentUser ||
+      process.env.SUDO_USER ||
+      process.env.USER ||
+      'openclaw',
+  );
+  const kitDir = path.resolve('.openclaw/secret-runner');
+  const installScriptPath = path.join(kitDir, 'install.sh');
+  const readmePath = path.join(kitDir, 'README.md');
+  await fs.mkdir(kitDir, { recursive: true });
+  await fs.writeFile(
+    installScriptPath,
+    renderIsolatedSecretRunnerInstallScript({
+      workspaceRoot: process.cwd(),
+      configPath,
+      serviceUser,
+      agentUser,
+    }),
+    { encoding: 'utf8', mode: 0o700 },
+  );
+  await fs.chmod(installScriptPath, 0o700);
+  await fs.writeFile(
+    readmePath,
+    [
+      '# OpenClaw Growth Isolated Secret Runner',
+      '',
+      'This kit keeps connector API keys out of the OpenClaw-readable workspace.',
+      '',
+      '1. Run `sudo bash .openclaw/secret-runner/install.sh` from this workspace.',
+      '2. Put connector secrets in `/var/lib/openclaw-growth/secrets.env` with `sudoedit`.',
+      '3. Configure OpenClaw/heartbeat jobs to use the generated sudo commands.',
+      '',
+      'OpenClaw can read and modify non-secret connector config, but must not read or write API keys.',
+      '',
+    ].join('\n'),
+    'utf8',
+  );
+
+  config.security = {
+    ...(config.security || {}),
+    connectorSecrets: {
+      mode: 'isolated-runner',
+      persisted: true,
+      agentReadable: false,
+      serviceUser,
+      agentUser,
+      secretsFile: '/var/lib/openclaw-growth/secrets.env',
+      installScript: path.relative(process.cwd(), installScriptPath),
+      healthCommand: `sudo -n -u ${serviceUser} /usr/local/bin/openclaw-growth-health`,
+      runCommand: `sudo -n -u ${serviceUser} /usr/local/bin/openclaw-growth-run`,
+    },
+  };
+  return { installScriptPath, readmePath, serviceUser };
+}
+
+async function askSecretAccessModel(rl, configPath, config) {
+  if (!ENABLE_ISOLATED_SECRET_RUNNER_WIZARD) {
+    config.security = {
+      ...(config.security || {}),
+      connectorSecrets: {
+        ...(config.security?.connectorSecrets || {}),
+        mode: 'openclaw-secret-refs',
+        persisted: true,
+        agentReadable: 'runtime_resolves_secret_refs',
+        secretsFile: resolveSecretsFile(),
+      },
+    };
+    return { config, kit: null };
+  }
+
+  process.stdout.write('\nSecret access model\n');
+  process.stdout.write('  1) Local user secrets file: simplest, same OS user can read it\n');
+  process.stdout.write('  2) Isolated secret runner: separate service user owns persisted secrets; OpenClaw only gets allowlisted run/health commands\n');
+  const currentMode = config?.security?.connectorSecrets?.mode === 'isolated-runner' ? '2' : '1';
+  const answer = await ask(rl, 'Secret access model (1/2)', currentMode);
+  if (answer.trim() !== '2') {
+    config.security = {
+      ...(config.security || {}),
+      connectorSecrets: {
+        ...(config.security?.connectorSecrets || {}),
+        mode: 'local-user-file',
+        persisted: true,
+        agentReadable: 'same-os-user-can-read',
+        secretsFile: resolveSecretsFile(),
+      },
+    };
+    return { config, kit: null };
+  }
+
+  const serviceUser = await ask(
+    rl,
+    'Service user that owns connector secrets',
+    config?.security?.connectorSecrets?.serviceUser || 'openclaw-growth',
+  );
+  const agentUser = await ask(
+    rl,
+    'Agent OS user allowed to run health/growth commands',
+    config?.security?.connectorSecrets?.agentUser || process.env.SUDO_USER || process.env.USER || 'openclaw',
+  );
+  const kit = await writeIsolatedSecretRunnerKit(configPath, config, { serviceUser, agentUser });
+  return { config, kit };
+}
+
+function printSecretRunnerKitInstructions(kit) {
+  if (!kit) return;
+  process.stdout.write(`Saved isolated secret runner setup: ${kit.installScriptPath}\n`);
+  process.stdout.write('Run once from this workspace after the wizard finishes:\n');
+  process.stdout.write(`  sudo bash ${path.relative(process.cwd(), kit.installScriptPath)}\n`);
+  process.stdout.write('Then move/persist connector secrets under /var/lib/openclaw-growth/secrets.env with sudoedit.\n');
+}
+
+function getGrowthRunCommand(config, displayConfigPath) {
+  if (config?.security?.connectorSecrets?.mode === 'isolated-runner' && config.security.connectorSecrets.runCommand) {
+    return config.security.connectorSecrets.runCommand;
+  }
+  return `node scripts/openclaw-growth-runner.mjs --config ${displayConfigPath}`;
+}
+
+function getConnectorHealthCommand(config, displayConfigPath) {
+  if (config?.security?.connectorSecrets?.mode === 'isolated-runner' && config.security.connectorSecrets.healthCommand) {
+    return config.security.connectorSecrets.healthCommand;
+  }
+  return `node scripts/openclaw-growth-runner.mjs --config ${displayConfigPath}`;
+}
+
 async function maybePromptSecret(rl, label, envName) {
   const existing = process.env[envName]?.trim();
   const suffix = existing ? 'already set in current environment; press Enter to keep' : 'leave empty to skip';
@@ -2818,6 +3058,19 @@ async function runConnectorSetupWizard(args) {
       if (wroteSecrets) {
         process.stdout.write('Future OpenClaw Growth commands load this secrets file automatically.\n');
       }
+      const configureIsolation = ENABLE_ISOLATED_SECRET_RUNNER_WIZARD && await askYesNo(
+        rl,
+        'Generate an isolated secret runner so OpenClaw can run health checks without reading API keys?',
+        true,
+      );
+      if (configureIsolation) {
+        const config = await loadEditableConfig(args.config);
+        const secretAccess = await askSecretAccessModel(rl, path.resolve(args.config), config);
+        await writeJsonFile(path.resolve(args.config), config);
+        const manifestPath = await writeOpenClawJobManifest(path.resolve(args.config), config);
+        process.stdout.write(`Saved OpenClaw job manifest: ${manifestPath}\n`);
+        printSecretRunnerKitInstructions(secretAccess.kit);
+      }
       return;
     }
 
@@ -2972,6 +3225,377 @@ async function askCadencePlan(rl) {
   return cadences;
 }
 
+async function askWizardGoal(rl) {
+  process.stdout.write('\nWhat do you want to configure?\n');
+  process.stdout.write('  1) Full setup: project, schedule, outputs, and sources\n');
+  process.stdout.write('  2) Connectors: credentials and provider health checks\n');
+  process.stdout.write('  3) Intervals: growth cadence and connector health check interval\n');
+  process.stdout.write('  4) Output: summary, GitHub issues, draft PRs, and notifications\n');
+  const answer = await ask(rl, 'Setup area (1/2/3/4)', '1');
+  if (answer.trim() === '2') return 'connectors';
+  if (answer.trim() === '3') return 'intervals';
+  if (answer.trim() === '4') return 'output';
+  return 'full';
+}
+
+async function buildDefaultWizardConfig() {
+  const detectedRepo = await detectGitHubRepo();
+  return {
+    version: 7,
+    generatedAt: new Date().toISOString(),
+    project: {
+      githubRepo: detectedRepo || '',
+      repoRoot: '.',
+      outFile: 'data/openclaw-growth-engineer/issues.generated.json',
+      maxIssues: 4,
+      titlePrefix: '[Growth]',
+      labels: ['ai-growth', 'autogenerated', 'product'],
+    },
+    sources: {
+      analytics: {
+        enabled: true,
+        mode: 'command',
+        command: getDefaultSourceCommand('analytics'),
+      },
+      revenuecat: {
+        enabled: false,
+        mode: 'command',
+        command: getDefaultSourceCommand('revenuecat'),
+      },
+      sentry: {
+        enabled: false,
+        mode: 'command',
+        command: getDefaultSourceCommand('sentry'),
+      },
+      feedback: {
+        enabled: true,
+        mode: 'command',
+        command: getDefaultSourceCommand('feedback'),
+        cursorMode: 'auto_since_last_fetch',
+        initialLookback: '30d',
+      },
+      extra: [
+        buildExtraSourceConfig('asc-cli', { enabled: false, mode: 'command', command: getDefaultSourceCommand('asc') }),
+      ],
+    },
+    schedule: {
+      intervalMinutes: 1440,
+      connectorHealthCheckIntervalMinutes: 720,
+      skipIfNoDataChange: true,
+      skipIfIssueSetUnchanged: true,
+      cadences: DEFAULT_CADENCE_PLAN.map((cadence) => ({ ...cadence })),
+    },
+    actions: {
+      autoCreateIssues: false,
+      autoCreatePullRequests: false,
+      mode: 'issue',
+      usageMode: 'production_autopilot',
+      draftPullRequests: true,
+      proposalBranchPrefix: 'openclaw/proposals',
+    },
+    deliveries: {
+      openclawChat: {
+        enabled: true,
+        markdownPath: '.openclaw/chat/latest.md',
+        jsonPath: '.openclaw/chat/latest.json',
+      },
+      github: {
+        enabled: false,
+        mode: 'issue',
+        autoCreate: false,
+        draftPullRequests: true,
+        proposalBranchPrefix: 'openclaw/proposals',
+      },
+      slack: {
+        enabled: false,
+        webhookEnv: 'SLACK_WEBHOOK_URL',
+      },
+      webhook: {
+        enabled: false,
+        urlEnv: 'OPENCLAW_WEBHOOK_URL',
+        method: 'POST',
+        headers: {},
+      },
+      discord: {
+        enabled: false,
+        command: 'node scripts/discord-openclaw-bridge.mjs send --stdin',
+      },
+    },
+    charting: {
+      enabled: false,
+      command: null,
+    },
+    notifications: {
+      connectorHealth: {
+        enabled: true,
+        channels: [
+          {
+            type: 'openclaw-chat',
+            enabled: true,
+            markdownPath: '.openclaw/chat/connector-health.md',
+            jsonPath: '.openclaw/chat/connector-health.json',
+          },
+        ],
+      },
+      growthRun: {
+        enabled: true,
+        channels: [
+          {
+            type: 'openclaw-chat',
+            enabled: true,
+            markdownPath: '.openclaw/chat/growth-summary.md',
+            jsonPath: '.openclaw/chat/growth-summary.json',
+          },
+        ],
+      },
+    },
+    secrets: {
+      githubTokenEnv: 'GITHUB_TOKEN',
+      githubTokenRef: { source: 'env', provider: 'default', id: 'GITHUB_TOKEN' },
+      analyticsTokenEnv: 'ANALYTICSCLI_ACCESS_TOKEN',
+      analyticsTokenRef: { source: 'env', provider: 'default', id: 'ANALYTICSCLI_ACCESS_TOKEN' },
+      revenuecatTokenEnv: 'REVENUECAT_API_KEY',
+      revenuecatTokenRef: { source: 'env', provider: 'default', id: 'REVENUECAT_API_KEY' },
+      sentryTokenEnv: 'SENTRY_AUTH_TOKEN',
+      sentryTokenRef: { source: 'env', provider: 'default', id: 'SENTRY_AUTH_TOKEN' },
+    },
+  };
+}
+
+async function loadEditableConfig(configPath) {
+  const existing = await readJsonIfPresent(configPath).catch(() => null);
+  if (existing && typeof existing === 'object') return existing;
+  return await buildDefaultWizardConfig();
+}
+
+function mergeNotificationChannels(baseChannels, extraChannels) {
+  const channels = [];
+  const seen = new Set();
+  for (const channel of [...baseChannels, ...extraChannels]) {
+    if (!channel || channel.enabled === false) continue;
+    const key = `${channel.type}:${channel.markdownPath || channel.jsonPath || channel.webhookEnv || channel.urlEnv || channel.command || channel.label || ''}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    channels.push(channel);
+  }
+  return channels;
+}
+
+async function askNotificationChannels(rl, config) {
+  const channels: any[] = [
+    {
+      type: 'openclaw-chat',
+      enabled: true,
+      markdownPath: '.openclaw/chat/growth-summary.md',
+      jsonPath: '.openclaw/chat/growth-summary.json',
+    },
+  ];
+
+  const slackDefault = Boolean(config?.deliveries?.slack?.enabled);
+  if (await askYesNo(rl, 'Send summaries and connector-health alerts to Slack?', slackDefault)) {
+    const webhookEnv = await ask(rl, 'Slack webhook env var', config?.deliveries?.slack?.webhookEnv || 'SLACK_WEBHOOK_URL');
+    channels.push({ type: 'slack', enabled: true, webhookEnv });
+  }
+
+  const webhookDefault = Boolean(config?.deliveries?.webhook?.enabled);
+  if (await askYesNo(rl, 'Send summaries and connector-health alerts to a generic webhook/social bridge?', webhookDefault)) {
+    const urlEnv = await ask(rl, 'Webhook URL env var', config?.deliveries?.webhook?.urlEnv || 'OPENCLAW_WEBHOOK_URL');
+    channels.push({ type: 'webhook', enabled: true, urlEnv, method: 'POST', headers: {} });
+  }
+
+  const commandDefault = Boolean(config?.deliveries?.discord?.enabled);
+  if (await askYesNo(rl, 'Send summaries and connector-health alerts through a local command channel?', commandDefault)) {
+    const command = await ask(
+      rl,
+      'Command that receives the message on stdin',
+      config?.deliveries?.discord?.command || 'node scripts/discord-openclaw-bridge.mjs send --stdin',
+    );
+    channels.push({ type: 'command', enabled: true, label: 'command', command });
+  }
+
+  return channels;
+}
+
+async function askOutputConfig(rl, config) {
+  process.stdout.write('\nOutput type\n');
+  process.stdout.write('  1) Summary only: OpenClaw chat handoff and notifications\n');
+  process.stdout.write('  2) GitHub issue drafts: generate issue-ready handoffs, no auto-create by default\n');
+  process.stdout.write('  3) GitHub pull request drafts: generate PR-oriented proposal branches when enabled\n');
+  const currentMode = config?.actions?.mode || config?.deliveries?.github?.mode || 'issue';
+  const currentAutoCreate = Boolean(config?.actions?.autoCreateIssues || config?.actions?.autoCreatePullRequests || config?.deliveries?.github?.autoCreate);
+  const defaultChoice = currentAutoCreate ? (currentMode === 'pull_request' ? '3' : '2') : '1';
+  const outputChoice = await ask(rl, 'Output type (1/2/3)', defaultChoice);
+  const summaryOnly = outputChoice.trim() === '1';
+  const mode = outputChoice.trim() === '3' ? 'pull_request' : 'issue';
+  const autoCreate = summaryOnly
+    ? false
+    : await askYesNo(
+        rl,
+        mode === 'pull_request'
+          ? 'Automatically create draft pull requests when new findings are found?'
+          : 'Automatically create GitHub issues when new findings are found?',
+        currentAutoCreate,
+      );
+
+  if (!summaryOnly) {
+    const detectedRepo = await detectGitHubRepo();
+    const currentRepo = config?.project?.githubRepo || detectedRepo || '';
+    config.project = {
+      ...(config.project || {}),
+      githubRepo: await ask(rl, 'GitHub repo for issue/PR delivery (owner/name)', currentRepo),
+    };
+  }
+
+  const channels = await askNotificationChannels(rl, config);
+  const connectorHealthChannels = channels.map((channel) => {
+    if (channel.type !== 'openclaw-chat') return channel;
+    return {
+      ...channel,
+      markdownPath: '.openclaw/chat/connector-health.md',
+      jsonPath: '.openclaw/chat/connector-health.json',
+    };
+  });
+
+  config.actions = {
+    ...(config.actions || {}),
+    mode,
+    autoCreateIssues: mode === 'issue' && autoCreate,
+    autoCreatePullRequests: mode === 'pull_request' && autoCreate,
+    draftPullRequests: true,
+    proposalBranchPrefix: config?.actions?.proposalBranchPrefix || 'openclaw/proposals',
+  };
+  config.deliveries = {
+    ...(config.deliveries || {}),
+    openclawChat: {
+      ...(config.deliveries?.openclawChat || {}),
+      enabled: true,
+      markdownPath: config.deliveries?.openclawChat?.markdownPath || '.openclaw/chat/latest.md',
+      jsonPath: config.deliveries?.openclawChat?.jsonPath || '.openclaw/chat/latest.json',
+    },
+    github: {
+      ...(config.deliveries?.github || {}),
+      enabled: !summaryOnly,
+      mode,
+      autoCreate,
+      draftPullRequests: true,
+      proposalBranchPrefix: config?.actions?.proposalBranchPrefix || 'openclaw/proposals',
+    },
+    slack: {
+      ...(config.deliveries?.slack || {}),
+      enabled: channels.some((channel) => channel.type === 'slack'),
+      webhookEnv: channels.find((channel) => channel.type === 'slack')?.webhookEnv || config.deliveries?.slack?.webhookEnv || 'SLACK_WEBHOOK_URL',
+    },
+    webhook: {
+      ...(config.deliveries?.webhook || {}),
+      enabled: channels.some((channel) => channel.type === 'webhook'),
+      urlEnv: channels.find((channel) => channel.type === 'webhook')?.urlEnv || config.deliveries?.webhook?.urlEnv || 'OPENCLAW_WEBHOOK_URL',
+      method: 'POST',
+      headers: config.deliveries?.webhook?.headers || {},
+    },
+    discord: {
+      ...(config.deliveries?.discord || {}),
+      enabled: channels.some((channel) => channel.type === 'command'),
+      command: channels.find((channel) => channel.type === 'command')?.command || config.deliveries?.discord?.command || 'node scripts/discord-openclaw-bridge.mjs send --stdin',
+    },
+  };
+  config.notifications = {
+    ...(config.notifications || {}),
+    connectorHealth: {
+      ...(config.notifications?.connectorHealth || {}),
+      enabled: true,
+      channels: mergeNotificationChannels([], connectorHealthChannels),
+    },
+    growthRun: {
+      ...(config.notifications?.growthRun || {}),
+      enabled: true,
+      channels: mergeNotificationChannels([], channels),
+    },
+  };
+
+  return config;
+}
+
+async function askIntervalConfig(rl, config) {
+  const currentSchedule = config?.schedule || {};
+  const intervalMinutes = Number.parseInt(
+    await ask(rl, 'Growth runner wake-up interval in minutes', String(currentSchedule.intervalMinutes || 1440)),
+    10,
+  ) || 1440;
+  const connectorHealthCheckIntervalMinutes = Number.parseInt(
+    await ask(
+      rl,
+      'Connector health check interval in minutes',
+      String(currentSchedule.connectorHealthCheckIntervalMinutes || 720),
+    ),
+    10,
+  ) || 720;
+  const usageMode = await askToolUsage(rl);
+  const cadences = await askCadencePlan(rl);
+
+  config.schedule = {
+    ...currentSchedule,
+    intervalMinutes,
+    connectorHealthCheckIntervalMinutes,
+    skipIfNoDataChange: currentSchedule.skipIfNoDataChange !== false,
+    skipIfIssueSetUnchanged: currentSchedule.skipIfIssueSetUnchanged !== false,
+    cadences,
+  };
+  config.actions = {
+    ...(config.actions || {}),
+    usageMode,
+  };
+  return config;
+}
+
+async function writeOpenClawJobManifest(configPath, config) {
+  const manifestPath = path.resolve('.openclaw/jobs/openclaw-growth-engineer.json');
+  const displayConfigPath = path.relative(process.cwd(), configPath) || configPath;
+  const intervalMinutes = Math.max(1, Number(config?.schedule?.intervalMinutes || 1440));
+  const connectorHealthCheckIntervalMinutes = Math.max(
+    1,
+    Number(config?.schedule?.connectorHealthCheckIntervalMinutes || 720),
+  );
+  const actionMode = config?.actions?.mode || config?.deliveries?.github?.mode || 'issue';
+  const growthRunCommand = getGrowthRunCommand(config, displayConfigPath);
+  const connectorHealthCommand = getConnectorHealthCommand(config, displayConfigPath);
+  const manifest = {
+    version: 1,
+    generatedAt: new Date().toISOString(),
+    managedBy: 'openclaw-growth-wizard',
+    agentPolicy: {
+      openClawCanRunGrowthJobs: true,
+      openClawCanEditGrowthCadences: true,
+      openClawCanEditOutputDelivery: true,
+      openClawCanEditConnectors: true,
+      openClawCanEditConnectorSecrets: false,
+      connectorChanges: 'OpenClaw may read and modify non-secret connector config such as enabled flags, source commands, project/app mappings, and source priorities. Use `node scripts/openclaw-growth-wizard.mjs --connectors` for API keys or other connector secrets; never write secret values into config files, manifests, issues, PRs, or chat output.',
+      secretAccessMode: config?.security?.connectorSecrets?.mode || 'local-user-file',
+      secretPolicy: config?.security?.connectorSecrets?.mode === 'isolated-runner'
+        ? 'OpenClaw must use the allowlisted sudo wrapper commands and must not read the persisted secret file.'
+        : 'Secrets are persisted in a local chmod 600 file. This protects against other OS users, not against the same OS user.',
+    },
+    jobs: [
+      {
+        key: 'connector-health',
+        kind: 'health-check',
+        intervalMinutes: connectorHealthCheckIntervalMinutes,
+        command: connectorHealthCommand,
+        notificationPolicy: 'once_per_unhealthy_incident_until_recovery_or_changed_fingerprint',
+      },
+      {
+        key: 'growth-runner',
+        kind: 'growth-analysis',
+        intervalMinutes,
+        command: growthRunCommand,
+        outputMode: actionMode,
+        cadences: Array.isArray(config?.schedule?.cadences) ? config.schedule.cadences : [],
+      },
+    ],
+  };
+  await writeJsonFile(manifestPath, manifest);
+  return manifestPath;
+}
+
 async function main() {
   await loadOpenClawGrowthSecrets();
   const args = parseArgs(process.argv.slice(2));
@@ -2990,7 +3614,36 @@ async function main() {
   const rl = createInterface({ input: process.stdin, output: process.stdout });
   try {
     process.stdout.write('OpenClaw Growth Engineer - Setup Wizard\n');
-    process.stdout.write('This wizard writes non-secret config only.\n\n');
+    process.stdout.write('This wizard writes non-secret config only. Connector secrets stay in the local secrets file.\n\n');
+
+    const goal = await askWizardGoal(rl);
+    if (goal === 'connectors') {
+      rl.close();
+      await runConnectorSetupWizard({ ...args, connectorWizard: true });
+      return;
+    }
+    if (goal === 'intervals') {
+      const config = await askIntervalConfig(rl, await loadEditableConfig(configPath));
+      const secretAccess = await askSecretAccessModel(rl, configPath, config);
+      await writeJsonFile(configPath, config);
+      const manifestPath = await writeOpenClawJobManifest(configPath, config);
+      process.stdout.write(`\nSaved schedule config: ${configPath}\n`);
+      process.stdout.write(`Saved OpenClaw job manifest: ${manifestPath}\n`);
+      printSecretRunnerKitInstructions(secretAccess.kit);
+      process.stdout.write('OpenClaw can run and update growth jobs plus non-secret connector config from the manifest; connector API keys stay behind the connector wizard.\n');
+      return;
+    }
+    if (goal === 'output') {
+      const config = await askOutputConfig(rl, await loadEditableConfig(configPath));
+      const secretAccess = await askSecretAccessModel(rl, configPath, config);
+      await writeJsonFile(configPath, config);
+      const manifestPath = await writeOpenClawJobManifest(configPath, config);
+      process.stdout.write(`\nSaved output config: ${configPath}\n`);
+      process.stdout.write(`Saved OpenClaw job manifest: ${manifestPath}\n`);
+      printSecretRunnerKitInstructions(secretAccess.kit);
+      process.stdout.write('Connector-health alerts are deduped per unhealthy incident and sent through configured channels.\n');
+      return;
+    }
 
     const detectedRepo = await detectGitHubRepo();
     const githubRepo = await ask(
@@ -3009,7 +3662,7 @@ async function main() {
     const cadences = await askCadencePlan(rl);
     const actionMode = await askChoice(
       rl,
-      'Preferred GitHub output',
+      'Preferred GitHub artifact mode',
       ['issue', 'pull_request'],
       'issue',
     );
@@ -3120,22 +3773,82 @@ async function main() {
         draftPullRequests: true,
         proposalBranchPrefix: 'openclaw/proposals',
       },
+      deliveries: {
+        openclawChat: {
+          enabled: true,
+          markdownPath: '.openclaw/chat/latest.md',
+          jsonPath: '.openclaw/chat/latest.json',
+        },
+        github: {
+          enabled: autoCreateIssues || autoCreatePullRequests,
+          mode: actionMode,
+          autoCreate: autoCreateIssues || autoCreatePullRequests,
+          draftPullRequests: true,
+          proposalBranchPrefix: 'openclaw/proposals',
+        },
+        slack: {
+          enabled: false,
+          webhookEnv: 'SLACK_WEBHOOK_URL',
+        },
+        webhook: {
+          enabled: false,
+          urlEnv: 'OPENCLAW_WEBHOOK_URL',
+          method: 'POST',
+          headers: {},
+        },
+        discord: {
+          enabled: false,
+          command: 'node scripts/discord-openclaw-bridge.mjs send --stdin',
+        },
+      },
       charting: {
         enabled: enableCharting,
         command: chartCommand || null,
       },
+      notifications: {
+        connectorHealth: {
+          enabled: true,
+          channels: [
+            {
+              type: 'openclaw-chat',
+              enabled: true,
+              markdownPath: '.openclaw/chat/connector-health.md',
+              jsonPath: '.openclaw/chat/connector-health.json',
+            },
+          ],
+        },
+        growthRun: {
+          enabled: true,
+          channels: [
+            {
+              type: 'openclaw-chat',
+              enabled: true,
+              markdownPath: '.openclaw/chat/growth-summary.md',
+              jsonPath: '.openclaw/chat/growth-summary.json',
+            },
+          ],
+        },
+      },
       secrets: {
         githubTokenEnv: 'GITHUB_TOKEN',
+        githubTokenRef: { source: 'env', provider: 'default', id: 'GITHUB_TOKEN' },
         analyticsTokenEnv: 'ANALYTICSCLI_ACCESS_TOKEN',
+        analyticsTokenRef: { source: 'env', provider: 'default', id: 'ANALYTICSCLI_ACCESS_TOKEN' },
         revenuecatTokenEnv: 'REVENUECAT_API_KEY',
+        revenuecatTokenRef: { source: 'env', provider: 'default', id: 'REVENUECAT_API_KEY' },
         sentryTokenEnv: 'SENTRY_AUTH_TOKEN',
+        sentryTokenRef: { source: 'env', provider: 'default', id: 'SENTRY_AUTH_TOKEN' },
       },
     };
+    const secretAccess = await askSecretAccessModel(rl, configPath, config);
 
     await ensureDirForFile(configPath);
     await fs.writeFile(configPath, JSON.stringify(config, null, 2), 'utf8');
+    const manifestPath = await writeOpenClawJobManifest(configPath, config);
 
     process.stdout.write(`\nSaved config: ${configPath}\n`);
+    process.stdout.write(`Saved OpenClaw job manifest: ${manifestPath}\n`);
+    printSecretRunnerKitInstructions(secretAccess.kit);
     process.stdout.write('\nNext steps:\n');
     process.stdout.write(`1) Set secrets in OpenClaw secret store (env var names in config.secrets)\n`);
     if (extraSources.length > 0) {

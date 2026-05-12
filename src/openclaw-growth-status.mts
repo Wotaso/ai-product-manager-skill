@@ -4,7 +4,7 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import { spawn } from 'node:child_process';
-import { loadOpenClawGrowthSecrets } from './openclaw-growth-env.mjs';
+import { applyOpenClawSecretRefs, loadOpenClawGrowthSecrets } from './openclaw-growth-env.mjs';
 
 const DEFAULT_CONFIG_PATH = 'data/openclaw-growth-engineer/config.json';
 const DEFAULT_TIMEOUT_MS = 15_000;
@@ -356,6 +356,7 @@ async function main() {
   const args = parseArgs(process.argv.slice(2));
   const configPath = path.resolve(args.config);
   const config = await readJson(configPath);
+  await applyOpenClawSecretRefs(config);
   const preflight = await runPreflight(configPath, args.timeoutMs, args.progressJson);
   const preflightPayload = preflight.payload;
   emitProgress(args.progressJson, {

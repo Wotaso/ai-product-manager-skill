@@ -5,7 +5,7 @@ import process from 'node:process';
 import { createHash } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { getActionMode, getAllSourceEntries, getGitHubRequirementText, shouldAutoCreateGitHubArtifact, } from './openclaw-growth-shared.mjs';
-import { loadOpenClawGrowthSecrets } from './openclaw-growth-env.mjs';
+import { applyOpenClawSecretRefs, loadOpenClawGrowthSecrets } from './openclaw-growth-env.mjs';
 const DEFAULT_CONFIG_PATH = 'data/openclaw-growth-engineer/config.json';
 const DEFAULT_STATE_PATH = 'data/openclaw-growth-engineer/state.json';
 const DEFAULT_RUNTIME_DIR = 'data/openclaw-growth-engineer/runtime';
@@ -890,9 +890,20 @@ async function maybeRunConnectorHealthCheck({ config, configPath, state, statePa
         connectedConnectors,
         lastError: null,
     };
+    const previousIncidentFingerprint = healthState.lastStatusOk === false
+        ? healthState.activeIncidentFingerprint || healthState.lastAlertedFingerprint || null
+        : null;
+    if (unhealthyConnectors.length === 0) {
+        nextHealthState.activeIncidentFingerprint = null;
+        if (healthState.lastStatusOk === false) {
+            nextHealthState.lastRecoveredAt = checkedAt;
+        }
+    }
+    else {
+        nextHealthState.activeIncidentFingerprint = fingerprint;
+    }
     if (unhealthyConnectors.length > 0 &&
-        (healthState.lastAlertedFingerprint !== fingerprint ||
-            isDue(healthState.lastAlertedAt, intervalMinutes))) {
+        previousIncidentFingerprint !== fingerprint) {
         const message = buildConnectorHealthAlert(statusPayload, unhealthyConnectors);
         const paths = await writeConnectorHealthAlert(runtimeDir, message, statusPayload, unhealthyConnectors, fingerprint);
         const deliveries = await deliverConnectorHealthAlert({
@@ -1155,6 +1166,7 @@ function hasSourceChanges(previousHashes, currentHashes) {
 }
 async function runOnce(configPath, statePath) {
     const config = await readJson(configPath);
+    await applyOpenClawSecretRefs(config);
     await assertHardRequirements(config);
     const state = await readJsonOptional(statePath, {
         sourceHashes: {},

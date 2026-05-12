@@ -14,7 +14,7 @@ import {
   getGitHubRequirementText,
   shouldAutoCreateGitHubArtifact,
 } from './openclaw-growth-shared.mjs';
-import { loadOpenClawGrowthSecrets } from './openclaw-growth-env.mjs';
+import { applyOpenClawSecretRefs, loadOpenClawGrowthSecrets } from './openclaw-growth-env.mjs';
 
 const DEFAULT_CONFIG_PATH = 'data/openclaw-growth-engineer/config.json';
 const DEFAULT_CONNECTION_TIMEOUT_MS = 15_000;
@@ -1132,6 +1132,7 @@ async function main() {
   }
 
   if (config) {
+    await applyOpenClawSecretRefs(config);
     emitProgress(args.progressJson, {
       phase: 'start',
       key: 'preflight',
