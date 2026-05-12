@@ -270,9 +270,6 @@ function withMissingRequiredAnalyticsConnector(selected) {
         return orderConnectors(selected);
     return orderConnectors(['analytics', ...selected]);
 }
-async function askConnectorSelection(rl) {
-    return askConnectorSelectionWithHealth(rl, {}, []);
-}
 async function askConnectorSelectionWithHealth(rl, healthByConnector = {}, initialSelected = []) {
     if (!process.stdin.isTTY || !process.stdout.isTTY || !process.stdin.setRawMode) {
         return await askConnectorSelectionByText(rl, healthByConnector);
@@ -327,22 +324,6 @@ function orderConnectors(keys) {
 function printConnectorIntro() {
     process.stdout.write(`\n${ANSI.bold}OpenClaw connector setup${ANSI.reset}\n`);
     process.stdout.write(`${ANSI.dim}Secrets stay local on this host. Do not paste them into any chat or social channel.${ANSI.reset}\n\n`);
-}
-async function withTerminalLoading(message, task) {
-    const frames = ['-', '\\', '|', '/'];
-    let index = 0;
-    process.stdout.write(`${message} ${frames[index]}`);
-    const timer = setInterval(() => {
-        index = (index + 1) % frames.length;
-        process.stdout.write(`\r${message} ${frames[index]}`);
-    }, 120);
-    try {
-        return await task;
-    }
-    finally {
-        clearInterval(timer);
-        process.stdout.write(`\r${message} done\n`);
-    }
 }
 function normalizeConnectorProgressKey(key) {
     const normalized = String(key || '').trim().toLowerCase();
@@ -440,9 +421,6 @@ function connectorStatusLabel(key, healthByConnector = {}) {
     if (!configured)
         return 'not configured';
     return `configured, ${connectorHealthLabel(health.status)}`;
-}
-function formatConnectorHealthLine(key, healthByConnector = {}) {
-    return `${ANSI.dim}${formatConnectorHealthText(key, healthByConnector)}${ANSI.reset}`;
 }
 function formatConnectorHealthText(key, healthByConnector = {}) {
     const health = getConnectorHealth(key, healthByConnector);
@@ -1050,11 +1028,6 @@ function printSetupSuccess(payload) {
         process.stdout.write(`${payload.message}\n`);
     }
 }
-function healthCheckFailures(payload) {
-    return Array.isArray(payload?.checks)
-        ? payload.checks.filter((check) => check?.status === 'fail')
-        : [];
-}
 function connectorFromCheckName(name) {
     const value = String(name || '');
     if (value.includes('analytics') || value.includes('ANALYTICSCLI'))
@@ -1113,145 +1086,11 @@ function cleanHealthDetail(detail) {
     }
     return truncate(raw, 180);
 }
-function actionForHealthFailure(failure, configPath) {
-    const name = String(failure?.name || '');
-    const detail = String(failure?.detail || '');
-    if (name === 'project:github-repo' || /project\.githubRepo/i.test(detail)) {
-        return `No action required for Sentry setup. Set project.githubRepo in ${configPath} only if you want GitHub issue/PR delivery now.`;
-    }
-    if (name.includes('analytics') || /ANALYTICSCLI|analytics/i.test(detail)) {
-        return 'Paste a fresh AnalyticsCLI readonly token, then let the wizard retest AnalyticsCLI.';
-    }
-    if (name.includes('sentry') || /Sentry|GlitchTip/i.test(detail)) {
-        return 'Only fix this if token, org, or base URL is missing or invalid.';
-    }
-    if (name.includes('github')) {
-        return 'Configure GitHub token/repo access, or leave GitHub delivery disabled.';
-    }
-    if (name.includes('revenuecat')) {
-        return 'Paste a RevenueCat v2 secret API key with read-only project permissions.';
-    }
-    if (name.includes('asc')) {
-        return 'Paste ASC API key details or rerun ASC setup when ready.';
-    }
-    return 'Use the connector setup flow below to refresh this configuration.';
-}
 function isDeferredGitHubFailure(failure) {
     const name = String(failure?.name || '');
     const detail = String(failure?.detail || '');
     return (name === 'project:github-repo' ||
         (name === 'connection:github' && /project\.githubRepo|repo is missing|repo is not configured/i.test(detail)));
-}
-function isDeferredSentryProjectFailure(failure) {
-    const name = String(failure?.name || '');
-    const detail = String(failure?.detail || '');
-    return name.includes('sentry') && /No Sentry projects configured/i.test(detail);
-}
-function summarizeHealthFailure(failure, configPath) {
-    const name = String(failure?.name || '');
-    const detail = String(failure?.detail || '');
-    const connector = connectorFromCheckName(`${name} ${detail}`) || 'setup';
-    if (connector === 'analytics' && /invalid token|unauthorized|token has been revoked/i.test(detail)) {
-        return {
-            connector,
-            status: 'token invalid or expired',
-            action: 'paste a fresh readonly token',
-        };
-    }
-    if (connector === 'sentry' && /No Sentry projects configured/i.test(detail)) {
-        return {
-            connector,
-            status: 'project scope deferred',
-            action: 'no user action; OpenClaw discovers visible projects from org + token',
-        };
-    }
-    if (connector === 'github' && isDeferredGitHubFailure(failure)) {
-        return {
-            connector,
-            status: 'repo not known yet',
-            action: `optional; set project.githubRepo in ${configPath} only for GitHub delivery`,
-        };
-    }
-    return {
-        connector,
-        status: cleanHealthDetail(detail),
-        action: actionForHealthFailure(failure, configPath),
-    };
-}
-function printHealthFailures(failures, configPath) {
-    const summarized = [];
-    const seen = new Set();
-    for (const failure of failures) {
-        if (isDeferredGitHubFailure(failure))
-            continue;
-        if (isDeferredSentryProjectFailure(failure))
-            continue;
-        const summary = summarizeHealthFailure(failure, configPath);
-        const key = `${summary.connector}:${summary.status}:${summary.action}`;
-        if (seen.has(key))
-            continue;
-        seen.add(key);
-        summarized.push(summary);
-    }
-    if (summarized.length === 0) {
-        process.stdout.write('\nOnly deferred optional checks remain.\n\n');
-        return;
-    }
-    process.stdout.write('\nNeeds attention\n');
-    process.stdout.write('---------------\n');
-    for (const summary of summarized) {
-        process.stdout.write(`- ${connectorTitle(summary.connector)}: ${summary.status}\n`);
-        process.stdout.write(`  Next: ${summary.action}\n`);
-    }
-    process.stdout.write('\n');
-}
-function inferConnectorsFromHealthFailures(failures) {
-    const inferred = new Set();
-    for (const failure of failures) {
-        if (isDeferredGitHubFailure(failure))
-            continue;
-        if (isDeferredSentryProjectFailure(failure))
-            continue;
-        const connector = connectorFromCheckName(`${failure?.name || ''} ${failure?.detail || ''}`);
-        if (connector)
-            inferred.add(connector);
-    }
-    return orderConnectors([...inferred]);
-}
-async function getHealthCheckPlan(configPath, selected) {
-    const config = await readJsonIfPresent(configPath).catch(() => null);
-    const items = [
-        {
-            key: 'preflight',
-            label: 'Local preflight',
-            detail: 'config, dependencies, source wiring',
-            status: 'pending',
-        },
-    ];
-    const selectedSet = new Set(selected);
-    const hasAnalytics = selectedSet.has('analytics') ||
-        Boolean(process.env.ANALYTICSCLI_ACCESS_TOKEN?.trim() || process.env.ANALYTICSCLI_READONLY_TOKEN?.trim()) ||
-        (config?.sources?.analytics && config.sources.analytics.enabled !== false);
-    const sentryAccounts = Array.isArray(config?.sources?.sentry?.accounts) ? config.sources.sentry.accounts : [];
-    const hasSentry = selectedSet.has('sentry') ||
-        sentryAccounts.length > 0 ||
-        Boolean(process.env.SENTRY_AUTH_TOKEN?.trim() || process.env.GLITCHTIP_AUTH_TOKEN?.trim());
-    const hasRevenueCat = selectedSet.has('revenuecat') ||
-        Boolean(process.env.REVENUECAT_API_KEY?.trim()) ||
-        (config?.sources?.revenuecat && config.sources.revenuecat.enabled !== false);
-    const githubRepo = String(config?.project?.githubRepo || '').trim();
-    const hasGitHub = selectedSet.has('github') || Boolean(process.env.GITHUB_TOKEN?.trim()) || Boolean(githubRepo);
-    if (hasAnalytics)
-        items.push({ key: 'analytics', label: 'AnalyticsCLI', detail: 'token auth + readonly query', status: 'pending' });
-    if (hasSentry)
-        items.push({ key: 'sentry', label: 'Sentry / GlitchTip', detail: 'token/org API + project discovery', status: 'pending' });
-    if (hasRevenueCat)
-        items.push({ key: 'revenuecat', label: 'RevenueCat', detail: 'API key auth + project read', status: 'pending' });
-    if (hasGitHub && githubRepo)
-        items.push({ key: 'github', label: 'GitHub', detail: `repo access (${githubRepo})`, status: 'pending' });
-    if (hasGitHub && !githubRepo)
-        items.push({ key: 'github', label: 'GitHub', detail: 'skipped until repo is known', status: 'pending' });
-    return items;
 }
 function healthStatusLabel(status) {
     if (status === 'running')
@@ -1300,9 +1139,6 @@ function updateHealthProgress(items, event) {
         return true;
     }
     return false;
-}
-function allProgressItemsFinished(items) {
-    return items.length > 0 && items.every((item) => !['pending', 'running'].includes(String(item.status || '')));
 }
 function buildSetupTestProgressPlan(selected) {
     const selectedSet = new Set(selected);
@@ -1431,39 +1267,6 @@ async function runImmediateConnectorHealthCheck({ rl, configPath, connector, sec
     }
     process.stdout.write(`\n${connectorLabel(connector)} immediate health check passed or is only waiting on optional/deferred context.\n`);
     return { ok: true, retry: false, result, payload };
-}
-async function offerConfiguredConnectionFixes(rl, configPath, selected) {
-    if (!(await fileExists(configPath)))
-        return selected;
-    clearTerminal();
-    const plan = await getHealthCheckPlan(configPath, selected);
-    renderHealthProgress(plan, 'Starting live checks...');
-    const command = `node scripts/openclaw-growth-preflight.mjs --config ${quote(configPath)} --test-connections --progress-json`;
-    const result = await runCommandCaptureWithProgress(command, (event) => {
-        if (updateHealthProgress(plan, event)) {
-            renderHealthProgress(plan);
-        }
-    });
-    renderHealthProgress(plan, 'Checks finished.');
-    const payload = parseJsonFromStdout(result.stdout);
-    const failures = healthCheckFailures(payload).filter((failure) => !isDeferredGitHubFailure(failure) && !isDeferredSentryProjectFailure(failure));
-    if (payload?.ok === true || failures.length === 0) {
-        process.stdout.write('Configured connectors look healthy.\n\n');
-        return selected;
-    }
-    printHealthFailures(failures, configPath);
-    const inferred = inferConnectorsFromHealthFailures(failures);
-    if (inferred.length === 0) {
-        process.stdout.write('Continuing with the connector(s) you selected.\n\n');
-        return selected;
-    }
-    const fixNow = await askYesNo(rl, `Fix now (${inferred.join(', ')})?`, true);
-    clearTerminal();
-    if (!fixNow) {
-        process.stdout.write('Continuing with selected connector(s).\n\n');
-        return selected;
-    }
-    return orderConnectors([...new Set([...selected, ...inferred])]);
 }
 function getUserLocalBinDir() {
     return process.env.HOME ? path.join(process.env.HOME, '.local', 'bin') : null;
@@ -1906,7 +1709,7 @@ function apiListItems(payload) {
         return payload.teams;
     return [];
 }
-async function fetchSentryJsonPage({ baseUrl, token, url }) {
+async function fetchSentryJsonPage({ token, url }) {
     const normalizedToken = String(token || '').trim();
     const response = await fetch(url, {
         method: 'GET',
@@ -1940,7 +1743,7 @@ async function fetchSentryJsonList({ baseUrl, token, url }) {
     const pages = [];
     let nextUrl = url;
     for (let page = 0; nextUrl && page < 10; page += 1) {
-        const result = await fetchSentryJsonPage({ baseUrl, token, url: nextUrl });
+        const result = await fetchSentryJsonPage({ token, url: nextUrl });
         pages.push(result.detail);
         if (!result.ok)
             return { ...result, payload: items, detail: pages.join('; ') };
@@ -2695,7 +2498,7 @@ async function runConnectorSetupWizard(args) {
         const chosenConnectors = requestedConnectors.length > 0
             ? orderConnectors([...new Set([...requestedConnectors, ...existingFixes])])
             : await askConnectorSelectionWithHealth(rl, healthByConnector, existingFixes);
-        let selected = withMissingRequiredAnalyticsConnector(chosenConnectors);
+        const selected = withMissingRequiredAnalyticsConnector(chosenConnectors);
         if (selected.length === 0) {
             throw new Error('No supported connectors selected. Use analytics, github, revenuecat, sentry, asc, or all.');
         }
