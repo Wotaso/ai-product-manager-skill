@@ -14,6 +14,14 @@ const ENABLE_ISOLATED_SECRET_RUNNER_WIZARD = false;
 const DEFAULT_GROWTH_INTERVAL_MINUTES = 1440;
 const DEFAULT_CONNECTOR_HEALTH_INTERVAL_MINUTES = 360;
 const CONNECTOR_KEYS = ['analytics', 'github', 'revenuecat', 'sentry', 'asc'];
+class WizardAbortError extends Error {
+    exitCode;
+    constructor(message, exitCode = 130) {
+        super(message);
+        this.name = 'WizardAbortError';
+        this.exitCode = exitCode;
+    }
+}
 const CONNECTOR_DEFINITIONS = [
     {
         key: 'analytics',
@@ -275,11 +283,19 @@ async function askConnectorSelectionWithHealth(rl, healthByConnector = {}, initi
         return await askConnectorSelectionByText(rl, healthByConnector);
     }
     rl.pause();
+    let completed = false;
     try {
-        return await askConnectorSelectionByKeys(healthByConnector, initialSelected);
+        const selected = await askConnectorSelectionByKeys(healthByConnector, initialSelected);
+        completed = true;
+        return selected;
     }
     finally {
-        rl.resume();
+        if (completed) {
+            rl.resume();
+        }
+        else {
+            process.stdin.pause();
+        }
     }
 }
 async function askConnectorSelectionByText(rl, healthByConnector = {}) {
@@ -324,6 +340,107 @@ function orderConnectors(keys) {
 function printConnectorIntro() {
     process.stdout.write(`\n${ANSI.bold}OpenClaw connector setup${ANSI.reset}\n`);
     process.stdout.write(`${ANSI.dim}Secrets stay local on this host. Do not paste them into any chat or social channel.${ANSI.reset}\n\n`);
+}
+async function askMenuChoice(rl, { title, subtitle = 'Use Up/Down to move, Enter to continue.', options, defaultValue, renderHeader, }) {
+    if (!process.stdin.isTTY || !process.stdout.isTTY || !process.stdin.setRawMode) {
+        process.stdout.write(`\n${title}\n`);
+        options.forEach((option, index) => {
+            process.stdout.write(`  ${index + 1}) ${option.label}: ${option.detail}\n`);
+        });
+        const defaultIndex = Math.max(0, options.findIndex((option) => option.value === defaultValue));
+        const answer = await ask(rl, `Setup area (1-${options.length})`, String(defaultIndex + 1));
+        const selected = options[Number(answer.trim()) - 1] || options[defaultIndex];
+        return selected.value;
+    }
+    rl.pause();
+    let completed = false;
+    try {
+        const selected = await askMenuChoiceByKeys({ title, subtitle, options, defaultValue, renderHeader });
+        completed = true;
+        return selected;
+    }
+    finally {
+        if (completed) {
+            rl.resume();
+        }
+        else {
+            process.stdin.pause();
+        }
+    }
+}
+async function askMenuChoiceByKeys({ title, subtitle, options, defaultValue, renderHeader, }) {
+    emitKeypressEvents(process.stdin);
+    const wasRaw = process.stdin.isRaw;
+    const wasPaused = process.stdin.isPaused();
+    process.stdin.setRawMode(true);
+    process.stdin.resume();
+    let cursorIndex = Math.max(0, options.findIndex((option) => option.value === defaultValue));
+    return await new Promise((resolve, reject) => {
+        const cleanup = () => {
+            process.stdin.off('keypress', onKeypress);
+            process.stdin.setRawMode(Boolean(wasRaw));
+            if (wasPaused) {
+                process.stdin.pause();
+            }
+            process.stdout.write(ANSI.showCursor);
+        };
+        const render = () => {
+            process.stdout.write('\x1b[2J\x1b[H');
+            renderHeader?.();
+            process.stdout.write(`\n${ANSI.bold}${title}${ANSI.reset}\n`);
+            process.stdout.write(`${ANSI.dim}${subtitle}${ANSI.reset}\n\n`);
+            for (let index = 0; index < options.length; index += 1) {
+                const option = options[index];
+                const pointer = index === cursorIndex ? `${ANSI.cyan}>${ANSI.reset}` : ' ';
+                const number = `${index + 1})`;
+                process.stdout.write(`${pointer} ${number} ${ANSI.bold}${option.label}${ANSI.reset}\n`);
+                writeWrapped(option.detail, '     ', ANSI.dim);
+            }
+            process.stdout.write(`\n${ANSI.dim}Esc/Q cancels. Number keys 1-${options.length} select directly.${ANSI.reset}\n`);
+        };
+        const cancel = () => {
+            cleanup();
+            process.stdout.write('\n');
+            reject(new WizardAbortError('Setup cancelled.'));
+        };
+        const finish = () => {
+            cleanup();
+            process.stdout.write('\x1b[2J\x1b[H');
+            resolve(options[cursorIndex]?.value || defaultValue);
+        };
+        const onKeypress = (_text, key) => {
+            if (key?.ctrl && key?.name === 'c') {
+                cancel();
+                return;
+            }
+            if (key?.name === 'escape' || key?.name === 'q') {
+                cancel();
+                return;
+            }
+            if (key?.name === 'up' || key?.name === 'k') {
+                cursorIndex = (cursorIndex - 1 + options.length) % options.length;
+            }
+            else if (key?.name === 'down' || key?.name === 'j') {
+                cursorIndex = (cursorIndex + 1) % options.length;
+            }
+            else if (key?.name === 'return' || key?.name === 'enter') {
+                finish();
+                return;
+            }
+            else if (/^[1-9]$/.test(String(_text || ''))) {
+                const selectedIndex = Number(_text) - 1;
+                if (options[selectedIndex]) {
+                    cursorIndex = selectedIndex;
+                    finish();
+                    return;
+                }
+            }
+            render();
+        };
+        process.stdin.on('keypress', onKeypress);
+        process.stdout.write(ANSI.hideCursor);
+        render();
+    });
 }
 function normalizeConnectorProgressKey(key) {
     const normalized = String(key || '').trim().toLowerCase();
@@ -576,7 +693,7 @@ async function askConnectorSelectionByKeys(healthByConnector = {}, initialSelect
         const cancel = () => {
             cleanup();
             process.stdout.write('\n');
-            reject(new Error('Connector setup cancelled.'));
+            reject(new WizardAbortError('Connector setup cancelled.'));
         };
         const toggleCurrent = () => {
             const connector = selectedDisplayConnector();
@@ -2769,19 +2886,38 @@ async function askCadencePlan(rl) {
     return cadences;
 }
 async function askWizardGoal(rl) {
-    process.stdout.write('\nWhat do you want to configure?\n');
-    process.stdout.write('  1) Connectors: credentials, provider setup, and health checks\n');
-    process.stdout.write('  2) Outputs and intervals: daily/weekly/monthly jobs, GitHub issue/PR delivery, OpenClaw chat notifications\n');
-    process.stdout.write('  3) Full setup: project, connectors, outputs, intervals, and sources\n');
-    process.stdout.write('  4) Advanced intervals only: runner wake-up and connector health check cadence\n');
-    const answer = await ask(rl, 'Setup area (1/2/3/4)', '3');
-    if (answer.trim() === '1')
-        return 'connectors';
-    if (answer.trim() === '2')
-        return 'outputs_intervals';
-    if (answer.trim() === '4')
-        return 'intervals';
-    return 'full';
+    return await askMenuChoice(rl, {
+        title: 'What do you want to configure?',
+        subtitle: 'Use Up/Down to move, Enter to continue, or press 1-4.',
+        defaultValue: 'full',
+        renderHeader: printWizardHeader,
+        options: [
+            {
+                value: 'connectors',
+                label: 'Connectors',
+                detail: 'Credentials, provider setup, and health checks.',
+            },
+            {
+                value: 'outputs_intervals',
+                label: 'Outputs and intervals',
+                detail: 'Daily/weekly/monthly jobs, GitHub issue/PR delivery, and OpenClaw chat notifications.',
+            },
+            {
+                value: 'full',
+                label: 'Full setup',
+                detail: 'Project, connectors, outputs, intervals, and sources.',
+            },
+            {
+                value: 'intervals',
+                label: 'Advanced intervals only',
+                detail: 'Runner wake-up interval and connector health check cadence.',
+            },
+        ],
+    });
+}
+function printWizardHeader() {
+    process.stdout.write('OpenClaw Growth Engineer - Setup Wizard\n');
+    process.stdout.write('This wizard writes non-secret config only. Connector secrets stay in the local secrets file.\n\n');
 }
 async function buildDefaultWizardConfig() {
     const detectedRepo = await detectGitHubRepo();
@@ -3130,8 +3266,7 @@ async function main() {
     }
     const rl = createInterface({ input: process.stdin, output: process.stdout });
     try {
-        process.stdout.write('OpenClaw Growth Engineer - Setup Wizard\n');
-        process.stdout.write('This wizard writes non-secret config only. Connector secrets stay in the local secrets file.\n\n');
+        printWizardHeader();
         const goal = await askWizardGoal(rl);
         if (goal === 'connectors') {
             rl.close();
@@ -3334,5 +3469,5 @@ async function main() {
 }
 main().catch((error) => {
     process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
-    process.exitCode = 1;
+    process.exitCode = error instanceof WizardAbortError ? error.exitCode : 1;
 });

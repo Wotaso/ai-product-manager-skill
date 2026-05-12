@@ -30,9 +30,13 @@ test('wizard exposes connector and output interval setup paths', () => {
   const wizard = readFileSync(join(skillRoot, 'scripts/openclaw-growth-wizard.mjs'), 'utf8');
 
   assert.match(wizard, /What do you want to configure/);
-  assert.match(wizard, /Connectors: credentials, provider setup, and health checks/);
-  assert.match(wizard, /Outputs and intervals: daily\/weekly\/monthly jobs, GitHub issue\/PR delivery, OpenClaw chat notifications/);
-  assert.match(wizard, /Advanced intervals only: runner wake-up and connector health check cadence/);
+  assert.match(wizard, /Use Up\/Down to move, Enter to continue, or press 1-4/);
+  assert.match(wizard, /label: 'Connectors'/);
+  assert.match(wizard, /Credentials, provider setup, and health checks/);
+  assert.match(wizard, /label: 'Outputs and intervals'/);
+  assert.match(wizard, /Daily\/weekly\/monthly jobs, GitHub issue\/PR delivery, and OpenClaw chat notifications/);
+  assert.match(wizard, /label: 'Advanced intervals only'/);
+  assert.match(wizard, /Runner wake-up interval and connector health check cadence/);
   assert.match(wizard, /Daily Sentry and production guardrail/);
   assert.match(wizard, /openClawCanEditConnectors: true/);
   assert.match(wizard, /openClawCanEditConnectorSecrets: false/);
