@@ -3195,7 +3195,7 @@ async function buildDefaultWizardConfig() {
                 command: getWizardDefaultSourceCommand('analytics'),
             },
             revenuecat: {
-                enabled: false,
+                enabled: true,
                 mode: 'command',
                 command: getWizardDefaultSourceCommand('revenuecat'),
             },
@@ -3212,7 +3212,7 @@ async function buildDefaultWizardConfig() {
                 initialLookback: '30d',
             },
             extra: [
-                buildExtraSourceConfig('asc-cli', { enabled: false, mode: 'command', command: getWizardDefaultSourceCommand('asc') }),
+                buildExtraSourceConfig('asc-cli', { enabled: true, mode: 'command', command: getWizardDefaultSourceCommand('asc') }),
             ],
         },
         schedule: {
@@ -3228,6 +3228,7 @@ async function buildDefaultWizardConfig() {
             autoCreateWhenGitHubWriteAccess: true,
             disableAutoCreateGitHubArtifacts: false,
             mode: 'issue',
+            outputDestinations: ['openclaw_chat', 'github_issue', 'github_pull_request'],
             usageMode: 'production_autopilot',
             draftPullRequests: true,
             proposalBranchPrefix: 'openclaw/proposals',
@@ -3261,7 +3262,7 @@ async function buildDefaultWizardConfig() {
             },
         },
         charting: {
-            enabled: false,
+            enabled: true,
             command: null,
         },
         notifications: {
@@ -3308,7 +3309,7 @@ function buildRecommendedSourceConfig() {
             command: getWizardDefaultSourceCommand('analytics'),
         },
         revenuecat: {
-            enabled: false,
+            enabled: true,
             mode: 'command',
             command: getWizardDefaultSourceCommand('revenuecat'),
         },
@@ -3325,7 +3326,7 @@ function buildRecommendedSourceConfig() {
             initialLookback: '30d',
         },
         extra: [
-            buildExtraSourceConfig('asc-cli', { enabled: false, mode: 'command', command: getWizardDefaultSourceCommand('asc') }),
+            buildExtraSourceConfig('asc-cli', { enabled: true, mode: 'command', command: getWizardDefaultSourceCommand('asc') }),
         ],
     };
 }
@@ -3334,6 +3335,8 @@ function getInputChannelInitialSelection(config) {
     const extraSources = Array.isArray(sources.extra) ? sources.extra : [];
     const selected = new Set();
     const hasExplicitSources = Boolean(config?.sources);
+    if (!hasExplicitSources)
+        return orderConnectors([...CONNECTOR_KEYS]);
     if (!hasExplicitSources || sources.analytics?.enabled !== false)
         selected.add('analytics');
     if (sources.revenuecat?.enabled === true || isConnectorLocallyConfigured('revenuecat'))
@@ -3345,12 +3348,9 @@ function getInputChannelInitialSelection(config) {
         isConnectorLocallyConfigured('asc')) {
         selected.add('asc');
     }
-    if (config?.deliveries?.github?.enabled ||
-        config?.actions?.autoCreateIssues ||
-        config?.actions?.autoCreatePullRequests ||
-        isConnectorLocallyConfigured('github')) {
-        selected.add('github');
-    }
+    selected.add('github');
+    if (selected.size === 0)
+        return orderConnectors([...CONNECTOR_KEYS]);
     return orderConnectors([...selected]);
 }
 function buildSourceConfigFromInputChannels(selectedConnectors, existingSources = {}) {
@@ -3616,7 +3616,7 @@ async function askGitHubArtifactDetails(rl, config) {
     if (!customize) {
         config.charting = {
             ...(config.charting || {}),
-            enabled: config.charting?.enabled === true,
+            enabled: config.charting?.enabled !== false,
             command: config.charting?.command || null,
         };
         return config;

@@ -3,7 +3,7 @@ name: growth-engineer
 description: Growth Engineer for mobile apps and agent runtimes including OpenClaw and Hermes. Correlate analytics, crashes, billing, feedback, store signals, and repo context into proposal drafts that can flow into agent chat, GitHub issues, or draft pull requests.
 license: MIT
 homepage: https://github.com/Wotaso/growth-engineer-skill
-metadata: {"author":"wotaso","version":"1.0.107","analyticscli-target":"@analyticscli/cli","analyticscli-supported-range":">=0.1.2-preview.0 <0.2.0","openclaw":{"emoji":"🚀","homepage":"https://github.com/Wotaso/growth-engineer-skill","requires":{"bins":["node","analyticscli"]},"install":[{"id":"analyticscli-cli","kind":"node","package":"@analyticscli/cli@preview","bins":["analyticscli"],"label":"Install/update AnalyticsCLI CLI (npm package @analyticscli/cli@preview)"}]},"hermes":{"tags":["Growth","Analytics","Mobile","Product","OpenClaw","Hermes"],"homepage":"https://github.com/Wotaso/growth-engineer-skill","requires":{"bins":["node","analyticscli"]},"install":[{"id":"growth-engineer","kind":"skill","package":"Wotaso/growth-engineer-skill","label":"Install the shared Growth Engineer for Hermes"}]}}
+metadata: {"author":"wotaso","version":"1.0.108","analyticscli-target":"@analyticscli/cli","analyticscli-supported-range":">=0.1.2-preview.0 <0.2.0","openclaw":{"emoji":"🚀","homepage":"https://github.com/Wotaso/growth-engineer-skill","requires":{"bins":["node","analyticscli"]},"install":[{"id":"analyticscli-cli","kind":"node","package":"@analyticscli/cli@preview","bins":["analyticscli"],"label":"Install/update AnalyticsCLI CLI (npm package @analyticscli/cli@preview)"}]},"hermes":{"tags":["Growth","Analytics","Mobile","Product","OpenClaw","Hermes"],"homepage":"https://github.com/Wotaso/growth-engineer-skill","requires":{"bins":["node","analyticscli"]},"install":[{"id":"growth-engineer","kind":"skill","package":"Wotaso/growth-engineer-skill","label":"Install the shared Growth Engineer for Hermes"}]}}
 ---
 
 # Growth Engineer
@@ -42,6 +42,21 @@ npx -y @analyticscli/growth-engineer@preview wizard --connectors
 ```
 
 If npm/npx is unavailable, fall back to the bundled installed skill script path and run `node scripts/openclaw-growth-wizard.mjs --connectors` only after bootstrapping the workspace from the installed skill root.
+
+## Post-Setup Reply Contract
+
+After the VPS/host wizard finishes successfully, OpenClaw or Hermes should not answer with a generic agent-status paragraph. Reply in this minimal shape:
+
+1. Say that Growth Engineer setup completed.
+2. List only the configured connector groups and output destinations.
+3. Say that recurring health checks run every 6 hours by default and growth runs follow the configured daily/weekly/monthly cadence.
+4. Provide exactly one next command for a manual verification run:
+
+```bash
+npx -y @analyticscli/growth-engineer@preview run --config ~/data/openclaw-growth-engineer/config.json
+```
+
+Do not ask for project/repo scoping after successful setup. Do not claim a connector is broken unless `growth-engineer status --config ...` or the wizard result says it is blocked/partial.
 
 ## Hermes Startup Override
 
@@ -198,6 +213,7 @@ Growth operating plan:
 - Memory and change-correlation rule: inspect persisted OpenClaw state, prior summaries, release/build metadata, Git history/recent commits where available, and previously created issues/PRs before assigning causality. Prefer explanations that connect "what changed" to "what moved" across data sources.
 - Marketing/social rule: if social or marketing automation exists, treat it as a growth source when data is available. Ask for or configure account analytics case-by-case (TikTok, Instagram, ads, creator automation, landing pages, UTM/source data), then connect those signals back to acquisition quality, activation, retention, churn, and revenue instead of optimizing impressions alone.
 - Social summary rule: whenever the Growth Engineer completes a meaningful run, creates a finding, or detects connector/production-health attention, send a short summary through configured social/chat channels (OpenClaw chat, Slack, Discord command channel, generic webhook, or equivalent). Do not include secrets. Respect `notifications.growthRun.enabled=false`, `notifications.connectorHealth.enabled=false`, or a direct user request to stop social summaries.
+- Chart rule: when a result has meaningful numeric evidence, try to render a simple chart using the bundled Matplotlib script (`scripts/openclaw-growth-charts.py`). Prefer a bar/column chart for current-vs-baseline metrics and use other chart types only when they genuinely make the signal easier to understand. Attach generated PNGs to GitHub issues/PRs when GitHub artifact delivery is active. For chat/social/webhook delivery, include the chart manifest and local PNG attachment metadata so OpenClaw/Hermes can attach the images when the target channel supports file uploads.
 
 Production crash and ASC growth monitoring:
 

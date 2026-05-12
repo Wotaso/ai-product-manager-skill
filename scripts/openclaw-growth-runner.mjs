@@ -744,7 +744,26 @@ function getGrowthRunChannels(config) {
     }
     return channels;
 }
-function buildGrowthRunSummaryMessage({ issuesPayload, activeCadences, sourceFiles, createdGitHubArtifact }) {
+async function readChartAttachments(chartManifestPath) {
+    if (!chartManifestPath)
+        return [];
+    try {
+        const manifest = await readJson(chartManifestPath);
+        return Array.isArray(manifest?.charts)
+            ? manifest.charts
+                .map((chart) => ({
+                signalId: String(chart.signal_id || chart.signalId || '').trim(),
+                filePath: String(chart.file_path || chart.filePath || '').trim(),
+                caption: String(chart.caption || chart.title || 'Data chart').trim(),
+            }))
+                .filter((chart) => chart.filePath)
+            : [];
+    }
+    catch {
+        return [];
+    }
+}
+function buildGrowthRunSummaryMessage({ issuesPayload, activeCadences, sourceFiles, createdGitHubArtifact, charts = [] }) {
     const issueCount = Number(issuesPayload?.issue_count || 0);
     const cadenceNames = activeCadences.length > 0
         ? activeCadences.map((cadence) => cadence.title || cadence.key).join(', ')
@@ -762,6 +781,12 @@ function buildGrowthRunSummaryMessage({ issuesPayload, activeCadences, sourceFil
     if (createdGitHubArtifact) {
         lines.push('GitHub artifact creation was attempted for the generated proposals.');
     }
+    if (charts.length > 0) {
+        lines.push(`Charts generated: ${charts.length}`);
+        for (const chart of charts.slice(0, 5)) {
+            lines.push(`- ${chart.caption}: ${chart.filePath}`);
+        }
+    }
     const issues = Array.isArray(issuesPayload?.issues) ? issuesPayload.issues.slice(0, 3) : [];
     if (issues.length > 0) {
         lines.push('');
@@ -774,7 +799,7 @@ function buildGrowthRunSummaryMessage({ issuesPayload, activeCadences, sourceFil
     lines.push('No secrets were included. Use the generated issue drafts or OpenClaw chat handoff for details.');
     return `${lines.join('\n')}\n`;
 }
-async function writeConfiguredOpenClawChatGrowthSummary(configPath, channel, message, issuesPayload, activeCadences, fingerprint) {
+async function writeConfiguredOpenClawChatGrowthSummary(configPath, channel, message, issuesPayload, activeCadences, fingerprint, charts) {
     const baseDir = path.dirname(path.resolve(configPath));
     const markdownPath = path.resolve(baseDir, channel.markdownPath || '.openclaw/chat/growth-summary.md');
     const jsonPath = path.resolve(baseDir, channel.jsonPath || '.openclaw/chat/growth-summary.json');
@@ -788,6 +813,12 @@ async function writeConfiguredOpenClawChatGrowthSummary(configPath, channel, mes
         activeCadences,
         issueCount: Number(issuesPayload?.issue_count || 0),
         issues: Array.isArray(issuesPayload?.issues) ? issuesPayload.issues : [],
+        charts,
+        attachments: charts.map((chart) => ({
+            type: 'image/png',
+            path: chart.filePath,
+            caption: chart.caption,
+        })),
     }, null, 2), 'utf8');
     return {
         sent: true,
@@ -812,7 +843,7 @@ async function sendSlackGrowthSummary(channel, message) {
         detail: response.ok ? `HTTP ${response.status}` : `HTTP ${response.status}: ${await response.text()}`,
     };
 }
-async function sendWebhookGrowthSummary(channel, message, issuesPayload, activeCadences, fingerprint) {
+async function sendWebhookGrowthSummary(channel, message, issuesPayload, activeCadences, fingerprint, charts) {
     const urlEnv = channel.urlEnv || channel.webhookEnv || 'OPENCLAW_WEBHOOK_URL';
     const webhookUrl = process.env[urlEnv];
     if (!webhookUrl) {
@@ -832,6 +863,12 @@ async function sendWebhookGrowthSummary(channel, message, issuesPayload, activeC
             activeCadences,
             issueCount: Number(issuesPayload?.issue_count || 0),
             issues: Array.isArray(issuesPayload?.issues) ? issuesPayload.issues : [],
+            charts,
+            attachments: charts.map((chart) => ({
+                type: 'image/png',
+                path: chart.filePath,
+                caption: chart.caption,
+            })),
         }),
     });
     return {
@@ -851,7 +888,7 @@ async function sendCommandGrowthSummary(channel, message) {
         detail: result.ok ? result.stdout.trim() : result.stderr.trim() || result.stdout.trim() || `exit ${result.code}`,
     };
 }
-async function deliverGrowthRunSummary({ config, configPath, issuesPayload, activeCadences, sourceFiles, fingerprint, createdGitHubArtifact, }) {
+async function deliverGrowthRunSummary({ config, configPath, issuesPayload, activeCadences, sourceFiles, fingerprint, createdGitHubArtifact, chartManifestPath, }) {
     if (config?.notifications?.growthRun?.enabled === false) {
         return [{ sent: false, target: 'notifications', detail: 'growth run notifications disabled' }];
     }
@@ -859,23 +896,25 @@ async function deliverGrowthRunSummary({ config, configPath, issuesPayload, acti
     if (channels.length === 0) {
         return [{ sent: false, target: 'none', detail: 'no growth run notification channels configured' }];
     }
+    const charts = await readChartAttachments(chartManifestPath);
     const message = buildGrowthRunSummaryMessage({
         issuesPayload,
         activeCadences,
         sourceFiles,
         createdGitHubArtifact,
+        charts,
     });
     const results = [];
     for (const channel of channels) {
         try {
             if (channel.type === 'openclaw-chat') {
-                results.push(await writeConfiguredOpenClawChatGrowthSummary(configPath, channel, message, issuesPayload, activeCadences, fingerprint));
+                results.push(await writeConfiguredOpenClawChatGrowthSummary(configPath, channel, message, issuesPayload, activeCadences, fingerprint, charts));
             }
             else if (channel.type === 'slack') {
                 results.push(await sendSlackGrowthSummary(channel, message));
             }
             else if (channel.type === 'webhook') {
-                results.push(await sendWebhookGrowthSummary(channel, message, issuesPayload, activeCadences, fingerprint));
+                results.push(await sendWebhookGrowthSummary(channel, message, issuesPayload, activeCadences, fingerprint, charts));
             }
             else if (channel.type === 'command') {
                 results.push(await sendCommandGrowthSummary(channel, message));
@@ -1321,6 +1360,7 @@ async function runOnce(configPath, statePath) {
             sourceFiles,
             fingerprint: issueFingerprint,
             createdGitHubArtifact: shouldCreateGitHubArtifact,
+            chartManifestPath,
         }),
         skippedReason: null,
     }, null, 2), 'utf8');
