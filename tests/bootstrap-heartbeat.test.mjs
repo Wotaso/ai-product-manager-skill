@@ -29,7 +29,7 @@ test('bootstrap writes an actionable OpenClaw heartbeat task for empty workspace
     const heartbeat = readFileSync(join(workspace, 'HEARTBEAT.md'), 'utf8');
     assert.match(heartbeat, /tasks:/);
     assert.match(heartbeat, /name: openclaw-growth-engineer-run/);
-    assert.match(heartbeat, /interval: 12h/);
+    assert.match(heartbeat, /interval: 6h/);
     assert.match(heartbeat, /node scripts\/openclaw-growth-runner\.mjs --config data\/openclaw-growth-engineer\/config\.json/);
     assert.match(heartbeat, /HEARTBEAT_OK/);
   } finally {
@@ -49,13 +49,13 @@ test('bootstrap repairs comment-only HEARTBEAT.md files', () => {
     const heartbeat = readFileSync(join(workspace, 'HEARTBEAT.md'), 'utf8');
     assert.match(heartbeat, /tasks:/);
     assert.match(heartbeat, /name: openclaw-growth-engineer-run/);
-    assert.match(heartbeat, /interval: 12h/);
+    assert.match(heartbeat, /interval: 6h/);
   } finally {
     rmSync(workspace, { recursive: true, force: true });
   }
 });
 
-test('bootstrap updates existing managed HEARTBEAT.md blocks to the current 12h cadence', () => {
+test('bootstrap updates existing managed HEARTBEAT.md blocks to the current 6h cadence', () => {
   const workspace = mkdtempSync(join(tmpdir(), 'openclaw-heartbeat-'));
 
   try {
@@ -77,7 +77,7 @@ tasks:
     assert.equal(result.status, 0, `${result.stderr}\n${result.stdout}`);
 
     const heartbeat = readFileSync(join(workspace, 'HEARTBEAT.md'), 'utf8');
-    assert.match(heartbeat, /interval: 12h/);
+    assert.match(heartbeat, /interval: 6h/);
     assert.doesNotMatch(heartbeat, /interval: 1d/);
     assert.match(heartbeat, /connectorHealthCheckIntervalMinutes/);
   } finally {

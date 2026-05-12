@@ -11,6 +11,8 @@ import { loadOpenClawGrowthSecrets } from './openclaw-growth-env.mjs';
 const DEFAULT_CONFIG_PATH = 'data/openclaw-growth-engineer/config.json';
 const SELF_UPDATE_INTERVAL_MS = 24 * 60 * 60 * 1000;
 const ENABLE_ISOLATED_SECRET_RUNNER_WIZARD = false;
+const DEFAULT_GROWTH_INTERVAL_MINUTES = 1440;
+const DEFAULT_CONNECTOR_HEALTH_INTERVAL_MINUTES = 360;
 const CONNECTOR_KEYS = ['analytics', 'github', 'revenuecat', 'sentry', 'asc'];
 const CONNECTOR_DEFINITIONS = [
     {
@@ -47,33 +49,33 @@ const CONNECTOR_DEFINITIONS = [
 const DEFAULT_CADENCE_PLAN = [
     {
         key: 'daily',
-        title: 'Daily production guardrail',
+        title: 'Daily Sentry and production guardrail',
         intervalDays: 1,
         criticalOnly: true,
-        focusAreas: ['crash', 'conversion', 'paywall'],
-        sourcePriorities: ['sentry', 'glitchtip', 'analytics', 'asc_cli', 'revenuecat'],
-        objective: 'Only investigate critical production blockers and business anomalies: Sentry/GlitchTip production errors, crashes, very low users, conversion, purchases, or other urgent drops.',
-        instructions: 'Do exact root-cause analysis with connected production data, memory/state, release context, and recent code changes. Produce the fix or next debugging step; avoid generic growth ideas.',
+        focusAreas: ['sentry_errors', 'crash', 'onboarding', 'conversion', 'paywall', 'purchase'],
+        sourcePriorities: ['sentry', 'glitchtip', 'analytics', 'revenuecat', 'asc_cli', 'feedback', 'github'],
+        objective: 'Analyze every configured project for critical production blockers: Sentry/GlitchTip errors, crashes, onboarding or purchase drop-offs, zero-conversion days, missing buyers, very low users, and other silent business anomalies.',
+        instructions: 'Compare against recent baselines across connected sources and code changes. If the finding is critical, produce the exact fix or next debugging step and prefer a GitHub issue or draft PR when GitHub write access is configured; otherwise hand off via OpenClaw chat. Avoid generic growth ideas.',
     },
     {
         key: 'weekly',
-        title: 'Weekly conversion, traffic, and RevenueCat review',
+        title: 'Weekly executive product and growth summary',
         intervalDays: 7,
         criticalOnly: false,
-        focusAreas: ['conversion', 'paywall', 'onboarding', 'marketing', 'retention'],
-        sourcePriorities: ['analytics', 'revenuecat', 'asc_cli', 'feedback', 'sentry'],
-        objective: 'Analyze total conversion, traffic quality, activation, retention, RevenueCat trials/subscriptions/revenue/churn, source mix, reviews, releases, and stability.',
-        instructions: 'Pick one to three high-confidence growth bets with evidence, expected KPI movement, likely code/store surfaces, and verification plan.',
+        focusAreas: ['conversion', 'paywall', 'onboarding', 'marketing', 'retention', 'stability'],
+        sourcePriorities: ['analytics', 'revenuecat', 'asc_cli', 'feedback', 'sentry', 'github'],
+        objective: 'Create an executive summary across all configured projects, connectors, recent releases, code changes, revenue, activation, retention, reviews, and production stability.',
+        instructions: 'Pick one to three high-confidence improvements with evidence, expected KPI movement, likely code/store surfaces, owner-ready next steps, and a verification plan. Create GitHub issues or draft PR proposals only when the evidence is specific enough.',
     },
     {
         key: 'monthly',
-        title: 'Monthly business and product review',
+        title: 'Monthly deep product, business, and code review',
         intervalDays: 30,
         criticalOnly: false,
-        focusAreas: ['conversion', 'paywall', 'retention', 'marketing', 'onboarding'],
-        sourcePriorities: ['analytics', 'revenuecat', 'asc_cli', 'feedback', 'sentry'],
-        objective: 'Compare MRR, trial conversion, churn, acquisition quality, store conversion, retention, review themes, feature usage, and crash totals month-over-month.',
-        instructions: 'Decide what should be built, changed, or deleted next and explain why it should move revenue, activation, retention, or acquisition quality.',
+        focusAreas: ['conversion', 'paywall', 'retention', 'marketing', 'onboarding', 'codebase'],
+        sourcePriorities: ['analytics', 'revenuecat', 'asc_cli', 'feedback', 'sentry', 'github'],
+        objective: 'Compare all configured projects month-over-month: MRR, trial conversion, churn, acquisition quality, store conversion, retention, review themes, feature usage, crash totals, and codebase changes.',
+        instructions: 'Decide what should be built, changed, deleted, or instrumented next. Tie conclusions to connector data plus codebase evidence and explain why each recommendation should move revenue, activation, retention, stability, or acquisition quality.',
     },
     {
         key: 'quarterly',
@@ -81,8 +83,8 @@ const DEFAULT_CADENCE_PLAN = [
         intervalDays: 91,
         criticalOnly: false,
         focusAreas: ['marketing', 'paywall', 'retention', 'conversion', 'onboarding'],
-        sourcePriorities: ['analytics', 'revenuecat', 'asc_cli', 'feedback'],
-        objective: 'Revisit positioning, pricing/packaging, onboarding architecture, roadmap assumptions, tracking quality, and major funnel bets.',
+        sourcePriorities: ['analytics', 'revenuecat', 'asc_cli', 'feedback', 'github', 'sentry'],
+        objective: 'Revisit positioning, pricing/packaging, onboarding architecture, roadmap assumptions, tracking quality, codebase constraints, and major funnel bets across every configured project.',
         instructions: 'Find structural constraints and durable opportunities. Tie recommendations to cohort behavior, monetization, reviews, channel quality, and shipped changes.',
     },
     {
@@ -92,7 +94,7 @@ const DEFAULT_CADENCE_PLAN = [
         criticalOnly: false,
         focusAreas: ['retention', 'conversion', 'paywall', 'marketing', 'general'],
         sourcePriorities: ['analytics', 'revenuecat', 'asc_cli', 'feedback', 'sentry'],
-        objective: 'Audit connector coverage, SDK instrumentation, event taxonomy, data reliability, memory, growth loops, and whether strategy still matches the best users.',
+        objective: 'Audit connector coverage, SDK instrumentation, event taxonomy, data reliability, memory, growth loops, and whether product/code strategy still matches the best users across configured projects.',
         instructions: 'Prioritize measurement fixes and system changes that make future analysis more trustworthy. Identify stale events, missing attribution, weak identity, and misleading dashboards.',
     },
     {
@@ -102,7 +104,7 @@ const DEFAULT_CADENCE_PLAN = [
         criticalOnly: false,
         focusAreas: ['marketing', 'retention', 'paywall', 'conversion', 'general'],
         sourcePriorities: ['analytics', 'revenuecat', 'asc_cli', 'feedback', 'sentry'],
-        objective: 'Reset strategy from evidence: market/channel fit, monetization model, retention ceiling, product scope, and whether to double down, reposition, rebuild, or sunset major surfaces/features.',
+        objective: 'Reset strategy from evidence across every configured project: market/channel fit, monetization model, retention ceiling, product scope, and whether to double down, reposition, rebuild, or sunset major surfaces/features.',
         instructions: 'Use the full year of memory, releases, revenue, acquisition, reviews, code changes, and cohort behavior. Produce strategic experiments and stop-doing decisions.',
     },
 ];
@@ -2965,17 +2967,17 @@ async function askCadencePlan(rl) {
 }
 async function askWizardGoal(rl) {
     process.stdout.write('\nWhat do you want to configure?\n');
-    process.stdout.write('  1) Full setup: project, schedule, outputs, and sources\n');
-    process.stdout.write('  2) Connectors: credentials and provider health checks\n');
-    process.stdout.write('  3) Intervals: growth cadence and connector health check interval\n');
-    process.stdout.write('  4) Output: summary, GitHub issues, draft PRs, and notifications\n');
-    const answer = await ask(rl, 'Setup area (1/2/3/4)', '1');
-    if (answer.trim() === '2')
+    process.stdout.write('  1) Connectors: credentials, provider setup, and health checks\n');
+    process.stdout.write('  2) Outputs and intervals: daily/weekly/monthly jobs, GitHub issue/PR delivery, OpenClaw chat notifications\n');
+    process.stdout.write('  3) Full setup: project, connectors, outputs, intervals, and sources\n');
+    process.stdout.write('  4) Advanced intervals only: runner wake-up and connector health check cadence\n');
+    const answer = await ask(rl, 'Setup area (1/2/3/4)', '3');
+    if (answer.trim() === '1')
         return 'connectors';
-    if (answer.trim() === '3')
-        return 'intervals';
+    if (answer.trim() === '2')
+        return 'outputs_intervals';
     if (answer.trim() === '4')
-        return 'output';
+        return 'intervals';
     return 'full';
 }
 async function buildDefaultWizardConfig() {
@@ -3003,7 +3005,7 @@ async function buildDefaultWizardConfig() {
                 command: getDefaultSourceCommand('revenuecat'),
             },
             sentry: {
-                enabled: false,
+                enabled: true,
                 mode: 'command',
                 command: getDefaultSourceCommand('sentry'),
             },
@@ -3019,8 +3021,8 @@ async function buildDefaultWizardConfig() {
             ],
         },
         schedule: {
-            intervalMinutes: 1440,
-            connectorHealthCheckIntervalMinutes: 720,
+            intervalMinutes: DEFAULT_GROWTH_INTERVAL_MINUTES,
+            connectorHealthCheckIntervalMinutes: DEFAULT_CONNECTOR_HEALTH_INTERVAL_MINUTES,
             skipIfNoDataChange: true,
             skipIfIssueSetUnchanged: true,
             cadences: DEFAULT_CADENCE_PLAN.map((cadence) => ({ ...cadence })),
@@ -3028,6 +3030,8 @@ async function buildDefaultWizardConfig() {
         actions: {
             autoCreateIssues: false,
             autoCreatePullRequests: false,
+            autoCreateWhenGitHubWriteAccess: true,
+            disableAutoCreateGitHubArtifacts: false,
             mode: 'issue',
             usageMode: 'production_autopilot',
             draftPullRequests: true,
@@ -3149,9 +3153,9 @@ async function askNotificationChannels(rl, config) {
 }
 async function askOutputConfig(rl, config) {
     process.stdout.write('\nOutput type\n');
-    process.stdout.write('  1) Summary only: OpenClaw chat handoff and notifications\n');
-    process.stdout.write('  2) GitHub issue drafts: generate issue-ready handoffs, no auto-create by default\n');
-    process.stdout.write('  3) GitHub pull request drafts: generate PR-oriented proposal branches when enabled\n');
+    process.stdout.write('  1) OpenClaw chat plus automatic GitHub issue fallback when repo + token allow it\n');
+    process.stdout.write('  2) GitHub issues: create issues automatically when new findings are found\n');
+    process.stdout.write('  3) GitHub pull requests: create draft PR-oriented proposal branches when enabled\n');
     const currentMode = config?.actions?.mode || config?.deliveries?.github?.mode || 'issue';
     const currentAutoCreate = Boolean(config?.actions?.autoCreateIssues || config?.actions?.autoCreatePullRequests || config?.deliveries?.github?.autoCreate);
     const defaultChoice = currentAutoCreate ? (currentMode === 'pull_request' ? '3' : '2') : '1';
@@ -3186,6 +3190,8 @@ async function askOutputConfig(rl, config) {
         mode,
         autoCreateIssues: mode === 'issue' && autoCreate,
         autoCreatePullRequests: mode === 'pull_request' && autoCreate,
+        autoCreateWhenGitHubWriteAccess: config.actions?.autoCreateWhenGitHubWriteAccess !== false,
+        disableAutoCreateGitHubArtifacts: config.actions?.disableAutoCreateGitHubArtifacts === true,
         draftPullRequests: true,
         proposalBranchPrefix: config?.actions?.proposalBranchPrefix || 'openclaw/proposals',
     };
@@ -3240,8 +3246,8 @@ async function askOutputConfig(rl, config) {
 }
 async function askIntervalConfig(rl, config) {
     const currentSchedule = config?.schedule || {};
-    const intervalMinutes = Number.parseInt(await ask(rl, 'Growth runner wake-up interval in minutes', String(currentSchedule.intervalMinutes || 1440)), 10) || 1440;
-    const connectorHealthCheckIntervalMinutes = Number.parseInt(await ask(rl, 'Connector health check interval in minutes', String(currentSchedule.connectorHealthCheckIntervalMinutes || 720)), 10) || 720;
+    const intervalMinutes = Number.parseInt(await ask(rl, 'Growth runner wake-up interval in minutes', String(currentSchedule.intervalMinutes || DEFAULT_GROWTH_INTERVAL_MINUTES)), 10) || DEFAULT_GROWTH_INTERVAL_MINUTES;
+    const connectorHealthCheckIntervalMinutes = Number.parseInt(await ask(rl, 'Connector health check interval in minutes', String(currentSchedule.connectorHealthCheckIntervalMinutes || DEFAULT_CONNECTOR_HEALTH_INTERVAL_MINUTES)), 10) || DEFAULT_CONNECTOR_HEALTH_INTERVAL_MINUTES;
     const usageMode = await askToolUsage(rl);
     const cadences = await askCadencePlan(rl);
     config.schedule = {
@@ -3258,11 +3264,15 @@ async function askIntervalConfig(rl, config) {
     };
     return config;
 }
+async function askOutputsAndIntervalsConfig(rl, config) {
+    const withIntervals = await askIntervalConfig(rl, config);
+    return await askOutputConfig(rl, withIntervals);
+}
 async function writeOpenClawJobManifest(configPath, config) {
     const manifestPath = path.resolve('.openclaw/jobs/openclaw-growth-engineer.json');
     const displayConfigPath = path.relative(process.cwd(), configPath) || configPath;
-    const intervalMinutes = Math.max(1, Number(config?.schedule?.intervalMinutes || 1440));
-    const connectorHealthCheckIntervalMinutes = Math.max(1, Number(config?.schedule?.connectorHealthCheckIntervalMinutes || 720));
+    const intervalMinutes = Math.max(1, Number(config?.schedule?.intervalMinutes || DEFAULT_GROWTH_INTERVAL_MINUTES));
+    const connectorHealthCheckIntervalMinutes = Math.max(1, Number(config?.schedule?.connectorHealthCheckIntervalMinutes || DEFAULT_CONNECTOR_HEALTH_INTERVAL_MINUTES));
     const actionMode = config?.actions?.mode || config?.deliveries?.github?.mode || 'issue';
     const growthRunCommand = getGrowthRunCommand(config, displayConfigPath);
     const connectorHealthCommand = getConnectorHealthCommand(config, displayConfigPath);
@@ -3336,15 +3346,15 @@ async function main() {
             process.stdout.write('OpenClaw can run and update growth jobs plus non-secret connector config from the manifest; connector API keys stay behind the connector wizard.\n');
             return;
         }
-        if (goal === 'output') {
-            const config = await askOutputConfig(rl, await loadEditableConfig(configPath));
+        if (goal === 'outputs_intervals') {
+            const config = await askOutputsAndIntervalsConfig(rl, await loadEditableConfig(configPath));
             const secretAccess = await askSecretAccessModel(rl, configPath, config);
             await writeJsonFile(configPath, config);
             const manifestPath = await writeOpenClawJobManifest(configPath, config);
-            process.stdout.write(`\nSaved output config: ${configPath}\n`);
+            process.stdout.write(`\nSaved output and interval config: ${configPath}\n`);
             process.stdout.write(`Saved OpenClaw job manifest: ${manifestPath}\n`);
             printSecretRunnerKitInstructions(secretAccess.kit);
-            process.stdout.write('Connector-health alerts are deduped per unhealthy incident and sent through configured channels.\n');
+            process.stdout.write('Daily checks prioritize Sentry and production anomalies; larger cadences analyze all configured projects and connectors.\n');
             return;
         }
         const detectedRepo = await detectGitHubRepo();
@@ -3355,7 +3365,9 @@ async function main() {
             .map((value) => value.trim())
             .filter(Boolean);
         const maxIssues = Number.parseInt(await ask(rl, 'Max issues per run', '4'), 10) || 4;
-        const intervalMinutes = Number.parseInt(await ask(rl, 'Check interval in minutes', '1440'), 10) || 1440;
+        const intervalMinutes = Number.parseInt(await ask(rl, 'Growth runner wake-up interval in minutes', String(DEFAULT_GROWTH_INTERVAL_MINUTES)), 10) ||
+            DEFAULT_GROWTH_INTERVAL_MINUTES;
+        const connectorHealthCheckIntervalMinutes = Number.parseInt(await ask(rl, 'Connector health check interval in minutes', String(DEFAULT_CONNECTOR_HEALTH_INTERVAL_MINUTES)), 10) || DEFAULT_CONNECTOR_HEALTH_INTERVAL_MINUTES;
         const usageMode = await askToolUsage(rl);
         const cadences = await askCadencePlan(rl);
         const actionMode = await askChoice(rl, 'Preferred GitHub artifact mode', ['issue', 'pull_request'], 'issue');
@@ -3364,7 +3376,10 @@ async function main() {
             defaultCommand: getDefaultSourceCommand('analytics'),
         });
         const revenuecat = await askSourceConfig(rl, 'revenuecat', 'data/openclaw-growth-engineer/revenuecat_summary.example.json', getDefaultSourceHint('revenuecat'));
-        const sentry = await askSourceConfig(rl, 'sentry', 'data/openclaw-growth-engineer/sentry_summary.example.json', getDefaultSourceHint('sentry'));
+        const sentry = await askSourceConfig(rl, 'sentry', 'data/openclaw-growth-engineer/sentry_summary.example.json', getDefaultSourceHint('sentry'), {
+            defaultEnabled: true,
+            defaultCommand: getDefaultSourceCommand('sentry'),
+        });
         const feedback = await askSourceConfig(rl, 'feedback', 'data/openclaw-growth-engineer/feedback_summary.example.json', getDefaultSourceHint('feedback'), {
             defaultEnabled: true,
             defaultCommand: getDefaultSourceCommand('feedback'),
@@ -3410,7 +3425,7 @@ async function main() {
             },
             schedule: {
                 intervalMinutes,
-                connectorHealthCheckIntervalMinutes: 720,
+                connectorHealthCheckIntervalMinutes,
                 skipIfNoDataChange: true,
                 skipIfIssueSetUnchanged: true,
                 cadences,
@@ -3418,6 +3433,8 @@ async function main() {
             actions: {
                 autoCreateIssues,
                 autoCreatePullRequests,
+                autoCreateWhenGitHubWriteAccess: true,
+                disableAutoCreateGitHubArtifacts: false,
                 mode: actionMode,
                 usageMode,
                 draftPullRequests: true,

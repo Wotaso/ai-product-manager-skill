@@ -181,7 +181,7 @@ Expected heartbeat task:
 tasks:
 
 - name: openclaw-growth-engineer-run
-  interval: 12h
+  interval: 6h
   prompt: "Run `node scripts/openclaw-growth-runner.mjs --config data/openclaw-growth-engineer/config.json` from the workspace if the config and runtime files exist. The runner owns schedule.cadences, connectorHealthCheckIntervalMinutes, skipIfNoDataChange, and skipIfIssueSetUnchanged. If it reports connector-health alerts, production crashes, generated issues, or actionable growth findings, summarize only the action and evidence. If setup files are missing, tell the user to run `node scripts/openclaw-growth-wizard.mjs --connectors`. If there is no actionable output, reply HEARTBEAT_OK."
 ```
 
@@ -189,12 +189,12 @@ When `schedule.intervalMinutes` or `schedule.connectorHealthCheckIntervalMinutes
 
 ## 7a) Production Health And Growth Cadence
 
-The default growth loop interval is one day (`schedule.intervalMinutes = 1440`), while connector health runs every 12 hours by default (`schedule.connectorHealthCheckIntervalMinutes = 720`). Daily growth runs should cover public production apps only.
+The default growth loop interval is one day (`schedule.intervalMinutes = 1440`), while connector health runs every 6 hours by default (`schedule.connectorHealthCheckIntervalMinutes = 360`). Daily growth runs should cover every configured public production app.
 If ASC web analytics returns a 403 for an app that is not public yet, record it as skipped/not-public rather than a failure.
 
 Daily:
 
-- Only investigate critical production or business-health issues: Sentry/GlitchTip production errors, crashes, very low users, conversion, purchases, or other urgent drops.
+- Only investigate critical production or business-health issues: Sentry/GlitchTip production errors, crashes, onboarding or purchase drop-offs, zero-conversion days, missing buyers, very low users, conversion, purchases, or other urgent drops.
 - Check ASC total production crashes by app version and Sentry production issues/events/users.
 - Notify the OpenClaw user through configured chat/social delivery when total production crashes are non-zero.
 - Check every available ASC overview metric, especially units/downloads, redownloads, conversion rate, app usage, updates, app opens, subscription state, source traffic, and unique product page views by source, but only alert on severe anomalies during daily-only runs.
@@ -206,12 +206,12 @@ Daily:
 Weekly:
 
 - Compare units, conversion, source mix, AnalyticsCLI activation/funnels/retention, Sentry stability, RevenueCat monetization when enabled, reviews, and releases.
-- Produce one to three Handlungsempfehlungen with evidence, expected KPI movement, and likely code/store surfaces.
+- Produce one executive summary plus one to three Handlungsempfehlungen with evidence, expected KPI movement, and likely code/store surfaces.
 
 Monthly:
 
 - Compare month-over-month units/downloads, redownloads, conversion, source quality, crash totals, review themes, retention, and churn.
-- Decide which acquisition channel, listing element, onboarding step, paywall, or feature should be built, changed, or deleted.
+- Decide which acquisition channel, listing element, onboarding step, paywall, feature, or instrumentation surface should be built, changed, deleted, or repaired from codebase evidence.
 
 Every 3 months:
 
