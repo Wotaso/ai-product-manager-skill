@@ -55,18 +55,23 @@ for f in "${SKILL_ROOT}/data/openclaw-growth-engineer/"*.json; do
 done
 
 heartbeat_path="${WORKSPACE}/HEARTBEAT.md"
+heartbeat_config_path="data/openclaw-growth-engineer/config.json"
+if [[ ! -f "${WORKSPACE}/data/openclaw-growth-engineer/config.json" && -n "${HOME:-}" && -f "${HOME}/data/openclaw-growth-engineer/config.json" ]]; then
+  heartbeat_config_path="${HOME}/data/openclaw-growth-engineer/config.json"
+fi
 heartbeat_block="$(cat <<'EOF'
 <!-- openclaw-growth-engineer:start -->
 tasks:
 
 - name: openclaw-growth-engineer-run
   interval: 6h
-  prompt: "Run `node scripts/openclaw-growth-runner.mjs --config data/openclaw-growth-engineer/config.json` from the workspace if the config and runtime files exist. The runner owns schedule.cadences, connectorHealthCheckIntervalMinutes, skipIfNoDataChange, and skipIfIssueSetUnchanged. If it reports connector-health alerts, production crashes, generated issues, or actionable growth findings, summarize only the action and evidence. If setup files are missing, tell the user to run `node scripts/openclaw-growth-wizard.mjs --connectors`. If there is no actionable output, reply HEARTBEAT_OK."
+  prompt: "Run `node scripts/openclaw-growth-runner.mjs --config __OPENCLAW_GROWTH_CONFIG_PATH__` from the workspace if the config and runtime files exist. The runner owns schedule.cadences, connectorHealthCheckIntervalMinutes, skipIfNoDataChange, and skipIfIssueSetUnchanged. If it reports connector-health alerts, production crashes, generated issues, or actionable growth findings, summarize only the action and evidence. If setup files are missing, tell the user to run `node scripts/openclaw-growth-wizard.mjs --connectors`. If there is no actionable output, reply HEARTBEAT_OK."
 
 # Keep this section small. Do not put secrets in HEARTBEAT.md.
 <!-- openclaw-growth-engineer:end -->
 EOF
 )"
+heartbeat_block="${heartbeat_block//__OPENCLAW_GROWTH_CONFIG_PATH__/${heartbeat_config_path}}"
 
 HEARTBEAT_PATH="${heartbeat_path}" HEARTBEAT_BLOCK="${heartbeat_block}" node <<'NODE'
 const fs = require('node:fs');

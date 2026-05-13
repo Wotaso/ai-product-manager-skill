@@ -112,3 +112,33 @@ test('bootstrap supports canonical ClawHub growth-engineer install slug', () => 
     rmSync(workspace, { recursive: true, force: true });
   }
 });
+
+test('bootstrap points heartbeat at legacy home config when workspace config is missing', () => {
+  const workspace = mkdtempSync(join(tmpdir(), 'openclaw-heartbeat-'));
+  const home = mkdtempSync(join(tmpdir(), 'openclaw-home-'));
+  const legacyConfigDir = join(home, 'data', 'openclaw-growth-engineer');
+  const legacyConfigPath = join(legacyConfigDir, 'config.json');
+
+  try {
+    mkdirSync(legacyConfigDir, { recursive: true });
+    writeFileSync(legacyConfigPath, '{"version":1}\n');
+
+    const result = spawnSync('bash', [bootstrap], {
+      env: {
+        ...process.env,
+        HOME: home,
+        OPENCLAW_GROWTH_WORKSPACE: workspace,
+        OPENCLAW_GROWTH_BOOTSTRAP_SKIP_UPDATE: '1',
+      },
+      encoding: 'utf8',
+    });
+    assert.equal(result.status, 0, `${result.stderr}\n${result.stdout}`);
+
+    const heartbeat = readFileSync(join(workspace, 'HEARTBEAT.md'), 'utf8');
+    assert.match(heartbeat, /name: openclaw-growth-engineer-run/);
+    assert.match(heartbeat, new RegExp(`--config ${legacyConfigPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
+  } finally {
+    rmSync(workspace, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+  }
+});
