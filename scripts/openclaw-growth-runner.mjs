@@ -146,6 +146,19 @@ function replaceLegacyRuntimeScriptCommand(command) {
         return trimmed;
     return trimmed.replace(/^node\s+scripts\/(export-analytics-summary\.mjs|export-revenuecat-summary\.mjs|export-sentry-summary\.mjs|export-asc-summary\.mjs|openclaw-growth-engineer\.mjs|openclaw-growth-status\.mjs|openclaw-growth-preflight\.mjs|openclaw-growth-runner\.mjs)(?=\s|$)/, (_match, scriptName) => nodeRuntimeScriptCommand(scriptName));
 }
+function commandHasConfigArg(command) {
+    return /(?:^|\s)--config(?:=|\s|$)/.test(String(command || ''));
+}
+function commandShouldReceiveActiveConfig(command) {
+    return /(?:^|\s)(?:node\s+)?(?:\S*\/)?(?:export-analytics-summary|export-revenuecat-summary|export-sentry-summary|export-asc-summary)\.mjs(?:\s|$)/.test(String(command || ''));
+}
+function withActiveConfigArg(command, configPath) {
+    const trimmed = String(command || '').trim();
+    if (!trimmed || !configPath || commandHasConfigArg(trimmed) || !commandShouldReceiveActiveConfig(trimmed)) {
+        return trimmed;
+    }
+    return `${trimmed} --config ${quote(configPath)}`;
+}
 async function readJson(filePath) {
     const raw = await fs.readFile(filePath, 'utf8');
     return JSON.parse(raw);
@@ -1159,7 +1172,7 @@ function resolveCursorAwareCommand(command, sourceConfig, cursorState) {
     const lookback = normalizeLookback(sourceConfig?.initialLookback, '30d');
     return `${rawCommand} --last ${quote(lookback)}`;
 }
-async function resolveSourcePayloadWithCursor(sourceConfig, sourceName, cursorState, commandCwd = process.cwd()) {
+async function resolveSourcePayloadWithCursor(sourceConfig, sourceName, cursorState, commandCwd = process.cwd(), configPath = null) {
     if (!sourceConfig || sourceConfig.enabled === false) {
         return {
             payload: null,
@@ -1171,7 +1184,7 @@ async function resolveSourcePayloadWithCursor(sourceConfig, sourceName, cursorSt
         if (!sourceConfig.command) {
             throw new Error(`Source "${sourceName}" has mode=command but no command configured.`);
         }
-        const resolvedCommand = resolveCursorAwareCommand(replaceLegacyRuntimeScriptCommand(sourceConfig.command), sourceConfig, cursorState);
+        const resolvedCommand = resolveCursorAwareCommand(withActiveConfigArg(replaceLegacyRuntimeScriptCommand(sourceConfig.command), configPath), sourceConfig, cursorState);
         const result = await runShellCommand(String(resolvedCommand), 120_000, { cwd: commandCwd });
         if (!result.ok) {
             throw new Error(`Source "${sourceName}" command failed: ${result.stderr || `exit ${result.code}`}`);
@@ -1203,13 +1216,13 @@ async function resolveSourcePayloadWithCursor(sourceConfig, sourceName, cursorSt
         resolvedCommand: null,
     };
 }
-async function loadSourcePayloads(config, state) {
+async function loadSourcePayloads(config, state, configPath) {
     const payloads = {};
     const sourceCursors = { ...(state?.sourceCursors || {}) };
     const commandCwd = getProjectCommandCwd(config);
     for (const source of getAllSourceEntries(config)) {
         const currentCursor = sourceCursors[source.key] || null;
-        const result = await resolveSourcePayloadWithCursor(source, source.key, currentCursor, commandCwd);
+        const result = await resolveSourcePayloadWithCursor(source, source.key, currentCursor, commandCwd, configPath);
         const payload = result.payload;
         if (payload) {
             payloads[source.key] = payload;
@@ -1272,7 +1285,7 @@ async function runOnce(configPath, statePath) {
         runtimeDir,
     });
     const activeCadences = getDueCadences(config, stateAfterHealthCheck);
-    const { payloads, sourceCursors } = await loadSourcePayloads(config, stateAfterHealthCheck);
+    const { payloads, sourceCursors } = await loadSourcePayloads(config, stateAfterHealthCheck, configPath);
     const currentHashes = computeSourceHashes(payloads);
     const changed = hasSourceChanges(stateAfterHealthCheck.sourceHashes, currentHashes);
     if (!changed && config.schedule?.skipIfNoDataChange !== false) {

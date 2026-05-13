@@ -134,7 +134,7 @@
   },
   "actions": {
     "mode": "issue",
-    "autoCreateIssues": false,
+    "autoCreateIssues": true,
     "autoCreatePullRequests": false,
     "autoCreateWhenGitHubWriteAccess": true,
     "disableAutoCreateGitHubArtifacts": false,

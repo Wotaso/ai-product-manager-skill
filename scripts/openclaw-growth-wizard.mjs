@@ -3223,7 +3223,7 @@ async function buildDefaultWizardConfig() {
             cadences: DEFAULT_CADENCE_PLAN.map((cadence) => ({ ...cadence })),
         },
         actions: {
-            autoCreateIssues: false,
+            autoCreateIssues: true,
             autoCreatePullRequests: false,
             autoCreateWhenGitHubWriteAccess: true,
             disableAutoCreateGitHubArtifacts: false,
@@ -3240,9 +3240,9 @@ async function buildDefaultWizardConfig() {
                 jsonPath: '.openclaw/chat/latest.json',
             },
             github: {
-                enabled: false,
+                enabled: true,
                 mode: 'issue',
-                autoCreate: false,
+                autoCreate: true,
                 draftPullRequests: true,
                 proposalBranchPrefix: 'openclaw/proposals',
             },

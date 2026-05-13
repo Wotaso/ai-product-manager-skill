@@ -152,6 +152,19 @@ function replaceLegacyRuntimeScriptCommand(command) {
         return trimmed;
     return trimmed.replace(/^node\s+scripts\/(export-analytics-summary\.mjs|export-revenuecat-summary\.mjs|export-sentry-summary\.mjs|export-asc-summary\.mjs|openclaw-growth-start\.mjs|openclaw-growth-status\.mjs|openclaw-growth-preflight\.mjs|openclaw-growth-runner\.mjs|openclaw-growth-engineer\.mjs)(?=\s|$)/, (_match, scriptName) => nodeRuntimeScriptCommand(scriptName));
 }
+function commandHasConfigArg(command) {
+    return /(?:^|\s)--config(?:=|\s|$)/.test(String(command || ''));
+}
+function commandShouldReceiveActiveConfig(command) {
+    return /(?:^|\s)(?:node\s+)?(?:\S*\/)?(?:export-analytics-summary|export-revenuecat-summary|export-sentry-summary|export-asc-summary)\.mjs(?:\s|$)/.test(String(command || ''));
+}
+function withActiveConfigArg(command, configPath) {
+    const trimmed = String(command || '').trim();
+    if (!trimmed || !configPath || commandHasConfigArg(trimmed) || !commandShouldReceiveActiveConfig(trimmed)) {
+        return trimmed;
+    }
+    return `${trimmed} --config ${shellQuote(configPath)}`;
+}
 function resolveShellCommand() {
     const candidates = [
         process.env.OPENCLAW_SHELL,
@@ -751,7 +764,7 @@ async function testCommandSourceJson(command, cwd = process.cwd()) {
 function onlyAllows(onlyConnectors, connector) {
     return !Array.isArray(onlyConnectors) || onlyConnectors.length === 0 || onlyConnectors.includes(connector);
 }
-async function runConnectionChecks({ checks, config, timeoutMs, progressJson = false, onlyConnectors = [] }) {
+async function runConnectionChecks({ checks, config, configPath, timeoutMs, progressJson = false, onlyConnectors = [] }) {
     const tasks = [];
     const analyticsTokenEnv = getSecretName(config, 'analyticsTokenEnv', 'ANALYTICSCLI_ACCESS_TOKEN');
     const revenuecatTokenEnv = getSecretName(config, 'revenuecatTokenEnv', 'REVENUECAT_API_KEY');
@@ -779,7 +792,7 @@ async function runConnectionChecks({ checks, config, timeoutMs, progressJson = f
                         ? analyticsConnection.detail
                         : describeAnalyticsConnectionFailure(analyticsConnection.detail, analyticsTokenEnv, hasAnalyticsToken), analyticsConnection.ok ? 'pass' : analyticsSource?.mode === 'command' ? 'fail' : 'warn');
                     if (analyticsSource?.mode === 'command') {
-                        const command = replaceLegacyRuntimeScriptCommand(String(analyticsSource.command || '').trim());
+                        const command = withActiveConfigArg(replaceLegacyRuntimeScriptCommand(String(analyticsSource.command || '').trim()), configPath);
                         if (!command) {
                             addCheck(checks, 'connection:analytics-command', false, 'analytics source uses command mode but no command configured');
                         }
@@ -844,7 +857,7 @@ async function runConnectionChecks({ checks, config, timeoutMs, progressJson = f
                             : `${account.label} auth check failed (${sentryConnection.detail})`);
                     }
                     if (sentrySource?.mode === 'command') {
-                        const command = replaceLegacyRuntimeScriptCommand(String(sentrySource.command || '').trim());
+                        const command = withActiveConfigArg(replaceLegacyRuntimeScriptCommand(String(sentrySource.command || '').trim()), configPath);
                         if (!command) {
                             addCheck(groupChecks, 'connection:sentry-command', false, 'sentry source uses command mode but no command configured');
                         }
@@ -867,7 +880,7 @@ async function runConnectionChecks({ checks, config, timeoutMs, progressJson = f
         // Skip feedback during focused connector checks.
     }
     else if (sourceEnabled(config, 'feedback') && feedbackSource?.mode === 'command') {
-        const command = replaceLegacyRuntimeScriptCommand(String(feedbackSource.command || '').trim());
+        const command = withActiveConfigArg(replaceLegacyRuntimeScriptCommand(String(feedbackSource.command || '').trim()), configPath);
         if (!command) {
             addCheck(checks, 'connection:feedback', false, 'feedback source uses command mode but no command configured');
         }
@@ -906,7 +919,7 @@ async function runConnectionChecks({ checks, config, timeoutMs, progressJson = f
             continue;
         }
         if (extraSource.mode === 'command') {
-            const command = replaceLegacyRuntimeScriptCommand(String(extraSource.command || '').trim());
+            const command = withActiveConfigArg(replaceLegacyRuntimeScriptCommand(String(extraSource.command || '').trim()), configPath);
             if (!command) {
                 addCheck(checks, checkName, false, 'source uses command mode but no command configured');
                 continue;
@@ -1105,6 +1118,7 @@ async function main() {
             await runConnectionChecks({
                 checks,
                 config,
+                configPath,
                 progressJson: args.progressJson,
                 timeoutMs: args.timeoutMs,
                 onlyConnectors: args.onlyConnectors,
