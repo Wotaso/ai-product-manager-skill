@@ -56,7 +56,11 @@ done
 
 heartbeat_path="${WORKSPACE}/HEARTBEAT.md"
 heartbeat_config_path="data/openclaw-growth-engineer/config.json"
-if [[ ! -f "${WORKSPACE}/data/openclaw-growth-engineer/config.json" && -n "${HOME:-}" && -f "${HOME}/data/openclaw-growth-engineer/config.json" ]]; then
+if [[ -n "${OPENCLAW_GROWTH_CONFIG_PATH:-}" ]]; then
+  heartbeat_config_path="${OPENCLAW_GROWTH_CONFIG_PATH}"
+elif [[ -n "${HOME:-}" && -f "${HOME}/data/openclaw-growth-engineer/config.json" && -f "${HOME}/data/openclaw-growth-engineer/state.json" ]]; then
+  heartbeat_config_path="${HOME}/data/openclaw-growth-engineer/config.json"
+elif [[ ! -f "${WORKSPACE}/data/openclaw-growth-engineer/config.json" && -n "${HOME:-}" && -f "${HOME}/data/openclaw-growth-engineer/config.json" ]]; then
   heartbeat_config_path="${HOME}/data/openclaw-growth-engineer/config.json"
 fi
 heartbeat_block="$(cat <<'EOF'
