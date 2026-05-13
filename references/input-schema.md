@@ -157,7 +157,7 @@ Rules for recommendations:
 
 - alert daily on non-zero production total crashes
 - compare ASC crash totals with Sentry production issues/events/users when Sentry is connected
-- if ASC web analytics auth is missing, tell the user to run `asc web auth login` and verify with `asc web auth status --output json --pretty`
+- if ASC web analytics auth is missing, tell the user to set `ASC_WEB_APPLE_ID` to the Apple Account email, run `asc web auth login --apple-id "$ASC_WEB_APPLE_ID"`, and verify with `asc web auth status --output json --pretty`
 - inspect `overviewMetricCatalog` so recommendations use all available ASC metrics, not only units/conversion/source traffic
 - treat ASC sources as unique product page views by source, not download units by source
 - turn source mix into Handlungsempfehlungen only after comparing units/downloads and conversion

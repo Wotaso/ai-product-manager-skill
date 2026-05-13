@@ -228,7 +228,7 @@ Daily:
 - Check ASC total production crashes by app version and Sentry production issues/events/users.
 - Notify the OpenClaw user through configured chat/social delivery when total production crashes are non-zero.
 - Check every available ASC overview metric, especially units/downloads, redownloads, conversion rate, app usage, updates, app opens, subscription state, source traffic, and unique product page views by source, but only alert on severe anomalies during daily-only runs.
-- If the ASC web analytics session is missing or expired, tell the user to run `asc web auth login`, verify with `asc web auth status --output json --pretty`, and rerun OpenClaw Growth.
+- If the ASC web analytics session is missing or expired, tell the user to set `ASC_WEB_APPLE_ID` to the Apple Account email, run `asc web auth login --apple-id "$ASC_WEB_APPLE_ID"`, verify with `asc web auth status --output json --pretty`, and rerun OpenClaw Growth.
 - Compare crash movement with release/build data before recommending more acquisition traffic.
 - Inspect memory/state and recent releases/code changes before assigning root cause.
 - Automatically create GitHub issues or implementation PRs when OpenClaw has configured GitHub API write access. Skip only when write access is missing, the finding is too low-confidence, or `actions.disableAutoCreateGitHubArtifacts = true`.

@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { applyOpenClawSecretRefs, loadOpenClawGrowthSecrets } from './openclaw-growth-env.mjs';
 const DEFAULT_CONFIG_PATH = 'data/openclaw-growth-engineer/config.json';
 const DEFAULT_TIMEOUT_MS = 15_000;
+const ASC_WEB_AUTH_REFRESH_COMMAND = 'Set ASC_WEB_APPLE_ID to the Apple Account email, then run: asc web auth login --apple-id "$ASC_WEB_APPLE_ID" && asc web auth status --output json --pretty';
 const RUNTIME_DIR = path.dirname(fileURLToPath(import.meta.url));
 function printHelpAndExit(exitCode, reason = null) {
     if (reason) {
@@ -315,7 +316,7 @@ async function summarizeAsc(preflight, config, timeoutMs) {
         if (!webAuth.ok) {
             return connector('partial', 'ASC API exporter works, but ASC web analytics login is not verified', {
                 appScope: 'all_accessible_apps',
-                nextAction: 'Run: asc web auth login && asc web auth status --output json --pretty',
+                nextAction: ASC_WEB_AUTH_REFRESH_COMMAND,
             });
         }
         try {
@@ -323,14 +324,14 @@ async function summarizeAsc(preflight, config, timeoutMs) {
             if (payload?.authenticated !== true) {
                 return connector('partial', 'ASC API exporter works, but ASC web analytics is not logged in', {
                     appScope: 'all_accessible_apps',
-                    nextAction: 'Run: asc web auth login && asc web auth status --output json --pretty',
+                    nextAction: ASC_WEB_AUTH_REFRESH_COMMAND,
                 });
             }
         }
         catch {
             return connector('partial', 'ASC API exporter works, but ASC web analytics status returned invalid JSON', {
                 appScope: 'all_accessible_apps',
-                nextAction: 'Run: asc web auth login && asc web auth status --output json --pretty',
+                nextAction: ASC_WEB_AUTH_REFRESH_COMMAND,
             });
         }
         return connector('connected', 'ASC exporter smoke test passed for accessible apps', {
