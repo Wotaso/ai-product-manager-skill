@@ -3,6 +3,7 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { writeJsonOutput, buildSentrySummary } from './openclaw-exporters-lib.mjs';
+import { applyOpenClawSecretRefs, loadOpenClawGrowthSecrets } from './openclaw-growth-env.mjs';
 
 const DEFAULT_BASE_URL = 'https://sentry.io';
 const DEFAULT_CONFIG_PATH = 'data/openclaw-growth-engineer/config.json';
@@ -197,6 +198,7 @@ async function loadConfiguredAccounts(args) {
 
   const configPath = args.config || DEFAULT_CONFIG_PATH;
   const config = await readJsonIfPresent(configPath, Boolean(args.config));
+  if (config) await applyOpenClawSecretRefs(config);
   const accountsFromConfig = normalizeArray(config?.sources?.sentry);
   if (accountsFromConfig.length > 0) return normalizeAccountConfigs(accountsFromConfig, args);
 
@@ -311,6 +313,7 @@ async function listIssues(account, token) {
 }
 
 async function main() {
+  await loadOpenClawGrowthSecrets();
   const args = parseArgs(process.argv.slice(2));
   const configuredAccounts = await loadConfiguredAccounts(args);
   if (configuredAccounts.length === 0) {
