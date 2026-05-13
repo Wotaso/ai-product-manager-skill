@@ -171,9 +171,39 @@ Loop:
 node scripts/openclaw-growth-runner.mjs --config data/openclaw-growth-engineer/config.json --loop
 ```
 
+OpenClaw Gateway cron:
+
+For reliable VPS installs, prefer OpenClaw's built-in cron scheduler over Discord delivery or host-level cron. `openclaw-growth-wizard.mjs` and `openclaw-growth-start.mjs` should configure an OpenClaw cron job when `automation.openclawCron.enabled` is true. The job runs in the main session via a system event, wakes immediately, and asks OpenClaw to run:
+
+```bash
+node scripts/openclaw-growth-runner.mjs --config data/openclaw-growth-engineer/config.json
+```
+
+Recommended cron job:
+
+```bash
+openclaw cron add \
+  --name "OpenClaw Growth Engineer scheduler" \
+  --cron "*/30 * * * *" \
+  --tz "UTC" \
+  --session main \
+  --system-event "Run OpenClaw Growth Engineer for this workspace. Execute: node scripts/openclaw-growth-runner.mjs --config data/openclaw-growth-engineer/config.json. The runner is the source of truth for connector health, daily, weekly, monthly, quarterly, six-month, and yearly cadence decisions. After the command finishes, inspect data/openclaw-growth-engineer/state.json and data/openclaw-growth-engineer/runtime/scheduler-proof.jsonl. If connector health is healthy, no production issue is found, and no actionable growth finding was generated, reply HEARTBEAT_OK." \
+  --wake now
+```
+
+Verification on the VPS:
+
+```bash
+openclaw cron list
+openclaw tasks list
+openclaw tasks audit
+tail -n 20 data/openclaw-growth-engineer/runtime/scheduler-proof.jsonl
+jq '.connectorHealth, .cadences, .lastRunAt, .skippedReason' data/openclaw-growth-engineer/state.json
+```
+
 OpenClaw heartbeat:
 
-The setup/bootstrap path must also leave a real workspace `HEARTBEAT.md` task in place. OpenClaw skips heartbeat runs when `HEARTBEAT.md` is empty or comment-only, so an enabled Growth Engineer schedule is not sufficient by itself.
+The setup/bootstrap path must still leave a real workspace `HEARTBEAT.md` task in place as a fallback and awareness checklist. OpenClaw skips heartbeat runs when `HEARTBEAT.md` is empty or comment-only, so an enabled Growth Engineer schedule is not sufficient by itself.
 
 Expected heartbeat task:
 
@@ -185,7 +215,7 @@ tasks:
   prompt: "Run `node scripts/openclaw-growth-runner.mjs --config data/openclaw-growth-engineer/config.json` from the workspace if the config and runtime files exist. The runner owns schedule.cadences, connectorHealthCheckIntervalMinutes, skipIfNoDataChange, and skipIfIssueSetUnchanged. If it reports connector-health alerts, production crashes, generated issues, or actionable growth findings, summarize only the action and evidence. If setup files are missing, tell the user to run `node scripts/openclaw-growth-wizard.mjs --connectors`. If there is no actionable output, reply HEARTBEAT_OK."
 ```
 
-When `schedule.intervalMinutes` or `schedule.connectorHealthCheckIntervalMinutes` is customized, `openclaw-growth-start.mjs` should rewrite this task interval to the smaller cadence. The heartbeat wakes OpenClaw often enough for connector health; the runner decides whether daily, weekly, monthly, quarterly, six-month, or yearly growth work is due.
+When `schedule.intervalMinutes` or `schedule.connectorHealthCheckIntervalMinutes` is customized, `openclaw-growth-start.mjs` should rewrite this task interval to the smaller cadence. Heartbeat is not the primary scheduler on VPS installs; OpenClaw cron should wake the agent, and the runner decides whether daily, weekly, monthly, quarterly, six-month, or yearly growth work is due.
 
 ## 7a) Production Health And Growth Cadence
 

@@ -63,10 +63,36 @@ test('wizard exposes connector and output interval setup paths', () => {
   assert.match(wizard, /How should OpenClaw Growth Engineer run/);
   assert.match(wizard, /Output destinations/);
   assert.match(wizard, /Scheduled review cadences/);
+  assert.match(wizard, /OpenClaw Gateway cron/);
+  assert.match(wizard, /openclaw cron add/);
+  assert.match(wizard, /scheduler-proof\.jsonl/);
   assert.match(wizard, /Default growth cadence/);
   assert.match(wizard, /What it decides/);
   assert.match(wizard, /Space toggles, A toggles all optional items, Enter continues/);
   assert.match(wizard, /Customize GitHub issue\/PR limits, labels, or chart attachment settings/);
+});
+
+test('config example enables OpenClaw cron and runner proof logs', () => {
+  const config = JSON.parse(
+    readFileSync(join(skillRoot, 'data/openclaw-growth-engineer/config.example.json'), 'utf8'),
+  );
+  const runner = readFileSync(join(skillRoot, 'scripts/openclaw-growth-runner.mjs'), 'utf8');
+  const start = readFileSync(join(skillRoot, 'scripts/openclaw-growth-start.mjs'), 'utf8');
+
+  assert.deepEqual(config.automation.openclawCron, {
+    enabled: true,
+    mode: 'main',
+    schedule: '*/30 * * * *',
+    timezone: 'UTC',
+    name: 'OpenClaw Growth Engineer scheduler',
+  });
+  assert.match(start, /openclaw cron add/);
+  assert.match(start, /openclaw system event/);
+  assert.match(runner, /DEFAULT_SCHEDULER_PROOF_PATH = 'data\/openclaw-growth-engineer\/runtime\/scheduler-proof\.jsonl'/);
+  assert.match(runner, /runner_invoked/);
+  assert.match(runner, /connector_health_checked/);
+  assert.match(runner, /runner_completed/);
+  assert.match(runner, /runner_failed/);
 });
 
 test('config example stores connector credentials as OpenClaw-style secret refs', () => {
