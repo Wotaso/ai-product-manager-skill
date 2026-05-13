@@ -44,9 +44,21 @@ Options:
 `);
     process.exit(exitCode);
 }
+function resolveDefaultConfigPath() {
+    const explicit = String(process.env.OPENCLAW_GROWTH_CONFIG_PATH || '').trim();
+    if (explicit)
+        return explicit;
+    const homeConfigPath = process.env.HOME ? path.join(process.env.HOME, 'data/openclaw-growth-engineer/config.json') : '';
+    const homeStatePath = process.env.HOME ? path.join(process.env.HOME, 'data/openclaw-growth-engineer/state.json') : '';
+    if (homeConfigPath && existsSync(homeConfigPath) && existsSync(homeStatePath))
+        return homeConfigPath;
+    if (!existsSync(DEFAULT_CONFIG_PATH) && homeConfigPath && existsSync(homeConfigPath))
+        return homeConfigPath;
+    return DEFAULT_CONFIG_PATH;
+}
 function parseArgs(argv) {
     const args = {
-        config: DEFAULT_CONFIG_PATH,
+        config: resolveDefaultConfigPath(),
         project: '',
         ascApp: '',
         run: true,
@@ -525,12 +537,13 @@ function isEffectivelyEmptyHeartbeat(value) {
 function renderHeartbeatBlock(configPath, config) {
     const interval = formatHeartbeatInterval(getHeartbeatInterval(config));
     const displayConfigPath = relativeWorkspacePath(configPath);
+    const wizardConfigArg = `--config ${displayConfigPath}`;
     return `${HEARTBEAT_MARKER_START}
 tasks:
 
 - name: openclaw-growth-engineer-run
   interval: ${interval}
-  prompt: "Run \`node scripts/openclaw-growth-runner.mjs --config ${displayConfigPath}\` from the workspace if the config and runtime files exist. The runner owns schedule.cadences, connectorHealthCheckIntervalMinutes, skipIfNoDataChange, and skipIfIssueSetUnchanged. If it reports connector-health alerts, production crashes, generated issues, or actionable growth findings, summarize only the action and evidence. If setup files are missing, tell the user to run \`node scripts/openclaw-growth-wizard.mjs --connectors\`. If there is no actionable output, reply HEARTBEAT_OK."
+  prompt: "Run \`node scripts/openclaw-growth-runner.mjs --config ${displayConfigPath}\` from the workspace if the config and runtime files exist. The runner owns schedule.cadences, connectorHealthCheckIntervalMinutes, skipIfNoDataChange, and skipIfIssueSetUnchanged. If it reports connector-health alerts, production crashes, generated issues, or actionable growth findings, summarize only the action and evidence. If setup files are missing, tell the user to run \`node scripts/openclaw-growth-wizard.mjs --connectors ${wizardConfigArg}\`. If there is no actionable output, reply HEARTBEAT_OK."
 
 # Keep this section small. Do not put secrets in HEARTBEAT.md.
 ${HEARTBEAT_MARKER_END}`;

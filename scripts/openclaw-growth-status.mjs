@@ -27,9 +27,21 @@ Options:
 `);
     process.exit(exitCode);
 }
+function resolveDefaultConfigPath() {
+    const explicit = String(process.env.OPENCLAW_GROWTH_CONFIG_PATH || '').trim();
+    if (explicit)
+        return explicit;
+    const homeConfigPath = process.env.HOME ? path.join(process.env.HOME, 'data/openclaw-growth-engineer/config.json') : '';
+    const homeStatePath = process.env.HOME ? path.join(process.env.HOME, 'data/openclaw-growth-engineer/state.json') : '';
+    if (homeConfigPath && existsSync(homeConfigPath) && existsSync(homeStatePath))
+        return homeConfigPath;
+    if (!existsSync(DEFAULT_CONFIG_PATH) && homeConfigPath && existsSync(homeConfigPath))
+        return homeConfigPath;
+    return DEFAULT_CONFIG_PATH;
+}
 function parseArgs(argv) {
     const args = {
-        config: DEFAULT_CONFIG_PATH,
+        config: resolveDefaultConfigPath(),
         timeoutMs: DEFAULT_TIMEOUT_MS,
         json: true,
         progressJson: false,

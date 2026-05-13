@@ -69,7 +69,7 @@ tasks:
 
 - name: openclaw-growth-engineer-run
   interval: 6h
-  prompt: "Run `node scripts/openclaw-growth-runner.mjs --config __OPENCLAW_GROWTH_CONFIG_PATH__` from the workspace if the config and runtime files exist. The runner owns schedule.cadences, connectorHealthCheckIntervalMinutes, skipIfNoDataChange, and skipIfIssueSetUnchanged. If it reports connector-health alerts, production crashes, generated issues, or actionable growth findings, summarize only the action and evidence. If setup files are missing, tell the user to run `node scripts/openclaw-growth-wizard.mjs --connectors`. If there is no actionable output, reply HEARTBEAT_OK."
+  prompt: "Run `node scripts/openclaw-growth-runner.mjs --config __OPENCLAW_GROWTH_CONFIG_PATH__` from the workspace if the config and runtime files exist. The runner owns schedule.cadences, connectorHealthCheckIntervalMinutes, skipIfNoDataChange, and skipIfIssueSetUnchanged. If it reports connector-health alerts, production crashes, generated issues, or actionable growth findings, summarize only the action and evidence. If setup files are missing, tell the user to run `node scripts/openclaw-growth-wizard.mjs --connectors --config __OPENCLAW_GROWTH_CONFIG_PATH__`. If there is no actionable output, reply HEARTBEAT_OK."
 
 # Keep this section small. Do not put secrets in HEARTBEAT.md.
 <!-- openclaw-growth-engineer:end -->
@@ -112,6 +112,6 @@ echo "  ${WORKSPACE}/scripts"
 echo "  ${WORKSPACE}/data/openclaw-growth-engineer"
 echo "  ${WORKSPACE}/HEARTBEAT.md"
 echo "Next:"
-echo "  cd ${WORKSPACE} && node scripts/openclaw-growth-wizard.mjs --connectors"
+echo "  cd ${WORKSPACE} && node scripts/openclaw-growth-wizard.mjs --connectors --config ${heartbeat_config_path}"
 echo "Then:"
-echo "  cd ${WORKSPACE} && node scripts/openclaw-growth-start.mjs --config data/openclaw-growth-engineer/config.json"
+echo "  cd ${WORKSPACE} && node scripts/openclaw-growth-start.mjs --config ${heartbeat_config_path}"

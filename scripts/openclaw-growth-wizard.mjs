@@ -158,13 +158,26 @@ function isTruthyEnv(value) {
 function isFalseyEnv(value) {
     return ['0', 'false', 'no', 'n', 'off'].includes(String(value || '').trim().toLowerCase());
 }
+function resolveDefaultConfigPath() {
+    const explicit = String(process.env.OPENCLAW_GROWTH_CONFIG_PATH || '').trim();
+    if (explicit)
+        return explicit;
+    const homeConfigPath = process.env.HOME ? path.join(process.env.HOME, 'data/openclaw-growth-engineer/config.json') : '';
+    const homeStatePath = process.env.HOME ? path.join(process.env.HOME, 'data/openclaw-growth-engineer/state.json') : '';
+    if (homeConfigPath && existsSync(homeConfigPath) && existsSync(homeStatePath))
+        return homeConfigPath;
+    if (!existsSync(DEFAULT_CONFIG_PATH) && homeConfigPath && existsSync(homeConfigPath))
+        return homeConfigPath;
+    return DEFAULT_CONFIG_PATH;
+}
 function parseArgs(argv) {
+    const defaultConfigPath = resolveDefaultConfigPath();
     const args = {
-        config: DEFAULT_CONFIG_PATH,
+        config: defaultConfigPath,
         connectorWizard: false,
         connectors: '',
         noSelfUpdate: false,
-        out: DEFAULT_CONFIG_PATH,
+        out: defaultConfigPath,
     };
     for (let i = 0; i < argv.length; i += 1) {
         const token = argv[i];
