@@ -149,13 +149,22 @@ function replaceLegacyRuntimeScriptCommand(command) {
 function commandHasConfigArg(command) {
     return /(?:^|\s)--config(?:=|\s|$)/.test(String(command || ''));
 }
-function commandShouldReceiveActiveConfig(command) {
+function commandIsBuiltinExporter(command) {
     return /(?:^|\s)(?:node\s+)?(?:\S*\/)?(?:export-analytics-summary|export-revenuecat-summary|export-sentry-summary|export-asc-summary)\.mjs(?:\s|$)/.test(String(command || ''));
+}
+function commandSupportsActiveConfig(command) {
+    return /(?:^|\s)(?:node\s+)?(?:\S*\/)?export-sentry-summary\.mjs(?:\s|$)/.test(String(command || ''));
 }
 function withActiveConfigArg(command, configPath) {
     const trimmed = String(command || '').trim();
-    if (!trimmed || !configPath || !commandShouldReceiveActiveConfig(trimmed)) {
+    if (!trimmed || !configPath || !commandIsBuiltinExporter(trimmed)) {
         return trimmed;
+    }
+    if (!commandSupportsActiveConfig(trimmed)) {
+        return trimmed
+            .replace(/(^|\s)--config=(?:"[^"]*"|'[^']*'|\S+)/, '$1')
+            .replace(/(^|\s)--config\s+(?:"[^"]*"|'[^']*'|\S+)/, '$1')
+            .trim();
     }
     if (commandHasConfigArg(trimmed)) {
         return trimmed
