@@ -140,13 +140,45 @@ function normalizeProjectEntries(account) {
         limit: entry.limit || account.limit,
     }));
 }
+function toEnvName(value, fallback = 'SENTRY') {
+    const normalized = String(value || '')
+        .trim()
+        .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
+        .replace(/[^a-zA-Z0-9]+/g, '_')
+        .replace(/^_+|_+$/g, '')
+        .toUpperCase();
+    return normalized || fallback;
+}
+function uniqueStrings(values) {
+    return [...new Set(values.map((value) => String(value || '').trim()).filter((value) => Boolean(value)))];
+}
+function inferSentryTokenEnvCandidates(account, index, args) {
+    const explicit = account?.tokenEnv || account?.token_env || account?.secretEnv;
+    const label = String(account?.label || account?.name || account?.id || account?.key || '').trim();
+    const id = String(account?.id || account?.key || label || `sentry_${index + 1}`).trim();
+    const baseUrl = String(account?.baseUrl || account?.base_url || account?.url || args.baseUrl || DEFAULT_BASE_URL)
+        .trim()
+        .toLowerCase();
+    const combined = `${id} ${label} ${baseUrl}`.toLowerCase();
+    const candidates = [explicit];
+    if (combined.includes('glitchtip'))
+        candidates.push('GLITCHTIP_AUTH_TOKEN');
+    if (combined.includes('sentry_cloud') || combined.includes('sentry cloud') || combined.includes('sentry.io')) {
+        candidates.push('SENTRY_CLOUD_AUTH_TOKEN');
+    }
+    candidates.push(`${toEnvName(label || id, `SENTRY_${index + 1}`)}_AUTH_TOKEN`);
+    candidates.push(`${toEnvName(id, `SENTRY_${index + 1}`)}_AUTH_TOKEN`);
+    candidates.push('SENTRY_AUTH_TOKEN');
+    return uniqueStrings(candidates);
+}
 function normalizeAccountConfigs(rawAccounts, args) {
     return rawAccounts.flatMap((account, index) => {
         if (!account || typeof account !== 'object')
             return [];
         const id = String(account.id || account.key || account.label || `sentry_${index + 1}`).trim();
         const baseUrl = String(account.baseUrl || account.base_url || account.url || args.baseUrl || DEFAULT_BASE_URL).trim();
-        const tokenEnv = String(account.tokenEnv || account.token_env || account.secretEnv || 'SENTRY_AUTH_TOKEN').trim();
+        const tokenEnvCandidates = inferSentryTokenEnvCandidates(account, index, args);
+        const tokenEnv = tokenEnvCandidates[0] || 'SENTRY_AUTH_TOKEN';
         const projectEntries = normalizeProjectEntries(account);
         if (projectEntries.length > 0) {
             return projectEntries.map((projectEntry) => ({
@@ -156,6 +188,7 @@ function normalizeAccountConfigs(rawAccounts, args) {
                 label: String(account.label || account.name || id).trim(),
                 baseUrl,
                 tokenEnv,
+                tokenEnvCandidates,
                 maxSignals: args.maxSignals,
             }));
         }
@@ -168,6 +201,7 @@ function normalizeAccountConfigs(rawAccounts, args) {
                 label: String(account.label || account.name || id).trim(),
                 baseUrl,
                 tokenEnv,
+                tokenEnvCandidates,
                 org,
                 project: '',
                 environment: String(account.environment || args.environment || process.env.SENTRY_ENVIRONMENT || 'production').trim(),
@@ -224,6 +258,15 @@ async function loadConfiguredAccounts(args) {
         limit: args.limit,
     };
     return normalizeProjectEntries(singleAccount).length > 0 ? normalizeAccountConfigs([singleAccount], args) : [];
+}
+function resolveAccountToken(account) {
+    const candidates = uniqueStrings([...(account.tokenEnvCandidates || []), account.tokenEnv]);
+    for (const envName of candidates) {
+        const token = String(process.env[envName] || '').trim();
+        if (token)
+            return { token, envName };
+    }
+    throw new Error(`${candidates.join(' or ') || 'SENTRY_AUTH_TOKEN'} is required. Set it in the Sentry connector wizard or pass the flag explicitly.`);
 }
 function normalizeInteger(value, label, min, max) {
     const parsed = Number.parseInt(String(value || ''), 10);
@@ -326,12 +369,12 @@ async function main() {
     }
     const accounts = [];
     for (const account of configuredAccounts) {
-        const token = requireValue(process.env[account.tokenEnv], account.tokenEnv);
+        const { token } = resolveAccountToken(account);
         accounts.push(...await expandDiscoveredProjects(account, token));
     }
     const summaries = [];
     for (const account of accounts) {
-        const token = requireValue(process.env[account.tokenEnv], account.tokenEnv);
+        const { token } = resolveAccountToken(account);
         const issuesPayload = redactData(await listIssues(account, token));
         summaries.push({
             id: account.id,
