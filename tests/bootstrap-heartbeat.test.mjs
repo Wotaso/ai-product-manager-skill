@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -80,6 +80,34 @@ tasks:
     assert.match(heartbeat, /interval: 6h/);
     assert.doesNotMatch(heartbeat, /interval: 1d/);
     assert.match(heartbeat, /connectorHealthCheckIntervalMinutes/);
+  } finally {
+    rmSync(workspace, { recursive: true, force: true });
+  }
+});
+
+test('bootstrap supports canonical ClawHub growth-engineer install slug', () => {
+  const workspace = mkdtempSync(join(tmpdir(), 'openclaw-heartbeat-'));
+  const installedScriptDir = join(workspace, 'skills', 'growth-engineer', 'scripts');
+  const installedBootstrap = join(installedScriptDir, 'bootstrap-openclaw-workspace.sh');
+
+  try {
+    mkdirSync(installedScriptDir, { recursive: true });
+    copyFileSync(bootstrap, installedBootstrap);
+
+    const result = spawnSync('bash', [installedBootstrap], {
+      env: {
+        ...process.env,
+        OPENCLAW_GROWTH_BOOTSTRAP_SKIP_UPDATE: '1',
+      },
+      encoding: 'utf8',
+    });
+    assert.equal(result.status, 0, `${result.stderr}\n${result.stdout}`);
+
+    const heartbeat = readFileSync(join(workspace, 'HEARTBEAT.md'), 'utf8');
+    assert.match(heartbeat, /tasks:/);
+    assert.match(heartbeat, /name: openclaw-growth-engineer-run/);
+    assert.match(heartbeat, /interval: 6h/);
+    assert.match(heartbeat, /node scripts\/openclaw-growth-runner\.mjs --config data\/openclaw-growth-engineer\/config\.json/);
   } finally {
     rmSync(workspace, { recursive: true, force: true });
   }

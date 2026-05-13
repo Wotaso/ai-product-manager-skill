@@ -17,8 +17,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SKILL_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 skill_slug="$(basename "${SKILL_ROOT}")"
-if [[ "${skill_slug}" != "product-manager-skill" && "${skill_slug}" != "ai-product-manager" && "${skill_slug}" != "openclaw-growth-engineer" ]]; then
-  echo "bootstrap-openclaw-workspace.sh: expected to live under skills/openclaw-growth-engineer/scripts/ or a legacy ai-product-manager/product-manager-skill alias (ClawHub install)." >&2
+if [[ "${skill_slug}" != "growth-engineer" && "${skill_slug}" != "product-manager-skill" && "${skill_slug}" != "ai-product-manager" && "${skill_slug}" != "openclaw-growth-engineer" ]]; then
+  echo "bootstrap-openclaw-workspace.sh: expected to live under skills/growth-engineer/scripts/, skills/openclaw-growth-engineer/scripts/, or a legacy ai-product-manager/product-manager-skill alias (ClawHub install)." >&2
   echo "In the Agentic Analytics monorepo, scripts already live at repo root; nothing to copy." >&2
   exit 0
 fi
@@ -31,11 +31,11 @@ else
   WORKSPACE="$(cd "${SKILL_ROOT}/../.." && pwd)"
 fi
 
-if [[ "${skill_slug}" == "openclaw-growth-engineer" && -f "${SKILL_ROOT}/.clawhub/origin.json" && "${OPENCLAW_GROWTH_DISABLE_SELF_UPDATE:-}" != "1" && "${OPENCLAW_GROWTH_BOOTSTRAP_SKIP_UPDATE:-}" != "1" ]]; then
+if [[ ( "${skill_slug}" == "growth-engineer" || "${skill_slug}" == "openclaw-growth-engineer" ) && -f "${SKILL_ROOT}/.clawhub/origin.json" && "${OPENCLAW_GROWTH_DISABLE_SELF_UPDATE:-}" != "1" && "${OPENCLAW_GROWTH_BOOTSTRAP_SKIP_UPDATE:-}" != "1" ]]; then
   if command -v clawhub >/dev/null 2>&1; then
-    (cd "${WORKSPACE}" && clawhub --no-input --dir skills update openclaw-growth-engineer --force) || true
+    (cd "${WORKSPACE}" && clawhub --no-input --dir skills update "${skill_slug}" --force) || true
   elif command -v npx >/dev/null 2>&1; then
-    (cd "${WORKSPACE}" && npx -y clawhub --no-input --dir skills update openclaw-growth-engineer --force) || true
+    (cd "${WORKSPACE}" && npx -y clawhub --no-input --dir skills update "${skill_slug}" --force) || true
   fi
 fi
 
