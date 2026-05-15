@@ -26,6 +26,20 @@ test('unchanged unhealthy connectors are alerted once per incident until recover
   assert.doesNotMatch(runner, /isDue\(healthState\.lastAlertedAt, intervalMinutes\)/);
 });
 
+test('notification delivery fallbacks are merged with explicit channels', () => {
+  const runner = readFileSync(join(skillRoot, 'scripts/openclaw-growth-runner.mjs'), 'utf8');
+  const wizard = readFileSync(join(skillRoot, 'scripts/openclaw-growth-wizard.mjs'), 'utf8');
+
+  assert.match(runner, /function mergeNotificationChannelsWithDeliveries/);
+  assert.match(runner, /getDeliveryNotificationChannels\(config, 'connectorHealth'\)/);
+  assert.match(runner, /getDeliveryNotificationChannels\(config, 'growthRun'\)/);
+  assert.match(runner, /if \(type === 'command'\)\s+return `command:\$\{channel\?\.label \|\| channel\?\.command \|\| 'command'\}`/);
+  assert.match(runner, /deliveries\.command\?\.enabled/);
+  assert.doesNotMatch(runner, /if \(configuredChannels\.length > 0\)\s*return configuredChannels/);
+  assert.doesNotMatch(runner, /discord-openclaw-bridge/);
+  assert.doesNotMatch(wizard, /discord-openclaw-bridge/);
+});
+
 test('wizard exposes connector and output interval setup paths', () => {
   const wizard = readFileSync(join(skillRoot, 'scripts/openclaw-growth-wizard.mjs'), 'utf8');
 

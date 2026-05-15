@@ -3270,9 +3270,15 @@ async function buildDefaultWizardConfig() {
                 method: 'POST',
                 headers: {},
             },
+            command: {
+                enabled: false,
+                label: 'command',
+                command: '',
+            },
             discord: {
                 enabled: false,
-                command: 'node scripts/discord-openclaw-bridge.mjs send --stdin',
+                label: 'discord',
+                command: '',
             },
         },
         charting: {
@@ -3479,9 +3485,9 @@ async function askNotificationChannels(rl, config) {
         const urlEnv = await ask(rl, 'Webhook URL env var', config?.deliveries?.webhook?.urlEnv || 'OPENCLAW_WEBHOOK_URL');
         channels.push({ type: 'webhook', enabled: true, urlEnv, method: 'POST', headers: {} });
     }
-    const commandDefault = Boolean(config?.deliveries?.discord?.enabled);
+    const commandDefault = Boolean(config?.deliveries?.command?.enabled || config?.deliveries?.discord?.enabled);
     if (await askYesNo(rl, 'Send summaries and connector-health alerts through a local command channel?', commandDefault)) {
-        const command = await ask(rl, 'Command that receives the message on stdin', config?.deliveries?.discord?.command || 'node scripts/discord-openclaw-bridge.mjs send --stdin');
+        const command = await ask(rl, 'Command that receives the message on stdin', config?.deliveries?.command?.command || config?.deliveries?.discord?.command || '');
         channels.push({ type: 'command', enabled: true, label: 'command', command });
     }
     return channels;
@@ -3594,10 +3600,17 @@ async function askOutputConfig(rl, config) {
             method: 'POST',
             headers: config.deliveries?.webhook?.headers || {},
         },
+        command: {
+            ...(config.deliveries?.command || {}),
+            enabled: channels.some((channel) => channel.type === 'command'),
+            label: channels.find((channel) => channel.type === 'command')?.label || config.deliveries?.command?.label || 'command',
+            command: channels.find((channel) => channel.type === 'command')?.command || config.deliveries?.command?.command || '',
+        },
         discord: {
             ...(config.deliveries?.discord || {}),
-            enabled: channels.some((channel) => channel.type === 'command'),
-            command: channels.find((channel) => channel.type === 'command')?.command || config.deliveries?.discord?.command || 'node scripts/discord-openclaw-bridge.mjs send --stdin',
+            enabled: Boolean(config.deliveries?.discord?.enabled),
+            label: config.deliveries?.discord?.label || 'discord',
+            command: config.deliveries?.discord?.command || '',
         },
     };
     config.notifications = {
