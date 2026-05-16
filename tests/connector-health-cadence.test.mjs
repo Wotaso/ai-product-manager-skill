@@ -18,11 +18,13 @@ test('connector health defaults to a 6 hour cadence', () => {
   assert.match(start, /Math\.min/);
 });
 
-test('unchanged unhealthy connectors are alerted once per incident until recovery or fingerprint changes', () => {
+test('unchanged unhealthy connectors are retried until an external alert is delivered', () => {
   const runner = readFileSync(join(skillRoot, 'scripts/openclaw-growth-runner.mjs'), 'utf8');
 
-  assert.match(runner, /previousIncidentFingerprint !== fingerprint/);
+  assert.match(runner, /previousExternallyDeliveredFingerprint !== fingerprint/);
   assert.match(runner, /activeIncidentFingerprint = fingerprint/);
+  assert.match(runner, /lastExternalAlertedFingerprint = fingerprint/);
+  assert.match(runner, /hasSuccessfulExternalDelivery\(deliveries\)/);
   assert.doesNotMatch(runner, /isDue\(healthState\.lastAlertedAt, intervalMinutes\)/);
 });
 
@@ -35,6 +37,8 @@ test('notification delivery fallbacks are merged with explicit channels', () => 
   assert.match(runner, /getDeliveryNotificationChannels\(config, 'growthRun'\)/);
   assert.match(runner, /if \(type === 'command'\)\s+return `command:\$\{channel\?\.label \|\| channel\?\.command \|\| 'command'\}`/);
   assert.match(runner, /deliveries\.command\?\.enabled/);
+  assert.match(runner, /external: false/);
+  assert.match(runner, /Alert written locally, but no external notification channel configured/);
   assert.doesNotMatch(runner, /if \(configuredChannels\.length > 0\)\s*return configuredChannels/);
   assert.doesNotMatch(runner, /discord-openclaw-bridge/);
   assert.doesNotMatch(wizard, /discord-openclaw-bridge/);
@@ -103,6 +107,8 @@ test('config example enables OpenClaw cron and runner proof logs', () => {
   assert.match(start, /openclaw cron add/);
   assert.match(start, /openclaw system event/);
   assert.match(runner, /DEFAULT_SCHEDULER_PROOF_PATH = 'data\/openclaw-growth-engineer\/runtime\/scheduler-proof\.jsonl'/);
+  assert.match(runner, /deriveRuntimeDirFromStatePath\(statePath\)/);
+  assert.match(runner, /deriveSchedulerProofPathFromStatePath\(statePath\)/);
   assert.match(runner, /runner_invoked/);
   assert.match(runner, /connector_health_checked/);
   assert.match(runner, /runner_completed/);

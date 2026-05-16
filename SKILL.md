@@ -120,8 +120,8 @@ OpenClaw Gateway cron is the preferred wake-up mechanism for reliable VPS instal
 
 - Bootstrap/start must create or repair a non-empty workspace `HEARTBEAT.md` with an `openclaw-growth-engineer-run` fallback task.
 - Wizard/start must also configure or print an OpenClaw Gateway cron job (`openclaw cron add ... --session main --system-event ... --wake now`) when `automation.openclawCron.enabled` is true.
-- The cron/system-event prompt should invoke `node scripts/openclaw-growth-runner.mjs --config data/openclaw-growth-engineer/config.json` or the configured equivalent. The runner remains the source of truth for `schedule.intervalMinutes`, daily/weekly/monthly/quarterly/six-month/yearly cadences, connector health intervals, data-change skipping, and notification delivery.
-- If a user asks whether automatic checks are enabled, inspect OpenClaw cron first (`openclaw cron list`, `openclaw cron runs --id <job-id>`, `openclaw tasks list`), then inspect runner proof (`data/openclaw-growth-engineer/runtime/scheduler-proof.jsonl`) and state (`data/openclaw-growth-engineer/state.json`). Do not use Discord as the default coordination path.
+- The cron/system-event prompt must invoke `node scripts/openclaw-growth-runner.mjs --config <active-config> --state <active-config-dir>/state.json`. Do not let cron read config from one directory while the runner writes state/proof under the workspace default. The runner remains the source of truth for `schedule.intervalMinutes`, daily/weekly/monthly/quarterly/six-month/yearly cadences, connector health intervals, data-change skipping, and notification delivery.
+- If a user asks whether automatic checks are enabled, inspect OpenClaw cron first (`openclaw cron list`, `openclaw cron runs --id <job-id>`, `openclaw tasks list`), then inspect runner proof (`<state-dir>/runtime/scheduler-proof.jsonl`) and state (`<state-dir>/state.json`). Do not use Discord as the default coordination path.
 - Keep `HEARTBEAT.md` tiny and secret-free. It is a fallback/awareness checklist and should say to reply `HEARTBEAT_OK` when no connector alert, production crash, generated issue, or actionable growth finding exists.
 
 Implementation PR rule:
@@ -460,7 +460,8 @@ Only ask the user for help if both direct npm install and the bundled helper fai
 
 The CLI can write proposals to one or more targets:
 
-- `deliveries.openclawChat.enabled = true`: write `.openclaw/chat/latest.md` and `.openclaw/chat/latest.json` for OpenClaw to pick up in chat
+- `deliveries.openclawChat.enabled = true`: write `.openclaw/chat/latest.md` and `.openclaw/chat/latest.json` as local outbox artifacts. This is not an external human notification by itself.
+- Real user notifications require a successful external channel such as `deliveries.command`, Slack webhook, generic webhook, or native OpenClaw delivery. If only `openclawChat` is configured, connector-health alerts must report: `Alert written locally, but no external notification channel configured.`
 - `deliveries.github.mode = "issue"` with `deliveries.github.autoCreate = true`: create implementation-ready GitHub issues
 - `deliveries.github.mode = "pull_request"` with `deliveries.github.autoCreate = true`: create proposal-only draft PRs that add `.openclaw/proposals/...md` proposal files to the repo. Use this only for explicit proposal delivery, not when the user asks OpenClaw to implement changes.
 

@@ -5,15 +5,15 @@ import process from 'node:process';
 import { createHash } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { getActionMode, getAllSourceEntries, getGitHubArtifactModes, getGitHubRequirementText, shouldAutoCreateGitHubArtifact, } from './openclaw-growth-shared.mjs';
+import { deriveRuntimeDirFromStatePath, deriveSchedulerProofPathFromStatePath, getActionMode, getAllSourceEntries, getGitHubArtifactModes, getGitHubRequirementText, shouldAutoCreateGitHubArtifact, } from './openclaw-growth-shared.mjs';
 import { applyOpenClawSecretRefs, loadOpenClawGrowthSecrets } from './openclaw-growth-env.mjs';
 const DEFAULT_CONFIG_PATH = 'data/openclaw-growth-engineer/config.json';
 const DEFAULT_STATE_PATH = 'data/openclaw-growth-engineer/state.json';
-const DEFAULT_RUNTIME_DIR = 'data/openclaw-growth-engineer/runtime';
 const DEFAULT_SCHEDULER_PROOF_PATH = 'data/openclaw-growth-engineer/runtime/scheduler-proof.jsonl';
 const DEFAULT_CONNECTOR_HEALTH_INTERVAL_MINUTES = 360;
 const SELF_UPDATE_INTERVAL_MS = 24 * 60 * 60 * 1000;
 const RUNTIME_DIR = path.dirname(fileURLToPath(import.meta.url));
+let schedulerProofPath = path.resolve(DEFAULT_SCHEDULER_PROOF_PATH);
 const DEFAULT_CADENCES = [
     {
         key: 'daily',
@@ -190,7 +190,7 @@ async function ensureDir(dirPath) {
     await fs.mkdir(dirPath, { recursive: true });
 }
 async function appendSchedulerProof(event, details = {}) {
-    const proofPath = path.resolve(DEFAULT_SCHEDULER_PROOF_PATH);
+    const proofPath = schedulerProofPath;
     const entry = {
         ts: new Date().toISOString(),
         event,
@@ -200,6 +200,10 @@ async function appendSchedulerProof(event, details = {}) {
     };
     await fs.mkdir(path.dirname(proofPath), { recursive: true });
     await fs.appendFile(proofPath, `${JSON.stringify(entry)}\n`, 'utf8');
+}
+function useSchedulerProofPathForStatePath(statePath) {
+    schedulerProofPath = path.resolve(deriveSchedulerProofPathFromStatePath(statePath));
+    return schedulerProofPath;
 }
 function sha256(input) {
     return createHash('sha256').update(input).digest('hex');
@@ -688,8 +692,9 @@ async function writeConfiguredOpenClawChatAlert(configPath, channel, message, st
     }, null, 2), 'utf8');
     return {
         sent: true,
+        external: false,
         target: channel.label || 'openclaw_chat',
-        detail: `wrote ${markdownPath} and ${jsonPath}`,
+        detail: `wrote local OpenClaw chat outbox ${markdownPath} and ${jsonPath}`,
     };
 }
 async function sendSlackConnectorHealthAlert(channel, message) {
@@ -705,6 +710,7 @@ async function sendSlackConnectorHealthAlert(channel, message) {
     });
     return {
         sent: response.ok,
+        external: true,
         target: channel.label || 'slack',
         detail: response.ok ? `HTTP ${response.status}` : `HTTP ${response.status}: ${await response.text()}`,
     };
@@ -732,6 +738,7 @@ async function sendWebhookConnectorHealthAlert(channel, message, statusPayload, 
     });
     return {
         sent: response.ok,
+        external: true,
         target: channel.label || 'webhook',
         detail: response.ok ? `HTTP ${response.status}` : `HTTP ${response.status}: ${await response.text()}`,
     };
@@ -743,9 +750,16 @@ async function sendCommandConnectorHealthAlert(channel, message) {
     const result = await runShellCommand(String(channel.command), 60_000, { input: message });
     return {
         sent: result.ok,
+        external: true,
         target: channel.label || 'command',
         detail: result.ok ? result.stdout.trim() : result.stderr.trim() || result.stdout.trim() || `exit ${result.code}`,
     };
+}
+function hasExternalNotificationChannel(channels) {
+    return channels.some((channel) => channel?.type && channel.type !== 'openclaw-chat');
+}
+function hasSuccessfulExternalDelivery(results) {
+    return results.some((result) => result?.sent === true && result?.external === true);
 }
 async function deliverConnectorHealthAlert({ config, configPath, message, statusPayload, unhealthyConnectors, fingerprint }) {
     const channels = getConnectorHealthChannels(config);
@@ -781,6 +795,16 @@ async function deliverConnectorHealthAlert({ config, configPath, message, status
                 detail: error instanceof Error ? error.message : String(error),
             });
         }
+    }
+    if (!hasSuccessfulExternalDelivery(results)) {
+        results.push({
+            sent: false,
+            external: true,
+            target: 'external_notification',
+            detail: hasExternalNotificationChannel(channels)
+                ? 'No external notification channel successfully sent the alert.'
+                : 'Alert written locally, but no external notification channel configured.',
+        });
     }
     return results;
 }
@@ -867,8 +891,9 @@ async function writeConfiguredOpenClawChatGrowthSummary(configPath, channel, mes
     }, null, 2), 'utf8');
     return {
         sent: true,
+        external: false,
         target: channel.label || 'openclaw_chat',
-        detail: `wrote ${markdownPath} and ${jsonPath}`,
+        detail: `wrote local OpenClaw chat outbox ${markdownPath} and ${jsonPath}`,
     };
 }
 async function sendSlackGrowthSummary(channel, message) {
@@ -884,6 +909,7 @@ async function sendSlackGrowthSummary(channel, message) {
     });
     return {
         sent: response.ok,
+        external: true,
         target: channel.label || 'slack',
         detail: response.ok ? `HTTP ${response.status}` : `HTTP ${response.status}: ${await response.text()}`,
     };
@@ -918,6 +944,7 @@ async function sendWebhookGrowthSummary(channel, message, issuesPayload, activeC
     });
     return {
         sent: response.ok,
+        external: true,
         target: channel.label || 'webhook',
         detail: response.ok ? `HTTP ${response.status}` : `HTTP ${response.status}: ${await response.text()}`,
     };
@@ -929,6 +956,7 @@ async function sendCommandGrowthSummary(channel, message) {
     const result = await runShellCommand(String(channel.command), 60_000, { input: message });
     return {
         sent: result.ok,
+        external: true,
         target: channel.label || 'command',
         detail: result.ok ? result.stdout.trim() : result.stderr.trim() || result.stdout.trim() || `exit ${result.code}`,
     };
@@ -1033,11 +1061,10 @@ async function maybeRunConnectorHealthCheck({ config, configPath, state, statePa
         connectedConnectors,
         lastError: null,
     };
-    const previousIncidentFingerprint = healthState.lastStatusOk === false
-        ? healthState.activeIncidentFingerprint || healthState.lastAlertedFingerprint || null
-        : null;
+    const previousExternallyDeliveredFingerprint = healthState.lastExternalAlertedFingerprint || null;
     if (unhealthyConnectors.length === 0) {
         nextHealthState.activeIncidentFingerprint = null;
+        nextHealthState.lastExternalAlertedFingerprint = null;
         if (healthState.lastStatusOk === false) {
             nextHealthState.lastRecoveredAt = checkedAt;
         }
@@ -1046,7 +1073,7 @@ async function maybeRunConnectorHealthCheck({ config, configPath, state, statePa
         nextHealthState.activeIncidentFingerprint = fingerprint;
     }
     if (unhealthyConnectors.length > 0 &&
-        previousIncidentFingerprint !== fingerprint) {
+        previousExternallyDeliveredFingerprint !== fingerprint) {
         const message = buildConnectorHealthAlert(statusPayload, unhealthyConnectors);
         const paths = await writeConnectorHealthAlert(runtimeDir, message, statusPayload, unhealthyConnectors, fingerprint);
         const deliveries = await deliverConnectorHealthAlert({
@@ -1062,6 +1089,11 @@ async function maybeRunConnectorHealthCheck({ config, configPath, state, statePa
         nextHealthState.lastAlertMarkdownPath = paths.markdownPath;
         nextHealthState.lastAlertJsonPath = paths.jsonPath;
         nextHealthState.lastAlertDeliveries = deliveries;
+        nextHealthState.lastAlertExternalSent = hasSuccessfulExternalDelivery(deliveries);
+        if (nextHealthState.lastAlertExternalSent) {
+            nextHealthState.lastExternalAlertedAt = checkedAt;
+            nextHealthState.lastExternalAlertedFingerprint = fingerprint;
+        }
     }
     const nextState = {
         ...state,
@@ -1083,6 +1115,7 @@ async function maybeRunConnectorHealthCheck({ config, configPath, state, statePa
         })),
         alertMarkdownPath: nextHealthState.lastAlertMarkdownPath || null,
         deliveryCount: Array.isArray(nextHealthState.lastAlertDeliveries) ? nextHealthState.lastAlertDeliveries.length : 0,
+        externalDeliverySent: nextHealthState.lastAlertExternalSent === true,
     });
     return nextState;
 }
@@ -1341,7 +1374,7 @@ async function runOnce(configPath, statePath) {
         lastRunAt: null,
         sourceCursors: {},
     });
-    const runtimeDir = path.resolve(DEFAULT_RUNTIME_DIR);
+    const runtimeDir = path.resolve(deriveRuntimeDirFromStatePath(statePath));
     const stateAfterHealthCheck = await maybeRunConnectorHealthCheck({
         config,
         configPath,
@@ -1477,6 +1510,7 @@ async function main() {
     await maybeSelfUpdateFromClawHub(args);
     const configPath = path.resolve(args.config);
     const statePath = path.resolve(args.state);
+    useSchedulerProofPathForStatePath(statePath);
     if (!args.loop) {
         await runOnce(configPath, statePath);
         return;

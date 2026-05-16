@@ -63,19 +63,21 @@ elif [[ -n "${HOME:-}" && -f "${HOME}/data/openclaw-growth-engineer/config.json"
 elif [[ ! -f "${WORKSPACE}/data/openclaw-growth-engineer/config.json" && -n "${HOME:-}" && -f "${HOME}/data/openclaw-growth-engineer/config.json" ]]; then
   heartbeat_config_path="${HOME}/data/openclaw-growth-engineer/config.json"
 fi
+heartbeat_state_path="${OPENCLAW_GROWTH_STATE_PATH:-$(dirname "${heartbeat_config_path}")/state.json}"
 heartbeat_block="$(cat <<'EOF'
 <!-- openclaw-growth-engineer:start -->
 tasks:
 
 - name: openclaw-growth-engineer-run
   interval: 6h
-  prompt: "Run `node scripts/openclaw-growth-runner.mjs --config __OPENCLAW_GROWTH_CONFIG_PATH__` from the workspace if the config and runtime files exist. The runner owns schedule.cadences, connectorHealthCheckIntervalMinutes, skipIfNoDataChange, and skipIfIssueSetUnchanged. If it reports connector-health alerts, production crashes, generated issues, or actionable growth findings, summarize only the action and evidence. If setup files are missing, tell the user to run `node scripts/openclaw-growth-wizard.mjs --connectors --config __OPENCLAW_GROWTH_CONFIG_PATH__`. If there is no actionable output, reply HEARTBEAT_OK."
+  prompt: "Run `node scripts/openclaw-growth-runner.mjs --config __OPENCLAW_GROWTH_CONFIG_PATH__ --state __OPENCLAW_GROWTH_STATE_PATH__` from the workspace if the config and runtime files exist. The runner owns schedule.cadences, connectorHealthCheckIntervalMinutes, skipIfNoDataChange, and skipIfIssueSetUnchanged. If it reports connector-health alerts, production crashes, generated issues, or actionable growth findings, summarize only the action and evidence. If setup files are missing, tell the user to run `node scripts/openclaw-growth-wizard.mjs --connectors --config __OPENCLAW_GROWTH_CONFIG_PATH__`. If there is no actionable output, reply HEARTBEAT_OK."
 
 # Keep this section small. Do not put secrets in HEARTBEAT.md.
 <!-- openclaw-growth-engineer:end -->
 EOF
 )"
 heartbeat_block="${heartbeat_block//__OPENCLAW_GROWTH_CONFIG_PATH__/${heartbeat_config_path}}"
+heartbeat_block="${heartbeat_block//__OPENCLAW_GROWTH_STATE_PATH__/${heartbeat_state_path}}"
 
 HEARTBEAT_PATH="${heartbeat_path}" HEARTBEAT_BLOCK="${heartbeat_block}" node <<'NODE'
 const fs = require('node:fs');

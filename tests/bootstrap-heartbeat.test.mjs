@@ -31,6 +31,7 @@ test('bootstrap writes an actionable OpenClaw heartbeat task for empty workspace
     assert.match(heartbeat, /name: openclaw-growth-engineer-run/);
     assert.match(heartbeat, /interval: 6h/);
     assert.match(heartbeat, /node scripts\/openclaw-growth-runner\.mjs --config data\/openclaw-growth-engineer\/config\.json/);
+    assert.match(heartbeat, /--state data\/openclaw-growth-engineer\/state\.json/);
     assert.match(heartbeat, /HEARTBEAT_OK/);
   } finally {
     rmSync(workspace, { recursive: true, force: true });
@@ -108,6 +109,7 @@ test('bootstrap supports canonical ClawHub growth-engineer install slug', () => 
     assert.match(heartbeat, /name: openclaw-growth-engineer-run/);
     assert.match(heartbeat, /interval: 6h/);
     assert.match(heartbeat, /node scripts\/openclaw-growth-runner\.mjs --config data\/openclaw-growth-engineer\/config\.json/);
+    assert.match(heartbeat, /--state data\/openclaw-growth-engineer\/state\.json/);
   } finally {
     rmSync(workspace, { recursive: true, force: true });
   }
@@ -137,6 +139,7 @@ test('bootstrap points heartbeat at legacy home config when workspace config is 
     const heartbeat = readFileSync(join(workspace, 'HEARTBEAT.md'), 'utf8');
     assert.match(heartbeat, /name: openclaw-growth-engineer-run/);
     assert.match(heartbeat, new RegExp(`--config ${legacyConfigPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
+    assert.match(heartbeat, new RegExp(`--state ${join(legacyConfigDir, 'state.json').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
   } finally {
     rmSync(workspace, { recursive: true, force: true });
     rmSync(home, { recursive: true, force: true });
@@ -170,6 +173,7 @@ test('bootstrap prefers legacy home config with state over workspace config', ()
 
     const heartbeat = readFileSync(join(workspace, 'HEARTBEAT.md'), 'utf8');
     assert.match(heartbeat, new RegExp(`--config ${legacyConfigPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
+    assert.match(heartbeat, new RegExp(`--state ${join(legacyConfigDir, 'state.json').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
   } finally {
     rmSync(workspace, { recursive: true, force: true });
     rmSync(home, { recursive: true, force: true });

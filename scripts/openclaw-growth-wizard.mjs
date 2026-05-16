@@ -7,7 +7,7 @@ import { createInterface } from 'node:readline/promises';
 import { emitKeypressEvents } from 'node:readline';
 import { createPrivateKey } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import { buildOpenClawGrowthSystemEvent, buildExtraSourceConfig, getAutomationConfig, getDefaultSourceCommand, } from './openclaw-growth-shared.mjs';
+import { buildGrowthRunnerCommand, buildOpenClawGrowthSystemEvent, deriveSchedulerProofPathFromStatePath, deriveStatePathFromConfigPath, buildExtraSourceConfig, getAutomationConfig, getDefaultSourceCommand, } from './openclaw-growth-shared.mjs';
 import { loadOpenClawGrowthSecrets } from './openclaw-growth-env.mjs';
 const DEFAULT_CONFIG_PATH = 'data/openclaw-growth-engineer/config.json';
 const SELF_UPDATE_INTERVAL_MS = 24 * 60 * 60 * 1000;
@@ -2002,13 +2002,13 @@ function getGrowthRunCommand(config, displayConfigPath) {
     if (config?.security?.connectorSecrets?.mode === 'isolated-runner' && config.security.connectorSecrets.runCommand) {
         return config.security.connectorSecrets.runCommand;
     }
-    return growthEngineerPackageCommand(`run --config ${quote(displayConfigPath)}`);
+    return buildGrowthRunnerCommand(displayConfigPath, deriveStatePathFromConfigPath(displayConfigPath));
 }
 function getConnectorHealthCommand(config, displayConfigPath) {
     if (config?.security?.connectorSecrets?.mode === 'isolated-runner' && config.security.connectorSecrets.healthCommand) {
         return config.security.connectorSecrets.healthCommand;
     }
-    return growthEngineerPackageCommand(`run --config ${quote(displayConfigPath)}`);
+    return buildGrowthRunnerCommand(displayConfigPath, deriveStatePathFromConfigPath(displayConfigPath));
 }
 async function maybePromptSecret(rl, label, envName) {
     const existing = process.env[envName]?.trim();
@@ -3629,6 +3629,8 @@ async function askInputSourceConfig(rl, config, configPath) {
 async function writeOpenClawJobManifest(configPath, config) {
     const manifestPath = path.resolve('.openclaw/jobs/openclaw-growth-engineer.json');
     const displayConfigPath = path.relative(process.cwd(), configPath) || configPath;
+    const statePath = deriveStatePathFromConfigPath(displayConfigPath);
+    const proofPath = deriveSchedulerProofPathFromStatePath(statePath);
     const intervalMinutes = Math.max(1, Number(config?.schedule?.intervalMinutes || DEFAULT_GROWTH_INTERVAL_MINUTES));
     const connectorHealthCheckIntervalMinutes = Math.max(1, Number(config?.schedule?.connectorHealthCheckIntervalMinutes || DEFAULT_CONNECTOR_HEALTH_INTERVAL_MINUTES));
     const actionMode = config?.actions?.mode || config?.deliveries?.github?.mode || 'issue';
@@ -3654,13 +3656,14 @@ async function writeOpenClawJobManifest(configPath, config) {
         scheduler: {
             recommended: 'openclaw-cron',
             openclawCron: automation.openclawCron,
-            proofPath: DEFAULT_SCHEDULER_PROOF_PATH,
+            statePath,
+            proofPath,
             verifyCommands: [
                 'openclaw cron list',
                 'openclaw tasks list',
                 'openclaw tasks audit',
-                `tail -n 20 ${DEFAULT_SCHEDULER_PROOF_PATH}`,
-                'jq \'.connectorHealth, .cadences, .lastRunAt, .skippedReason\' data/openclaw-growth-engineer/state.json',
+                `tail -n 20 ${proofPath}`,
+                `jq '.connectorHealth, .cadences, .lastRunAt, .skippedReason' ${statePath}`,
             ],
         },
         jobs: [
@@ -3705,13 +3708,16 @@ function buildOpenClawCronAddCommand(configPath, config) {
 }
 async function ensureOpenClawCronFromWizard(configPath, config) {
     const automation = getAutomationConfig(config).openclawCron;
-    const proofPath = path.resolve(DEFAULT_SCHEDULER_PROOF_PATH);
+    const displayConfigPath = path.relative(process.cwd(), configPath) || configPath;
+    const statePath = deriveStatePathFromConfigPath(displayConfigPath);
+    const proofPath = path.resolve(deriveSchedulerProofPathFromStatePath(statePath));
     if (automation.enabled === false) {
         return {
             ok: true,
             installed: false,
             status: 'disabled',
             detail: 'OpenClaw Gateway cron disabled by user choice.',
+            statePath,
             proofPath,
         };
     }
@@ -3723,6 +3729,7 @@ async function ensureOpenClawCronFromWizard(configPath, config) {
             status: 'openclaw_cli_missing',
             detail: 'openclaw CLI was not found on PATH. Run the shown command on the VPS shell where OpenClaw Gateway is installed.',
             command: addCommand,
+            statePath,
             proofPath,
         };
     }
@@ -3733,6 +3740,7 @@ async function ensureOpenClawCronFromWizard(configPath, config) {
             installed: true,
             status: 'already_configured',
             detail: `OpenClaw cron job already exists: ${automation.name}`,
+            statePath,
             proofPath,
         };
     }
@@ -3743,6 +3751,7 @@ async function ensureOpenClawCronFromWizard(configPath, config) {
         status: add.ok ? 'configured' : 'failed',
         detail: add.ok ? `Configured OpenClaw cron job: ${automation.name}` : add.stderr || add.stdout || `exit ${add.code}`,
         command: addCommand,
+        statePath,
         proofPath,
     };
 }
@@ -3757,7 +3766,7 @@ function printOpenClawCronResult(result) {
     process.stdout.write('  openclaw tasks list\n');
     process.stdout.write('  openclaw tasks audit\n');
     process.stdout.write(`  tail -n 20 ${result.proofPath || path.resolve(DEFAULT_SCHEDULER_PROOF_PATH)}\n`);
-    process.stdout.write("  jq '.connectorHealth, .cadences, .lastRunAt, .skippedReason' data/openclaw-growth-engineer/state.json\n");
+    process.stdout.write(`  jq '.connectorHealth, .cadences, .lastRunAt, .skippedReason' ${result.statePath || 'data/openclaw-growth-engineer/state.json'}\n`);
 }
 async function main() {
     await loadOpenClawGrowthSecrets();

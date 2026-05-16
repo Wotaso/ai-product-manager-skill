@@ -1,6 +1,13 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { getGitHubArtifactModes, shouldAutoCreateGitHubArtifact } from '../scripts/openclaw-growth-shared.mjs';
+import {
+  buildGrowthRunnerCommand,
+  buildOpenClawGrowthSystemEvent,
+  deriveSchedulerProofPathFromStatePath,
+  deriveStatePathFromConfigPath,
+  getGitHubArtifactModes,
+  shouldAutoCreateGitHubArtifact,
+} from '../scripts/openclaw-growth-shared.mjs';
 
 test('shouldAutoCreateGitHubArtifact auto-enables issues when GitHub token and repo are configured', () => {
   const previousToken = process.env.GITHUB_TOKEN;
@@ -82,4 +89,21 @@ test('explicit chat-only output destinations disable GitHub artifact fallback', 
       process.env.GITHUB_TOKEN = previousToken;
     }
   }
+});
+
+test('OpenClaw cron commands keep state and proof beside the active config', () => {
+  const configPath = '/home/lo/data/openclaw-growth-engineer/config.json';
+  const statePath = '/home/lo/data/openclaw-growth-engineer/state.json';
+  const proofPath = '/home/lo/data/openclaw-growth-engineer/runtime/scheduler-proof.jsonl';
+
+  assert.equal(deriveStatePathFromConfigPath(configPath), statePath);
+  assert.equal(deriveSchedulerProofPathFromStatePath(statePath), proofPath);
+  assert.equal(
+    buildGrowthRunnerCommand(configPath),
+    `node scripts/openclaw-growth-runner.mjs --config ${configPath} --state ${statePath}`,
+  );
+
+  const eventText = buildOpenClawGrowthSystemEvent(configPath, {});
+  assert.match(eventText, new RegExp(`--state ${statePath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
+  assert.match(eventText, new RegExp(proofPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
 });

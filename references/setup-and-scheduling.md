@@ -162,7 +162,9 @@ Checks include:
 One pass:
 
 ```bash
-node scripts/openclaw-growth-runner.mjs --config data/openclaw-growth-engineer/config.json
+node scripts/openclaw-growth-runner.mjs \
+  --config data/openclaw-growth-engineer/config.json \
+  --state data/openclaw-growth-engineer/state.json
 ```
 
 Loop:
@@ -187,7 +189,7 @@ openclaw cron add \
   --cron "*/30 * * * *" \
   --tz "UTC" \
   --session main \
-  --system-event "Run OpenClaw Growth Engineer for this workspace. Execute: node scripts/openclaw-growth-runner.mjs --config data/openclaw-growth-engineer/config.json. The runner is the source of truth for connector health, daily, weekly, monthly, quarterly, six-month, and yearly cadence decisions. After the command finishes, inspect data/openclaw-growth-engineer/state.json and data/openclaw-growth-engineer/runtime/scheduler-proof.jsonl. If connector health is healthy, no production issue is found, and no actionable growth finding was generated, reply HEARTBEAT_OK." \
+  --system-event "Run OpenClaw Growth Engineer for this workspace. Execute: node scripts/openclaw-growth-runner.mjs --config data/openclaw-growth-engineer/config.json --state data/openclaw-growth-engineer/state.json. The runner is the source of truth for connector health, daily, weekly, monthly, quarterly, six-month, and yearly cadence decisions. After the command finishes, inspect data/openclaw-growth-engineer/state.json and data/openclaw-growth-engineer/runtime/scheduler-proof.jsonl. If connector health is healthy, no production issue is found, and no actionable growth finding was generated, reply HEARTBEAT_OK." \
   --wake now
 ```
 
