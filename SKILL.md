@@ -3,7 +3,7 @@ name: growth-engineer
 description: Growth Engineer for mobile apps and agent runtimes including OpenClaw and Hermes. Correlate analytics, crashes, billing, feedback, store signals, and repo context into proposal drafts that can flow into agent chat, GitHub issues, or draft pull requests.
 license: MIT
 homepage: https://github.com/Wotaso/growth-engineer-skill
-metadata: {"author":"wotaso","version":"1.0.120","analyticscli-target":"@analyticscli/cli","analyticscli-supported-range":">=0.1.2-preview.0 <0.2.0","openclaw":{"emoji":"🚀","homepage":"https://github.com/Wotaso/growth-engineer-skill","requires":{"bins":["node","analyticscli"]},"install":[{"id":"analyticscli-cli","kind":"node","package":"@analyticscli/cli@preview","bins":["analyticscli"],"label":"Install/update AnalyticsCLI CLI (npm package @analyticscli/cli@preview)"}]},"hermes":{"tags":["Growth","Analytics","Mobile","Product","OpenClaw","Hermes"],"homepage":"https://github.com/Wotaso/growth-engineer-skill","requires":{"bins":["node","analyticscli"]},"install":[{"id":"growth-engineer","kind":"skill","package":"Wotaso/growth-engineer-skill","label":"Install the shared Growth Engineer for Hermes"}]}}
+metadata: {"author":"wotaso","version":"1.0.124","analyticscli-target":"@analyticscli/cli","analyticscli-supported-range":">=0.1.2-preview.0 <0.2.0","openclaw":{"emoji":"🚀","homepage":"https://github.com/Wotaso/growth-engineer-skill","requires":{"bins":["node","analyticscli"]},"install":[{"id":"analyticscli-cli","kind":"node","package":"@analyticscli/cli@preview","bins":["analyticscli"],"label":"Install/update AnalyticsCLI CLI (npm package @analyticscli/cli@preview)"}]},"hermes":{"tags":["Growth","Analytics","Mobile","Product","OpenClaw","Hermes"],"homepage":"https://github.com/Wotaso/growth-engineer-skill","requires":{"bins":["node","analyticscli"]},"install":[{"id":"growth-engineer","kind":"skill","package":"Wotaso/growth-engineer-skill","label":"Install the shared Growth Engineer for Hermes"}]}}
 ---
 
 # Growth Engineer
@@ -101,13 +101,12 @@ Treat this as a private-repo-first skill. The setup and connector wizards should
 
 ## Preferred Runtime
 
-Prefer the standalone `growth-engineer` CLI as the user-facing runtime surface when it is available. `openclaw` remains the lower-level compatibility runtime.
+Prefer the standalone `growth-engineer` CLI as the user-facing runtime surface when it is available. The old OpenClaw workspace CLI package is retired; do not direct users or automation to it.
 
 - Wizard path: `growth-engineer wizard --connectors`
 - Setup path: `growth-engineer setup --config openclaw.config.json`
 - Primary path: `growth-engineer start --config openclaw.config.json`
-- Compatibility path: `openclaw setup --config openclaw.config.json` and `openclaw start --config openclaw.config.json`
-- Local monorepo path: `pnpm --filter @analyticscli/openclaw-cli dev start --repo-root <repo-root>`
+- Local monorepo path: `pnpm --filter @analyticscli/growth-engineer dev start --repo-root <repo-root>`
 - Copied-runtime scripts under `scripts/openclaw-growth-*.mjs` remain the compatibility path for agents that install this as a plain `SKILL.md` folder
 
 The CLI is intentionally non-AI. The host agent should stay the only conversational/implementation layer.
@@ -587,7 +586,7 @@ When the user says "start", "run", or "kick off" the skill:
 4. Then run:
    - `growth-engineer start --config openclaw.config.json`
 5. In this monorepo, use the workspace dev entrypoint when `openclaw` is not installed globally:
-   - `pnpm --filter @analyticscli/openclaw-cli dev start --repo-root <repo-root>`
+   - `pnpm --filter @analyticscli/growth-engineer dev start --repo-root <repo-root>`
 6. Run portable checks first when setup is incomplete:
    - `command -v analyticscli`
    - `analyticscli projects list`

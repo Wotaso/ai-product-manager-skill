@@ -142,7 +142,7 @@ openclaw run --config openclaw.config.json --loop
 
 ## Maintainer Notes
 
-In this monorepo, `apps/openclaw-cli` is now the preferred runtime surface. The checked-in `skills/openclaw-growth-engineer/src` and `scripts/openclaw-*` files remain compatibility paths while the standalone CLI settles.
+In this monorepo, `packages/growth-engineer` is the canonical runtime surface. The checked-in `skills/openclaw-growth-engineer/src` and `scripts/openclaw-*` files remain compatibility paths for plain skill-folder installs.
 
 The CLI is deliberately deterministic. It should not carry its own AI configuration.
 The host agent should call the CLI for data collection and proposal generation, then use its own AI/runtime when the user wants interpretation or implementation.
