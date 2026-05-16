@@ -569,7 +569,7 @@ function buildConnectorHealthAlert(statusPayload, unhealthyConnectors) {
             lines.push(`  Next: ${entry.nextAction}`);
         }
         if (entry.key === 'appStoreConnect' && entry.status === 'partial') {
-            lines.push('  Note: ASC web analytics uses a user-owned web session. If Apple expires it, set ASC_WEB_APPLE_ID to the Apple Account email and refresh with `asc web auth login --apple-id "$ASC_WEB_APPLE_ID"`; API-key ASC auth cannot replace this web session.');
+            lines.push('  Note: ASC uses API-key batch reports by default. Experimental ASC web analytics should only be requested when a needed metric is unavailable through API reports.');
         }
     }
     lines.push('');

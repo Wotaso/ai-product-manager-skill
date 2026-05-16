@@ -90,7 +90,7 @@ The setup wizard also asks how the user wants the tool to operate and whether to
 - For iOS/macOS apps, setup should ask whether to connect the `asc` CLI and App Store Connect skill for all available read-only App Store Connect signals: units/downloads, redownloads, conversion, source page views, app usage, purchases, subscriptions, reviews/ratings, builds/releases, and crash totals.
 - Runs a daily production health pass when scheduled: non-zero production crash totals should notify the OpenClaw user through configured chat/social delivery, then create a GitHub issue or implementation PR automatically when GitHub API write access is configured.
 - Sends short growth-run summaries through configured social/chat channels, including Discord command channels, unless `notifications.growthRun.enabled=false` or the user asks to stop.
-- Checks whether ASC web analytics access is usable. If the user-owned web session expired, it tells the user to set `ASC_WEB_APPLE_ID`, run `asc web auth login --apple-id "$ASC_WEB_APPLE_ID"`, and verify with `asc web auth status --output json --pretty`.
+- Uses API-key ASC batch reports by default and does not require `asc web auth` for setup or health checks. Experimental ASC web analytics is only an explicit fallback for a metric that cannot be retrieved through API reports.
 - Uses `analyticscli feedback summary --format json` as the built-in feedback source instead of a separate duplicate feedback definition.
 - Correlates product signals with repo context; connect GitHub with readable code access whenever possible because it makes analytics findings much more actionable.
 - Generates local issue drafts by default.

@@ -220,15 +220,15 @@ When `schedule.intervalMinutes` or `schedule.connectorHealthCheckIntervalMinutes
 ## 7a) Production Health And Growth Cadence
 
 The default growth loop interval is one day (`schedule.intervalMinutes = 1440`), while connector health runs every 6 hours by default (`schedule.connectorHealthCheckIntervalMinutes = 360`). Daily growth runs should cover every configured public production app.
-If ASC web analytics returns a 403 for an app that is not public yet, record it as skipped/not-public rather than a failure.
+If ASC analytics reports return a 403 for an app that is not public yet or not analytics-ready, record it as skipped/not-public rather than a failure.
 
 Daily:
 
 - Only investigate critical production or business-health issues: Sentry/GlitchTip production errors, crashes, onboarding or purchase drop-offs, zero-conversion days, missing buyers, very low users, conversion, purchases, or other urgent drops.
 - Check ASC total production crashes by app version and Sentry production issues/events/users.
 - Notify the OpenClaw user through configured chat/social delivery when total production crashes are non-zero.
-- Check every available ASC overview metric, especially units/downloads, redownloads, conversion rate, app usage, updates, app opens, subscription state, source traffic, and unique product page views by source, but only alert on severe anomalies during daily-only runs.
-- If the ASC web analytics session is missing or expired, tell the user to set `ASC_WEB_APPLE_ID` to the Apple Account email, run `asc web auth login --apple-id "$ASC_WEB_APPLE_ID"`, verify with `asc web auth status --output json --pretty`, and rerun OpenClaw Growth.
+- Refresh and parse API-key ASC batch reports in the background, especially App Analytics report instances and Sales and Trends reports when `ASC_VENDOR_NUMBER` is available. Check every available ASC metric, especially units/downloads, redownloads, conversion rate, app usage, updates, app opens, subscription state, source traffic, and unique product page views by source, but only alert on severe anomalies during daily-only runs.
+- Do not require `asc web auth` during normal scheduled runs. Use experimental ASC web analytics only after asking the user, and only when a specific needed metric is unavailable through documented API-key reports.
 - Compare crash movement with release/build data before recommending more acquisition traffic.
 - Inspect memory/state and recent releases/code changes before assigning root cause.
 - Automatically create GitHub issues or implementation PRs when OpenClaw has configured GitHub API write access. Skip only when write access is missing, the finding is too low-confidence, or `actions.disableAutoCreateGitHubArtifacts = true`.
@@ -266,7 +266,7 @@ Social summaries:
 
 ASC source reporting caveat:
 
-- `asc web analytics sources` reports unique product page views by source. Do not call this downloads by source unless ASC exposes a true source-level download/unit measure.
+- ASC source reports describe product page views by source. Do not call this downloads by source unless ASC exposes a true source-level download/unit measure.
 - Use source page views together with units and conversion rate to infer traffic quality.
 
 ## 8) Feedback Collection

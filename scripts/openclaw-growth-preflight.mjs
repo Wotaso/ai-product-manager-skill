@@ -939,7 +939,7 @@ async function runConnectionChecks({ checks, config, configPath, timeoutMs, prog
                 continue;
             }
             const smokeCommand = connectorKind === 'asc' && command.includes('export-asc-summary')
-                ? `${command} --skip-web-analytics --reviews-limit 1 --feedback-limit 1 --max-signals 1`
+                ? `${command} --reviews-limit 1 --feedback-limit 1 --max-signals 1`
                 : command;
             const commandCheck = await testCommandSourceJson(smokeCommand, commandCwd);
             addCheck(checks, checkName, commandCheck.ok, commandCheck.ok
