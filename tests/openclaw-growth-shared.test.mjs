@@ -1,10 +1,14 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  buildOpenClawCronAddCommand,
+  buildOpenClawCronVerification,
   buildGrowthRunnerCommand,
   buildOpenClawGrowthSystemEvent,
   deriveSchedulerProofPathFromStatePath,
   deriveStatePathFromConfigPath,
+  evaluateOpenClawCronRecords,
+  evaluateOpenClawCronText,
   getGitHubArtifactModes,
   shouldAutoCreateGitHubArtifact,
 } from '../scripts/openclaw-growth-shared.mjs';
@@ -106,4 +110,54 @@ test('OpenClaw cron commands keep state and proof beside the active config', () 
   const eventText = buildOpenClawGrowthSystemEvent(configPath, {});
   assert.match(eventText, new RegExp(`--state ${statePath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
   assert.match(eventText, new RegExp(proofPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+});
+
+test('OpenClaw cron verification rejects stale name-only jobs', () => {
+  const configPath = 'data/openclaw-growth-engineer/config.json';
+  const verification = buildOpenClawCronVerification(configPath, {});
+
+  const stale = evaluateOpenClawCronRecords(
+    {
+      jobs: [
+        {
+          name: 'OpenClaw Growth Engineer scheduler',
+          schedule: '*/30 * * * *',
+          timezone: 'UTC',
+          systemEvent: 'Temporary Growth Engineer demo notification only',
+        },
+      ],
+    },
+    verification,
+  );
+
+  assert.equal(stale.exists, true);
+  assert.equal(stale.verified, false);
+  assert.equal(stale.reason, 'missing_required_fragments');
+});
+
+test('OpenClaw cron verification accepts jobs wired to the runner contract', () => {
+  const configPath = 'data/openclaw-growth-engineer/config.json';
+  const addCommand = buildOpenClawCronAddCommand(configPath, {});
+  const verification = buildOpenClawCronVerification(configPath, {});
+
+  const parsed = evaluateOpenClawCronRecords(
+    {
+      jobs: [
+        {
+          name: 'OpenClaw Growth Engineer scheduler',
+          schedule: '*/30 * * * *',
+          timezone: 'UTC',
+          command: addCommand,
+        },
+      ],
+    },
+    verification,
+  );
+
+  assert.equal(parsed.exists, true);
+  assert.equal(parsed.verified, true);
+
+  const text = evaluateOpenClawCronText(addCommand, verification);
+  assert.equal(text.exists, true);
+  assert.equal(text.verified, true);
 });

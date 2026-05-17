@@ -46,6 +46,7 @@ test('notification delivery fallbacks are merged with explicit channels', () => 
 
 test('wizard exposes connector and output interval setup paths', () => {
   const wizard = readFileSync(join(skillRoot, 'scripts/openclaw-growth-wizard.mjs'), 'utf8');
+  const shared = readFileSync(join(skillRoot, 'scripts/openclaw-growth-shared.mjs'), 'utf8');
 
   assert.match(wizard, /What do you want to configure/);
   assert.match(wizard, /Use Up\/Down to move, Enter to continue, or press 1-4/);
@@ -82,7 +83,8 @@ test('wizard exposes connector and output interval setup paths', () => {
   assert.match(wizard, /Output destinations/);
   assert.match(wizard, /Scheduled review cadences/);
   assert.match(wizard, /OpenClaw Gateway cron/);
-  assert.match(wizard, /openclaw cron add/);
+  assert.match(shared, /openclaw cron add/);
+  assert.match(wizard, /inspectOpenClawCronInstall/);
   assert.match(wizard, /scheduler-proof\.jsonl/);
   assert.match(wizard, /Default growth cadence/);
   assert.match(wizard, /What it decides/);
@@ -106,6 +108,7 @@ test('config example enables OpenClaw cron and runner proof logs', () => {
   });
   assert.match(start, /openclaw cron add/);
   assert.match(start, /openclaw system event/);
+  assert.match(start, /inspectOpenClawCronInstall/);
   assert.match(runner, /DEFAULT_SCHEDULER_PROOF_PATH = 'data\/openclaw-growth-engineer\/runtime\/scheduler-proof\.jsonl'/);
   assert.match(runner, /deriveRuntimeDirFromStatePath\(statePath\)/);
   assert.match(runner, /deriveSchedulerProofPathFromStatePath\(statePath\)/);
