@@ -2906,9 +2906,11 @@ async function runConnectorSetupWizard(args) {
         const existingFixes = connectorKeysNeedingAttention(healthByConnector);
         const requestedConnectors = args.connectors ? parseConnectorList(args.connectors) : [];
         const chosenConnectors = requestedConnectors.length > 0
-            ? orderConnectors([...new Set([...requestedConnectors, ...existingFixes])])
+            ? orderConnectors(requestedConnectors)
             : await askConnectorSelectionWithHealth(rl, healthByConnector, existingFixes);
-        const selected = withMissingRequiredAnalyticsConnector(chosenConnectors);
+        const selected = requestedConnectors.length > 0
+            ? orderConnectors(chosenConnectors)
+            : withMissingRequiredAnalyticsConnector(chosenConnectors);
         if (selected.length === 0) {
             throw new Error('No supported connectors selected. Use analytics, github, revenuecat, sentry, asc, or all.');
         }

@@ -44,6 +44,20 @@ test('notification delivery fallbacks are merged with explicit channels', () => 
   assert.doesNotMatch(wizard, /discord-openclaw-bridge/);
 });
 
+test('connector health alerts include direct repair commands without broad menu detours', () => {
+  const runner = readFileSync(join(skillRoot, 'scripts/openclaw-growth-runner.mjs'), 'utf8');
+  const wizard = readFileSync(join(skillRoot, 'scripts/openclaw-growth-wizard.mjs'), 'utf8');
+
+  assert.match(runner, /Run on the host terminal/);
+  assert.match(runner, /nodeRuntimeScriptCommand\('openclaw-growth-wizard\.mjs'\)/);
+  assert.match(runner, /--connectors \$\{quote\(connector\)\} --config \$\{quote\(configPath\)\}/);
+  assert.match(runner, /ASC web-auth refresh only/);
+  assert.match(runner, /asc web auth login --apple-id "\$ASC_WEB_APPLE_ID"/);
+  assert.match(runner, /Do not rerun the API-key ASC wizard unless the API-key smoke test also fails/);
+  assert.match(wizard, /requestedConnectors\.length > 0\s+\? orderConnectors\(requestedConnectors\)/);
+  assert.doesNotMatch(wizard, /requestedConnectors\.length > 0\s+\? orderConnectors\(\[\.\.\.new Set\(\[\.\.\.requestedConnectors, \.\.\.existingFixes\]\)\]\)/);
+});
+
 test('wizard exposes connector and output interval setup paths', () => {
   const wizard = readFileSync(join(skillRoot, 'scripts/openclaw-growth-wizard.mjs'), 'utf8');
   const shared = readFileSync(join(skillRoot, 'scripts/openclaw-growth-shared.mjs'), 'utf8');
