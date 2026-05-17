@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  buildHermesCronCreateCommand,
+  buildHermesCronVerification,
   buildOpenClawCronAddCommand,
   buildOpenClawCronVerification,
   buildGrowthRunnerCommand,
@@ -160,4 +162,53 @@ test('OpenClaw cron verification accepts jobs wired to the runner contract', () 
   const text = evaluateOpenClawCronText(addCommand, verification);
   assert.equal(text.exists, true);
   assert.equal(text.verified, true);
+});
+
+test('Hermes cron verification rejects stale name-only jobs', () => {
+  const configPath = 'data/openclaw-growth-engineer/config.json';
+  const workdir = '/srv/example-app';
+  const verification = buildHermesCronVerification(configPath, {}, { workdir });
+
+  const stale = evaluateOpenClawCronRecords(
+    {
+      jobs: [
+        {
+          name: 'Hermes Growth Engineer scheduler',
+          schedule: '*/30 * * * *',
+          prompt: 'Old placeholder task',
+        },
+      ],
+    },
+    verification,
+  );
+
+  assert.equal(stale.exists, true);
+  assert.equal(stale.verified, false);
+  assert.equal(stale.reason, 'missing_required_fragments');
+});
+
+test('Hermes cron verification accepts jobs wired to the runner contract', () => {
+  const configPath = 'data/openclaw-growth-engineer/config.json';
+  const workdir = '/srv/example-app';
+  const createCommand = buildHermesCronCreateCommand(configPath, {}, { workdir });
+  const verification = buildHermesCronVerification(configPath, {}, { workdir });
+
+  const parsed = evaluateOpenClawCronRecords(
+    {
+      jobs: [
+        {
+          name: 'Hermes Growth Engineer scheduler',
+          schedule: '*/30 * * * *',
+          skill: 'growth-engineer',
+          deliver: 'local',
+          workdir,
+          command: createCommand,
+        },
+      ],
+    },
+    verification,
+  );
+
+  assert.equal(parsed.exists, true);
+  assert.equal(parsed.verified, true);
 });

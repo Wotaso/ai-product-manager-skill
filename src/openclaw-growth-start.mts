@@ -13,6 +13,8 @@ import {
   getActionMode,
   getAutomationConfig,
   getDefaultSourceCommand,
+  buildHermesCronCreateCommand,
+  inspectHermesCronInstall,
   inspectOpenClawCronInstall,
 } from './openclaw-growth-shared.mjs';
 import { applyOpenClawSecretRefs, loadOpenClawGrowthSecrets } from './openclaw-growth-env.mjs';
@@ -772,6 +774,89 @@ async function ensureOpenClawCronSchedule(configPath, config, mode = 'auto') {
     remediation:
       inspection.exists && !add.ok
         ? `Remove the stale OpenClaw cron job named "${automation.openclawCron.name}" with your installed OpenClaw CLI, then rerun: ${addCommand}`
+        : undefined,
+    proof,
+  };
+}
+
+async function ensureHermesCronSchedule(configPath, config, mode = 'auto') {
+  const normalizedMode = validateOpenClawCronMode(mode);
+  const automation = getAutomationConfig(config);
+  const displayConfigPath = relativeWorkspacePath(configPath);
+  const statePath = deriveStatePathFromConfigPath(displayConfigPath);
+  const proofPath = deriveSchedulerProofPathFromStatePath(statePath);
+  const workdir = path.resolve(automation.hermesCron.workdir || process.cwd());
+  const proof = {
+    listCommand: 'hermes cron list',
+    statusCommand: 'hermes cron status <job-id>',
+    stateCommand: `jq '.connectorHealth, .cadences, .lastRunAt, .skippedReason' ${quote(statePath)}`,
+    proofCommand: `tail -n 20 ${quote(proofPath)}`,
+  };
+
+  if (normalizedMode === 'disable' || automation.hermesCron.enabled === false) {
+    return {
+      ok: true,
+      enabled: false,
+      installed: false,
+      status: 'disabled',
+      detail: 'Hermes cron setup disabled',
+      proof,
+    };
+  }
+
+  const hermesPath = await resolveCommandPath('hermes');
+  if (!hermesPath) {
+    return {
+      ok: normalizedMode === 'auto',
+      enabled: true,
+      installed: false,
+      status: normalizedMode === 'auto' ? 'skipped' : 'failed',
+      detail: 'hermes CLI not found on PATH; skipping Hermes cron setup',
+      remediation: 'Run this setup inside the host shell where Hermes Gateway is installed, or install the hermes CLI.',
+      proof,
+    };
+  }
+
+  const createCommand = buildHermesCronCreateCommand(displayConfigPath, config, { workdir });
+  const inspection = await inspectHermesCronInstall({
+    configPath: displayConfigPath,
+    config,
+    runCommand: runShellCommand,
+    readFile: fs.readFile,
+    workdir,
+  });
+  if (inspection.exists && inspection.verified) {
+    return {
+      ok: true,
+      enabled: true,
+      installed: true,
+      status: 'already_configured_verified',
+      detail: `Hermes cron job already exists and matches the Growth Engineer runner contract: ${automation.hermesCron.name}`,
+      schedule: automation.hermesCron.schedule,
+      workdir,
+      source: inspection.source,
+      proof,
+    };
+  }
+
+  const create = await runShellCommand(createCommand, 60_000);
+  const existingDetail = inspection.exists
+    ? `Existing Hermes cron job "${automation.hermesCron.name}" was not verifiably wired to the current runner contract (${inspection.reason} via ${inspection.source}). `
+    : '';
+  return {
+    ok: create.ok || (normalizedMode === 'auto' && !inspection.exists),
+    enabled: true,
+    installed: create.ok,
+    status: create.ok ? (inspection.exists ? 'reconfigured' : 'configured') : inspection.exists ? 'needs_repair' : 'failed',
+    detail: create.ok
+      ? `${existingDetail}Configured Hermes cron job "${automation.hermesCron.name}" (${automation.hermesCron.schedule})`
+      : `${existingDetail}${create.stderr.trim() || create.stdout.trim() || `hermes cron create exited ${create.code}`}`,
+    schedule: automation.hermesCron.schedule,
+    workdir,
+    command: createCommand,
+    remediation:
+      inspection.exists && !create.ok
+        ? `Remove the stale Hermes cron job named "${automation.hermesCron.name}" with your installed Hermes CLI, then rerun: ${createCommand}`
         : undefined,
     proof,
   };
@@ -1675,6 +1760,7 @@ async function main() {
   await applyOpenClawSecretRefs(initialConfig);
   const heartbeat = await ensureGrowthHeartbeat(configPath, initialConfig);
   const openclawCron = await ensureOpenClawCronSchedule(configPath, initialConfig, args.openclawCron);
+  const hermesCron = await ensureHermesCronSchedule(configPath, initialConfig, args.openclawCron);
   if (!openclawCron.ok) {
     process.stdout.write(
       `${JSON.stringify(
@@ -1685,11 +1771,38 @@ async function main() {
           configPath,
           heartbeat,
           openclawCron,
+          hermesCron,
           blockers: [
             {
               check: 'scheduler:openclaw-cron',
               detail: openclawCron.detail,
               remediation: openclawCron.remediation || 'Fix OpenClaw cron setup and rerun start.',
+            },
+          ],
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    process.exitCode = 1;
+    return;
+  }
+  if (!hermesCron.ok) {
+    process.stdout.write(
+      `${JSON.stringify(
+        {
+          ok: false,
+          phase: 'hermes_cron_setup',
+          configCreated: configResult.created,
+          configPath,
+          heartbeat,
+          openclawCron,
+          hermesCron,
+          blockers: [
+            {
+              check: 'scheduler:hermes-cron',
+              detail: hermesCron.detail,
+              remediation: hermesCron.remediation || 'Fix Hermes cron setup and rerun start.',
             },
           ],
         },
@@ -1713,6 +1826,7 @@ async function main() {
           configPath,
           heartbeat,
           openclawCron,
+          hermesCron,
           projectConfigured,
           ascAppConfigured: ascAppConfiguredFromArg,
           blockers: [
@@ -1762,6 +1876,7 @@ async function main() {
           configPath,
           heartbeat,
           openclawCron,
+          hermesCron,
           projectConfigured,
           ascAppConfigured: ascAppConfiguredFromArg,
           connectorSetup,
@@ -1838,6 +1953,7 @@ async function main() {
           configPath,
           heartbeat,
           openclawCron,
+          hermesCron,
           projectConfigured: projectConfigured || analyticsProjectSetup.configured,
           analyticsProjectId: analyticsProjectSetup.projectId || null,
           ascAppConfigured: false,
@@ -1890,6 +2006,7 @@ async function main() {
           configPath,
           heartbeat,
           openclawCron,
+          hermesCron,
           projectConfigured: projectConfigured || analyticsProjectSetup.configured,
           analyticsProjectId: analyticsProjectSetup.projectId || null,
           ascAppConfigured: ascAppSetup.configured,
@@ -1918,6 +2035,7 @@ async function main() {
           configPath,
           heartbeat,
           openclawCron,
+          hermesCron,
           projectConfigured: projectConfigured || analyticsProjectSetup.configured,
           analyticsProjectId: analyticsProjectSetup.projectId || null,
           ascAppConfigured: ascAppSetup.configured,
@@ -1962,6 +2080,7 @@ async function main() {
           configPath,
           heartbeat,
           openclawCron,
+          hermesCron,
           projectConfigured,
           error: rawError,
         },
@@ -1983,6 +2102,7 @@ async function main() {
         configPath,
         heartbeat,
         openclawCron,
+        hermesCron,
         projectConfigured,
         actionMode,
         runnerOutput: runResult.stdout.trim(),

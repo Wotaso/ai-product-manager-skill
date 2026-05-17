@@ -83,8 +83,11 @@ test('wizard exposes connector and output interval setup paths', () => {
   assert.match(wizard, /Output destinations/);
   assert.match(wizard, /Scheduled review cadences/);
   assert.match(wizard, /OpenClaw Gateway cron/);
+  assert.match(wizard, /Hermes cron job/);
   assert.match(shared, /openclaw cron add/);
+  assert.match(shared, /hermes cron create/);
   assert.match(wizard, /inspectOpenClawCronInstall/);
+  assert.match(wizard, /inspectHermesCronInstall/);
   assert.match(wizard, /scheduler-proof\.jsonl/);
   assert.match(wizard, /Default growth cadence/);
   assert.match(wizard, /What it decides/);
@@ -92,7 +95,7 @@ test('wizard exposes connector and output interval setup paths', () => {
   assert.match(wizard, /Customize GitHub issue\/PR limits, labels, or chart attachment settings/);
 });
 
-test('config example enables OpenClaw cron and runner proof logs', () => {
+test('config example enables OpenClaw and Hermes cron with runner proof logs', () => {
   const config = JSON.parse(
     readFileSync(join(skillRoot, 'data/openclaw-growth-engineer/config.example.json'), 'utf8'),
   );
@@ -106,9 +109,18 @@ test('config example enables OpenClaw cron and runner proof logs', () => {
     timezone: 'UTC',
     name: 'OpenClaw Growth Engineer scheduler',
   });
+  assert.deepEqual(config.automation.hermesCron, {
+    enabled: true,
+    schedule: '*/30 * * * *',
+    name: 'Hermes Growth Engineer scheduler',
+    skill: 'growth-engineer',
+    deliver: 'local',
+  });
   assert.match(start, /openclaw cron add/);
+  assert.match(start, /hermes cron create/);
   assert.match(start, /openclaw system event/);
   assert.match(start, /inspectOpenClawCronInstall/);
+  assert.match(start, /inspectHermesCronInstall/);
   assert.match(runner, /DEFAULT_SCHEDULER_PROOF_PATH = 'data\/openclaw-growth-engineer\/runtime\/scheduler-proof\.jsonl'/);
   assert.match(runner, /deriveRuntimeDirFromStatePath\(statePath\)/);
   assert.match(runner, /deriveSchedulerProofPathFromStatePath\(statePath\)/);

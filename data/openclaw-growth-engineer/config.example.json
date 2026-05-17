@@ -176,6 +176,13 @@
       "schedule": "*/30 * * * *",
       "timezone": "UTC",
       "name": "OpenClaw Growth Engineer scheduler"
+    },
+    "hermesCron": {
+      "enabled": true,
+      "schedule": "*/30 * * * *",
+      "name": "Hermes Growth Engineer scheduler",
+      "skill": "growth-engineer",
+      "deliver": "local"
     }
   },
   "security": {

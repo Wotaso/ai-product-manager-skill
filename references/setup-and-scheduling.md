@@ -203,6 +203,29 @@ tail -n 20 data/openclaw-growth-engineer/runtime/scheduler-proof.jsonl
 jq '.connectorHealth, .cadences, .lastRunAt, .skippedReason' data/openclaw-growth-engineer/state.json
 ```
 
+Hermes cron:
+
+For Hermes installs, prefer Hermes Gateway cron over Discord delivery or host-level cron. `openclaw-growth-wizard.mjs` and `openclaw-growth-start.mjs` should configure a Hermes cron job when `automation.hermesCron.enabled` is true and the `hermes` CLI is available. The job must attach the shared skill and workspace:
+
+```bash
+hermes cron create \
+  "*/30 * * * *" \
+  "Run Growth Engineer for this workspace. Execute: node scripts/openclaw-growth-runner.mjs --config data/openclaw-growth-engineer/config.json --state data/openclaw-growth-engineer/state.json. The runner is the source of truth for connector health, daily, weekly, monthly, quarterly, six-month, and yearly cadence decisions. After the command finishes, inspect data/openclaw-growth-engineer/state.json and data/openclaw-growth-engineer/runtime/scheduler-proof.jsonl. If connector health is healthy, no production issue is found, and no actionable growth finding was generated, reply HEARTBEAT_OK." \
+  --name "Hermes Growth Engineer scheduler" \
+  --skill growth-engineer \
+  --deliver local \
+  --workdir "$PWD"
+```
+
+Verification on the Hermes host:
+
+```bash
+hermes cron list
+hermes gateway status
+tail -n 20 data/openclaw-growth-engineer/runtime/scheduler-proof.jsonl
+jq '.connectorHealth, .cadences, .lastRunAt, .skippedReason' data/openclaw-growth-engineer/state.json
+```
+
 OpenClaw heartbeat:
 
 The setup/bootstrap path must still leave a real workspace `HEARTBEAT.md` task in place as a fallback and awareness checklist. OpenClaw skips heartbeat runs when `HEARTBEAT.md` is empty or comment-only, so an enabled Growth Engineer schedule is not sufficient by itself.
