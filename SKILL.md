@@ -462,7 +462,7 @@ Only ask the user for help if both direct npm install and the bundled helper fai
 The CLI can write proposals to one or more targets:
 
 - `deliveries.openclawChat.enabled = true`: write `.openclaw/chat/latest.md` and `.openclaw/chat/latest.json` as local outbox artifacts. This is not an external human notification by itself.
-- Real user notifications require a successful external channel such as `deliveries.command`, Slack webhook, generic webhook, or native OpenClaw delivery. If only `openclawChat` is configured, connector-health alerts must report: `Alert written locally, but no external notification channel configured.`
+- Real user notifications require a successful external channel such as native OpenClaw cron delivery, `deliveries.command`, Slack webhook, or generic webhook. OpenClaw cron delivery defaults to `automation.openclawCron.delivery.channel = "last"` so it uses the chat/social channel already connected to that OpenClaw instance, whether that is Discord, Slack, Telegram, WhatsApp, or another supported channel. If only `openclawChat` is configured, connector-health alerts must report: `Alert written locally, but no external notification channel configured.`
 - `deliveries.github.mode = "issue"` with `deliveries.github.autoCreate = true`: create implementation-ready GitHub issues
 - `deliveries.github.mode = "pull_request"` with `deliveries.github.autoCreate = true`: create proposal-only draft PRs that add `.openclaw/proposals/...md` proposal files to the repo. Use this only for explicit proposal delivery, not when the user asks OpenClaw to implement changes.
 

@@ -190,8 +190,12 @@ openclaw cron add \
   --tz "UTC" \
   --session main \
   --system-event "Run OpenClaw Growth Engineer for this workspace. Execute: node scripts/openclaw-growth-runner.mjs --config data/openclaw-growth-engineer/config.json --state data/openclaw-growth-engineer/state.json. The runner is the source of truth for connector health, daily, weekly, monthly, quarterly, six-month, and yearly cadence decisions. After the command finishes, inspect data/openclaw-growth-engineer/state.json and data/openclaw-growth-engineer/runtime/scheduler-proof.jsonl. If connector health is healthy, no production issue is found, and no actionable growth finding was generated, reply HEARTBEAT_OK." \
+  --announce \
+  --channel last \
   --wake now
 ```
+
+`--channel last` is intentional: it lets OpenClaw use the chat/social route already connected to that instance instead of assuming Discord, Slack, Telegram, or any other specific provider. Set `automation.openclawCron.delivery.channel` and `to` only when an install needs a pinned target.
 
 Verification on the VPS:
 

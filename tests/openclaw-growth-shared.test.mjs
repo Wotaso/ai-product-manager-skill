@@ -164,6 +164,25 @@ test('OpenClaw cron verification accepts jobs wired to the runner contract', () 
   assert.equal(text.verified, true);
 });
 
+test('OpenClaw cron commands announce through the instance default channel by default', () => {
+  const configPath = 'data/openclaw-growth-engineer/config.json';
+  const addCommand = buildOpenClawCronAddCommand(configPath, {});
+  const verification = buildOpenClawCronVerification(configPath, {});
+
+  assert.match(addCommand, /--announce --channel last --wake now/);
+  assert.equal(verification.delivery.enabled, true);
+  assert.equal(verification.delivery.channel, 'last');
+
+  const silentCommand = buildOpenClawCronAddCommand(configPath, {
+    automation: {
+      openclawCron: {
+        delivery: { enabled: false },
+      },
+    },
+  });
+  assert.match(silentCommand, /--no-deliver --wake now/);
+});
+
 test('Hermes cron verification rejects stale name-only jobs', () => {
   const configPath = 'data/openclaw-growth-engineer/config.json';
   const workdir = '/srv/example-app';

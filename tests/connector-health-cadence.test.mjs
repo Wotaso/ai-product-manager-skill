@@ -44,6 +44,15 @@ test('notification delivery fallbacks are merged with explicit channels', () => 
   assert.doesNotMatch(wizard, /discord-openclaw-bridge/);
 });
 
+test('due growth cadences still run and notify even when source data or findings are unchanged', () => {
+  const runner = readFileSync(join(skillRoot, 'scripts/openclaw-growth-runner.mjs'), 'utf8');
+
+  assert.match(runner, /activeCadences\.length === 0 && !changed/);
+  assert.match(runner, /activeCadences\.length === 0 &&\s+unchangedIssueSet/);
+  assert.match(runner, /issueSetChangedOrExplicitlyAllowed/);
+  assert.match(runner, /lastGrowthRunNotifications: await deliverGrowthRunSummary/);
+});
+
 test('connector health alerts include direct repair commands without broad menu detours', () => {
   const runner = readFileSync(join(skillRoot, 'scripts/openclaw-growth-runner.mjs'), 'utf8');
   const wizard = readFileSync(join(skillRoot, 'scripts/openclaw-growth-wizard.mjs'), 'utf8');
@@ -122,6 +131,12 @@ test('config example enables OpenClaw and Hermes cron with runner proof logs', (
     schedule: '*/30 * * * *',
     timezone: 'UTC',
     name: 'OpenClaw Growth Engineer scheduler',
+    delivery: {
+      enabled: true,
+      mode: 'announce',
+      channel: 'last',
+      to: '',
+    },
   });
   assert.deepEqual(config.automation.hermesCron, {
     enabled: true,

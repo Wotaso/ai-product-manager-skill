@@ -1602,7 +1602,7 @@ async function runOnce(configPath, statePath) {
   const currentHashes = computeSourceHashes(payloads);
   const changed = hasSourceChanges(stateAfterHealthCheck.sourceHashes, currentHashes);
 
-  if (!changed && config.schedule?.skipIfNoDataChange !== false) {
+  if (activeCadences.length === 0 && !changed && config.schedule?.skipIfNoDataChange !== false) {
     process.stdout.write(`[${new Date().toISOString()}] No data changes. Skip run.\n`);
     const completedAt = new Date().toISOString();
     await fs.mkdir(path.dirname(statePath), { recursive: true });
@@ -1667,7 +1667,11 @@ async function runOnce(configPath, statePath) {
   const issueFingerprint = buildIssueFingerprint(dryRun.issuesPayload);
   const unchangedIssueSet = issueFingerprint === stateAfterHealthCheck.lastIssueFingerprint;
 
-  if (unchangedIssueSet && config.schedule?.skipIfIssueSetUnchanged !== false) {
+  if (
+    activeCadences.length === 0 &&
+    unchangedIssueSet &&
+    config.schedule?.skipIfIssueSetUnchanged !== false
+  ) {
     process.stdout.write(`[${new Date().toISOString()}] Issue set unchanged. Skip GitHub creation.\n`);
     const completedAt = new Date().toISOString();
     await fs.mkdir(path.dirname(statePath), { recursive: true });
@@ -1700,7 +1704,12 @@ async function runOnce(configPath, statePath) {
     return;
   }
 
-  const shouldCreateGitHubArtifact = createGitHubArtifact && Number(dryRun.issuesPayload?.issue_count || 0) > 0;
+  const issueSetChangedOrExplicitlyAllowed =
+    !unchangedIssueSet || config.schedule?.skipIfIssueSetUnchanged === false;
+  const shouldCreateGitHubArtifact =
+    createGitHubArtifact &&
+    Number(dryRun.issuesPayload?.issue_count || 0) > 0 &&
+    issueSetChangedOrExplicitlyAllowed;
   if (shouldCreateGitHubArtifact) {
     for (const githubArtifactMode of githubArtifactModes) {
       await runAnalyzer({

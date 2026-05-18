@@ -112,6 +112,8 @@ export function getDefaultSourceCommand(service) {
 export function getAutomationConfig(config) {
     const automation = config?.automation && typeof config.automation === 'object' ? config.automation : {};
     const openclawCron = automation.openclawCron && typeof automation.openclawCron === 'object' ? automation.openclawCron : {};
+    const openclawCronDelivery = openclawCron.delivery && typeof openclawCron.delivery === 'object' ? openclawCron.delivery : {};
+    const openclawCronDeliveryMode = String(openclawCronDelivery.mode || 'announce').trim() || 'announce';
     const hermesCron = automation.hermesCron && typeof automation.hermesCron === 'object' ? automation.hermesCron : {};
     return {
         ...automation,
@@ -122,6 +124,12 @@ export function getAutomationConfig(config) {
             timezone: String(openclawCron.timezone || process.env.TZ || 'UTC').trim() || 'UTC',
             name: String(openclawCron.name || 'OpenClaw Growth Engineer scheduler').trim() ||
                 'OpenClaw Growth Engineer scheduler',
+            delivery: {
+                enabled: openclawCronDelivery.enabled !== false && openclawCronDeliveryMode !== 'none',
+                mode: openclawCronDeliveryMode,
+                channel: String(openclawCronDelivery.channel || 'last').trim() || 'last',
+                to: String(openclawCronDelivery.to || '').trim(),
+            },
         },
         hermesCron: {
             enabled: hermesCron.enabled !== false,
@@ -167,7 +175,7 @@ export function buildOpenClawGrowthSystemEvent(configPath, config = {}) {
 export function buildOpenClawCronAddCommand(configPath, config = {}) {
     const automation = getAutomationConfig(config).openclawCron;
     const eventText = buildOpenClawGrowthSystemEvent(configPath, config);
-    return [
+    const command = [
         'openclaw cron add',
         '--name',
         quote(automation.name),
@@ -179,8 +187,20 @@ export function buildOpenClawCronAddCommand(configPath, config = {}) {
         automation.mode === 'isolated' ? 'isolated' : 'main',
         automation.mode === 'isolated' ? '--message' : '--system-event',
         quote(eventText),
-        automation.mode === 'isolated' ? '--announce' : '--wake now',
-    ].join(' ');
+    ];
+    if (automation.delivery.enabled) {
+        command.push('--announce', '--channel', quote(automation.delivery.channel));
+        if (automation.delivery.to) {
+            command.push('--to', quote(automation.delivery.to));
+        }
+    }
+    else {
+        command.push('--no-deliver');
+    }
+    if (automation.mode !== 'isolated') {
+        command.push('--wake now');
+    }
+    return command.join(' ');
 }
 function normalizeCronComparable(value) {
     return String(value || '')
@@ -229,6 +249,7 @@ export function buildOpenClawCronVerification(configPath, config = {}) {
         name: automation.name,
         schedule: automation.schedule,
         timezone: automation.timezone,
+        delivery: automation.delivery,
         statePath,
         proofPath,
         requiredFragments: [
@@ -243,6 +264,8 @@ export function buildOpenClawCronVerification(configPath, config = {}) {
             statePath,
             proofPath,
             'HEARTBEAT_OK',
+            ...(automation.delivery.enabled ? ['announce', automation.delivery.channel] : ['no-deliver']),
+            ...(automation.delivery.enabled && automation.delivery.to ? [automation.delivery.to] : []),
         ],
     };
 }

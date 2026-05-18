@@ -3206,6 +3206,12 @@ async function buildDefaultWizardConfig() {
                 schedule: '*/30 * * * *',
                 timezone: process.env.TZ || 'UTC',
                 name: 'OpenClaw Growth Engineer scheduler',
+                delivery: {
+                    enabled: true,
+                    mode: 'announce',
+                    channel: 'last',
+                    to: '',
+                },
             },
         },
         secrets: {
@@ -3608,6 +3614,13 @@ async function askIntervalConfig(rl, config) {
             schedule: openclawCronSchedule || '*/30 * * * *',
             timezone: openclawCronTimezone || 'UTC',
             name: currentAutomation.openclawCron.name || 'OpenClaw Growth Engineer scheduler',
+            delivery: {
+                ...(currentAutomation.openclawCron.delivery || {}),
+                enabled: currentAutomation.openclawCron.delivery?.enabled !== false,
+                mode: currentAutomation.openclawCron.delivery?.mode || 'announce',
+                channel: currentAutomation.openclawCron.delivery?.channel || 'last',
+                to: currentAutomation.openclawCron.delivery?.to || '',
+            },
         },
         hermesCron: {
             ...(currentAutomation.hermesCron || {}),

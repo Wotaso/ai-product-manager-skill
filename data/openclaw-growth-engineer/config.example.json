@@ -175,7 +175,13 @@
       "mode": "main",
       "schedule": "*/30 * * * *",
       "timezone": "UTC",
-      "name": "OpenClaw Growth Engineer scheduler"
+      "name": "OpenClaw Growth Engineer scheduler",
+      "delivery": {
+        "enabled": true,
+        "mode": "announce",
+        "channel": "last",
+        "to": ""
+      }
     },
     "hermesCron": {
       "enabled": true,
