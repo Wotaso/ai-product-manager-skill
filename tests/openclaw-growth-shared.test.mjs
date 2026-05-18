@@ -1,4 +1,7 @@
 import assert from 'node:assert/strict';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import test from 'node:test';
 import {
   buildHermesCronCreateCommand,
@@ -12,6 +15,7 @@ import {
   evaluateOpenClawCronRecords,
   evaluateOpenClawCronText,
   getGitHubArtifactModes,
+  repairOpenClawCronDeliveryStore,
   shouldAutoCreateGitHubArtifact,
 } from '../scripts/openclaw-growth-shared.mjs';
 
@@ -236,6 +240,58 @@ test('OpenClaw cron verification accepts pinned Discord announce delivery for th
 
   assert.equal(parsed.exists, true);
   assert.equal(parsed.verified, true);
+});
+
+test('OpenClaw cron repair updates disabled delivery in the local job store', async () => {
+  const home = mkdtempSync(join(tmpdir(), 'openclaw-cron-home-'));
+  const configPath = 'data/openclaw-growth-engineer/config.json';
+  const jobStoreDir = join(home, '.openclaw', 'cron');
+  const jobStorePath = join(jobStoreDir, 'jobs.json');
+  const addCommand = buildOpenClawCronAddCommand(configPath, {});
+
+  try {
+    mkdirSync(jobStoreDir, { recursive: true });
+    writeFileSync(
+      jobStorePath,
+      JSON.stringify(
+        {
+          jobs: [
+            {
+              id: 'growth',
+              name: 'OpenClaw Growth Engineer scheduler',
+              schedule: '*/30 * * * *',
+              timezone: 'UTC',
+              command: addCommand,
+              delivery: {
+                mode: 'none',
+              },
+            },
+          ],
+        },
+        null,
+        2,
+      ),
+    );
+
+    const result = await repairOpenClawCronDeliveryStore({
+      configPath,
+      readFile: async (filePath, encoding) => readFileSync(filePath, encoding),
+      writeFile: async (filePath, content, encoding) => writeFileSync(filePath, content, encoding),
+      home,
+    });
+
+    assert.equal(result.repaired, true);
+    assert.equal(result.path, jobStorePath);
+
+    const repaired = JSON.parse(readFileSync(jobStorePath, 'utf8'));
+    assert.deepEqual(repaired.jobs[0].delivery, {
+      mode: 'announce',
+      channel: 'last',
+      to: '',
+    });
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
 });
 
 test('Hermes cron verification rejects stale name-only jobs', () => {

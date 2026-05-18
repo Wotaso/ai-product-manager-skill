@@ -4,7 +4,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { buildGrowthRunnerCommand, buildOpenClawCronAddCommand, deriveSchedulerProofPathFromStatePath, deriveStatePathFromConfigPath, getActionMode, getAutomationConfig, getDefaultSourceCommand, buildHermesCronCreateCommand, inspectHermesCronInstall, inspectOpenClawCronInstall, } from './openclaw-growth-shared.mjs';
+import { buildGrowthRunnerCommand, buildOpenClawCronAddCommand, deriveSchedulerProofPathFromStatePath, deriveStatePathFromConfigPath, getActionMode, getAutomationConfig, getDefaultSourceCommand, buildHermesCronCreateCommand, inspectHermesCronInstall, inspectOpenClawCronInstall, repairOpenClawCronDeliveryStore, } from './openclaw-growth-shared.mjs';
 import { applyOpenClawSecretRefs, loadOpenClawGrowthSecrets } from './openclaw-growth-env.mjs';
 const DEFAULT_CONFIG_PATH = 'data/openclaw-growth-engineer/config.json';
 const DEFAULT_TEMPLATE_PATH = 'data/openclaw-growth-engineer/config.example.json';
@@ -697,6 +697,27 @@ async function ensureOpenClawCronSchedule(configPath, config, mode = 'auto') {
             source: inspection.source,
             proof,
         };
+    }
+    if (inspection.exists && inspection.reason === 'delivery_mismatch') {
+        const repair = await repairOpenClawCronDeliveryStore({
+            configPath: displayConfigPath,
+            config,
+            readFile: fs.readFile,
+            writeFile: fs.writeFile,
+        });
+        if (repair.repaired) {
+            return {
+                ok: true,
+                enabled: true,
+                installed: true,
+                status: 'repaired_delivery',
+                detail: `Repaired OpenClaw cron delivery for "${automation.openclawCron.name}" in ${repair.path}`,
+                schedule: automation.openclawCron.schedule,
+                timezone: automation.openclawCron.timezone,
+                source: repair.path,
+                proof,
+            };
+        }
     }
     const add = await runShellCommand(addCommand, 60_000);
     const existingDetail = inspection.exists
