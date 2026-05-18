@@ -156,9 +156,22 @@ test('config example enables OpenClaw and Hermes cron with runner proof logs', (
   assert.match(runner, /runner_invoked/);
   assert.match(runner, /repairOpenClawCronDeliveryStore/);
   assert.match(runner, /openclaw_cron_delivery_repaired/);
+  assert.match(runner, /function hardenUnattendedShellCommand/);
+  assert.match(runner, /sudo -n/);
+  assert.match(runner, /Blocked non-interactive sudo prompt/);
   assert.match(runner, /connector_health_checked/);
   assert.match(runner, /runner_completed/);
   assert.match(runner, /runner_failed/);
+});
+
+test('setup and preflight harden sudo commands for unattended VPS runs', () => {
+  const start = readFileSync(join(skillRoot, 'scripts/openclaw-growth-start.mjs'), 'utf8');
+  const preflight = readFileSync(join(skillRoot, 'scripts/openclaw-growth-preflight.mjs'), 'utf8');
+
+  assert.match(start, /function hardenUnattendedShellCommand/);
+  assert.match(start, /SUDO_ASKPASS/);
+  assert.match(preflight, /function hardenUnattendedShellCommand/);
+  assert.match(preflight, /SUDO_ASKPASS/);
 });
 
 test('config example stores connector credentials as OpenClaw-style secret refs', () => {

@@ -118,6 +118,9 @@ test('OpenClaw cron commands keep state and proof beside the active config', () 
   const eventText = buildOpenClawGrowthSystemEvent(configPath, {});
   assert.match(eventText, new RegExp(`--state ${statePath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
   assert.match(eventText, new RegExp(proofPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  assert.match(eventText, /Execute only that runner command/);
+  assert.match(eventText, /Do not run sudo/);
+  assert.match(eventText, /instead of prompting/);
 });
 
 test('OpenClaw cron verification rejects stale name-only jobs', () => {
