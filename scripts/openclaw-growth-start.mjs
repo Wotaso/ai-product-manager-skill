@@ -4,7 +4,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { buildGrowthRunnerCommand, buildOpenClawCronAddCommand, deriveSchedulerProofPathFromStatePath, deriveStatePathFromConfigPath, getActionMode, getAutomationConfig, getDefaultSourceCommand, buildHermesCronCreateCommand, inspectHermesCronInstall, inspectOpenClawCronInstall, repairOpenClawCronDeliveryStore, } from './openclaw-growth-shared.mjs';
+import { buildGrowthRunnerCommand, buildOpenClawCronAddCommand, deriveSchedulerProofPathFromStatePath, deriveStatePathFromConfigPath, getActionMode, getAutomationConfig, getDefaultSourceCommand, getOpenClawCronEditDeliveryCommandFromInspection, buildHermesCronCreateCommand, inspectHermesCronInstall, inspectOpenClawCronInstall, repairOpenClawCronDeliveryStore, } from './openclaw-growth-shared.mjs';
 import { applyOpenClawSecretRefs, loadOpenClawGrowthSecrets } from './openclaw-growth-env.mjs';
 const DEFAULT_CONFIG_PATH = 'data/openclaw-growth-engineer/config.json';
 const DEFAULT_TEMPLATE_PATH = 'data/openclaw-growth-engineer/config.example.json';
@@ -699,6 +699,24 @@ async function ensureOpenClawCronSchedule(configPath, config, mode = 'auto') {
         };
     }
     if (inspection.exists && inspection.reason === 'delivery_mismatch') {
+        const editCommand = getOpenClawCronEditDeliveryCommandFromInspection(inspection, config);
+        if (editCommand) {
+            const edit = await runShellCommand(editCommand, 60_000);
+            if (edit.ok) {
+                return {
+                    ok: true,
+                    enabled: true,
+                    installed: true,
+                    status: 'repaired_delivery_cli',
+                    detail: `Repaired OpenClaw cron delivery with: ${editCommand}`,
+                    schedule: automation.openclawCron.schedule,
+                    timezone: automation.openclawCron.timezone,
+                    command: editCommand,
+                    source: inspection.source,
+                    proof,
+                };
+            }
+        }
         const repair = await repairOpenClawCronDeliveryStore({
             configPath: displayConfigPath,
             config,
@@ -715,6 +733,7 @@ async function ensureOpenClawCronSchedule(configPath, config, mode = 'auto') {
                 schedule: automation.openclawCron.schedule,
                 timezone: automation.openclawCron.timezone,
                 source: repair.path,
+                command: editCommand || undefined,
                 proof,
             };
         }

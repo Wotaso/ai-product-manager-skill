@@ -7,6 +7,7 @@ import {
   buildHermesCronCreateCommand,
   buildHermesCronVerification,
   buildOpenClawCronAddCommand,
+  buildOpenClawCronEditDeliveryCommand,
   buildOpenClawCronVerification,
   buildGrowthRunnerCommand,
   buildOpenClawGrowthSystemEvent,
@@ -15,6 +16,7 @@ import {
   evaluateOpenClawCronRecords,
   evaluateOpenClawCronText,
   getGitHubArtifactModes,
+  getOpenClawCronEditDeliveryCommandFromInspection,
   repairOpenClawCronDeliveryStore,
   shouldAutoCreateGitHubArtifact,
 } from '../scripts/openclaw-growth-shared.mjs';
@@ -240,6 +242,37 @@ test('OpenClaw cron verification accepts pinned Discord announce delivery for th
 
   assert.equal(parsed.exists, true);
   assert.equal(parsed.verified, true);
+});
+
+test('OpenClaw cron delivery repair uses cron edit when a job id is available', () => {
+  const config = {
+    automation: {
+      openclawCron: {
+        delivery: {
+          enabled: true,
+          mode: 'announce',
+          channel: 'discord',
+          to: 'channel:1471908112100495617',
+        },
+      },
+    },
+  };
+  const job = {
+    id: '1eafd5f5-8bdd-4597-b6c5-e8a35a0308fa',
+    name: 'OpenClaw Growth Engineer scheduler',
+    delivery: {
+      mode: 'none',
+    },
+  };
+
+  assert.equal(
+    buildOpenClawCronEditDeliveryCommand(job, config),
+    'openclaw cron edit 1eafd5f5-8bdd-4597-b6c5-e8a35a0308fa --announce --channel discord --to channel:1471908112100495617 --best-effort-deliver',
+  );
+  assert.equal(
+    getOpenClawCronEditDeliveryCommandFromInspection({ jobs: [job] }, config),
+    'openclaw cron edit 1eafd5f5-8bdd-4597-b6c5-e8a35a0308fa --announce --channel discord --to channel:1471908112100495617 --best-effort-deliver',
+  );
 });
 
 test('OpenClaw cron repair updates disabled delivery in the local job store', async () => {
