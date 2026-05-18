@@ -35,9 +35,9 @@ Options:
   --config <file>        Config path (default: ${DEFAULT_CONFIG_PATH})
   --project <id>         Optional AnalyticsCLI project ID pin for generated source commands
   --asc-app <id>         Optional ASC app ID filter (defaults to all accessible apps)
-  --connectors <list>    Install/enable connector helpers (analytics,github,asc,revenuecat,sentry,all)
+  --connectors <list>    Install/enable connector helpers (analytics,github,asc,revenuecat,sentry,coolify,all)
   --only-connectors <list>
-                         Limit live preflight checks to analytics,github,asc,revenuecat,sentry
+                         Limit live preflight checks to analytics,github,asc,revenuecat,sentry,coolify
   --setup-only           Run bootstrap + preflight only (skip first run)
   --no-test-connections  Skip live API smoke checks in preflight
   --openclaw-cron <mode> Configure OpenClaw Gateway cron: auto, enable, require, disable (default: auto)
@@ -161,6 +161,8 @@ function normalizeConnectorKey(value) {
         return 'revenuecat';
     if (['sentry', 'sentry-api', 'sentry-mcp', 'crashes', 'errors', 'crash-reporting'].includes(normalized))
         return 'sentry';
+    if (['coolify', 'coolify-api', 'deployment', 'deployments', 'hosting', 'infra', 'infrastructure'].includes(normalized))
+        return 'coolify';
     return null;
 }
 function parseConnectorList(value) {
@@ -170,7 +172,7 @@ function parseConnectorList(value) {
     for (const entry of String(value).split(',')) {
         const connector = normalizeConnectorKey(entry);
         if (!connector) {
-            printHelpAndExit(1, `Unknown connector: ${entry.trim()}. Use analytics, github, asc, revenuecat, sentry, or all.`);
+            printHelpAndExit(1, `Unknown connector: ${entry.trim()}. Use analytics, github, asc, revenuecat, sentry, coolify, or all.`);
         }
         if (connector === 'all') {
             connectors.add('analytics');
@@ -178,6 +180,7 @@ function parseConnectorList(value) {
             connectors.add('asc');
             connectors.add('revenuecat');
             connectors.add('sentry');
+            connectors.add('coolify');
         }
         else {
             connectors.add(connector);
@@ -213,6 +216,9 @@ function getRuntimeSourceCommand(sourceName) {
     if (normalized === 'sentry' || normalized === 'glitchtip') {
         return nodeRuntimeScriptCommand('export-sentry-summary.mjs');
     }
+    if (normalized === 'coolify') {
+        return nodeRuntimeScriptCommand('export-coolify-summary.mjs');
+    }
     if (['asc', 'asc-cli', 'app-store-connect', 'app_store_connect'].includes(normalized)) {
         return nodeRuntimeScriptCommand('export-asc-summary.mjs');
     }
@@ -222,7 +228,7 @@ function replaceLegacyRuntimeScriptCommand(command) {
     const trimmed = String(command || '').trim();
     if (!trimmed)
         return trimmed;
-    return trimmed.replace(/^node\s+scripts\/(export-analytics-summary\.mjs|export-revenuecat-summary\.mjs|export-sentry-summary\.mjs|export-asc-summary\.mjs|openclaw-growth-start\.mjs|openclaw-growth-status\.mjs|openclaw-growth-preflight\.mjs|openclaw-growth-runner\.mjs|openclaw-growth-engineer\.mjs)(?=\s|$)/, (_match, scriptName) => nodeRuntimeScriptCommand(scriptName));
+    return trimmed.replace(/^node\s+scripts\/(export-analytics-summary\.mjs|export-revenuecat-summary\.mjs|export-sentry-summary\.mjs|export-coolify-summary\.mjs|export-asc-summary\.mjs|openclaw-growth-start\.mjs|openclaw-growth-status\.mjs|openclaw-growth-preflight\.mjs|openclaw-growth-runner\.mjs|openclaw-growth-engineer\.mjs)(?=\s|$)/, (_match, scriptName) => nodeRuntimeScriptCommand(scriptName));
 }
 function normalizeSourceCommand(sourceName, source) {
     return replaceLegacyRuntimeScriptCommand(source?.command || '') || getRuntimeSourceCommand(sourceName);
@@ -232,7 +238,7 @@ function migrateRuntimeSourceCommands(config) {
         return config;
     const sources = config.sources && typeof config.sources === 'object' ? config.sources : {};
     const nextSources = { ...sources };
-    for (const sourceName of ['analytics', 'revenuecat', 'sentry']) {
+    for (const sourceName of ['analytics', 'revenuecat', 'sentry', 'coolify']) {
         if (nextSources[sourceName]?.mode === 'command') {
             nextSources[sourceName] = {
                 ...nextSources[sourceName],
@@ -1048,6 +1054,13 @@ async function installSentryConnector() {
     details.push('Sentry direct API exporter enabled via node scripts/export-sentry-summary.mjs');
     return { connector: 'sentry', ok: true, detail: details.join('; ') };
 }
+async function installCoolifyConnector() {
+    return {
+        connector: 'coolify',
+        ok: true,
+        detail: 'Coolify uses the built-in read-only API exporter; create a token in Coolify Keys & Tokens / API tokens and store COOLIFY_BASE_URL plus COOLIFY_API_TOKEN with the connector wizard',
+    };
+}
 async function installGitHubConnector() {
     const details = [];
     await installClawHubSkill('github', details);
@@ -1106,6 +1119,16 @@ async function enableConnectorConfig(configPath, connectors) {
             sentry: connectors.includes('sentry')
                 ? { ...(config.sources?.sentry || {}), enabled: true, mode: 'command', command: normalizeSourceCommand('sentry', config.sources?.sentry) }
                 : config.sources?.sentry,
+            coolify: connectors.includes('coolify')
+                ? {
+                    ...(config.sources?.coolify || {}),
+                    enabled: true,
+                    mode: 'command',
+                    command: normalizeSourceCommand('coolify', config.sources?.coolify),
+                    baseUrl: config.sources?.coolify?.baseUrl || process.env.COOLIFY_BASE_URL || 'https://coolify.wotaso.com',
+                    tokenEnv: config.sources?.coolify?.tokenEnv || 'COOLIFY_API_TOKEN',
+                }
+                : config.sources?.coolify,
             extra: extra.map((source) => connectors.includes('asc') && source?.service === 'asc-cli'
                 ? { ...source, enabled: true, mode: 'command', command: normalizeSourceCommand('asc', source) }
                 : source),
@@ -1127,6 +1150,8 @@ async function installConnectorHelpers(configPath, connectors) {
             results.push(await installRevenueCatConnector());
         if (connector === 'sentry')
             results.push(await installSentryConnector());
+        if (connector === 'coolify')
+            results.push(await installCoolifyConnector());
     }
     return results;
 }
@@ -1214,6 +1239,14 @@ async function ensureConfig(configPath) {
                 enabled: false,
                 mode: 'command',
                 command: getRuntimeSourceCommand('sentry'),
+            },
+            coolify: {
+                ...(template.sources?.coolify || {}),
+                enabled: false,
+                mode: 'command',
+                command: getRuntimeSourceCommand('coolify'),
+                baseUrl: template.sources?.coolify?.baseUrl || process.env.COOLIFY_BASE_URL || 'https://coolify.wotaso.com',
+                tokenEnv: template.sources?.coolify?.tokenEnv || 'COOLIFY_API_TOKEN',
             },
             feedback: {
                 ...(template.sources?.feedback || {}),
@@ -1754,7 +1787,9 @@ async function main() {
                             ? 'Install the ASC CLI and provide ASC_KEY_ID, ASC_ISSUER_ID, and ASC_PRIVATE_KEY_PATH or ASC_PRIVATE_KEY. Resolve the app after auth succeeds.'
                             : entry.connector === 'sentry'
                                 ? 'Set SENTRY_AUTH_TOKEN plus SENTRY_ORG in the connector wizard. Defer project scope to app/repo context, or configure sources.sentry.accounts[].projects[] only when a fixed mapping is known.'
-                                : 'Set REVENUECAT_API_KEY and rerun connector setup to write RevenueCat MCP config.',
+                                : entry.connector === 'coolify'
+                                    ? 'Set COOLIFY_BASE_URL and COOLIFY_API_TOKEN from Coolify Keys & Tokens / API tokens in the connector wizard.'
+                                    : 'Set REVENUECAT_API_KEY and rerun connector setup to write RevenueCat MCP config.',
             })),
         }, null, 2)}\n`);
         process.exitCode = 1;

@@ -45,6 +45,13 @@
         }
       ]
     },
+    "coolify": {
+      "enabled": false,
+      "mode": "command",
+      "command": "npx -y @analyticscli/growth-engineer@preview exporters coolify-summary --config data/openclaw-growth-engineer/config.json",
+      "baseUrl": "https://coolify.example.com",
+      "tokenEnv": "COOLIFY_API_TOKEN"
+    },
     "feedback": {
       "enabled": true,
       "mode": "command",
@@ -75,9 +82,9 @@
         "title": "Daily Sentry and production guardrail",
         "intervalDays": 1,
         "criticalOnly": true,
-        "focusAreas": ["sentry_errors", "crash", "onboarding", "conversion", "paywall", "purchase"],
-        "sourcePriorities": ["sentry", "glitchtip", "analytics", "revenuecat", "asc_cli", "feedback", "github"],
-        "objective": "Analyze every configured project for critical production blockers: Sentry/GlitchTip errors, crashes, onboarding or purchase drop-offs, zero-conversion days, missing buyers, very low users, and other silent business anomalies.",
+        "focusAreas": ["sentry_errors", "crash", "deployment", "availability", "onboarding", "conversion", "paywall", "purchase"],
+        "sourcePriorities": ["sentry", "glitchtip", "coolify", "analytics", "revenuecat", "asc_cli", "feedback", "github"],
+        "objective": "Analyze every configured project for critical production blockers: Sentry/GlitchTip errors, Coolify failed deploys or unhealthy resources, crashes, onboarding or purchase drop-offs, zero-conversion days, missing buyers, very low users, and other silent business anomalies.",
         "instructions": "Compare against recent baselines across connected sources and code changes. If the finding is critical, produce the exact fix or next debugging step and prefer a GitHub issue or draft PR when GitHub write access is configured; otherwise hand off via OpenClaw chat. Avoid generic growth ideas."
       },
       {
@@ -86,7 +93,7 @@
         "intervalDays": 7,
         "criticalOnly": false,
         "focusAreas": ["conversion", "paywall", "onboarding", "marketing", "retention", "stability"],
-        "sourcePriorities": ["analytics", "revenuecat", "asc_cli", "feedback", "sentry", "github"],
+        "sourcePriorities": ["analytics", "revenuecat", "asc_cli", "feedback", "sentry", "coolify", "github"],
         "objective": "Create an executive summary across all configured projects, connectors, recent releases, code changes, revenue, activation, retention, reviews, and production stability.",
         "instructions": "Pick one to three high-confidence improvements with evidence, expected KPI movement, likely code/store surfaces, owner-ready next steps, and a verification plan. Create GitHub issues or draft PR proposals only when the evidence is specific enough."
       },
@@ -96,7 +103,7 @@
         "intervalDays": 30,
         "criticalOnly": false,
         "focusAreas": ["conversion", "paywall", "retention", "marketing", "onboarding", "codebase"],
-        "sourcePriorities": ["analytics", "revenuecat", "asc_cli", "feedback", "sentry", "github"],
+        "sourcePriorities": ["analytics", "revenuecat", "asc_cli", "feedback", "sentry", "coolify", "github"],
         "objective": "Compare all configured projects month-over-month: MRR, trial conversion, churn, acquisition quality, store conversion, retention, review themes, feature usage, crash totals, and codebase changes.",
         "instructions": "Decide what should be built, changed, deleted, or instrumented next. Tie conclusions to connector data plus codebase evidence and explain why each recommendation should move revenue, activation, retention, stability, or acquisition quality."
       },
@@ -207,6 +214,8 @@
     "revenuecatTokenEnv": "REVENUECAT_API_KEY",
     "revenuecatTokenRef": { "source": "env", "provider": "default", "id": "REVENUECAT_API_KEY" },
     "sentryTokenEnv": "SENTRY_AUTH_TOKEN",
-    "sentryTokenRef": { "source": "env", "provider": "default", "id": "SENTRY_AUTH_TOKEN" }
+    "sentryTokenRef": { "source": "env", "provider": "default", "id": "SENTRY_AUTH_TOKEN" },
+    "coolifyTokenEnv": "COOLIFY_API_TOKEN",
+    "coolifyTokenRef": { "source": "env", "provider": "default", "id": "COOLIFY_API_TOKEN" }
   }
 }

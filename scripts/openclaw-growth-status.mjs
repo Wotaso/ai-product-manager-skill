@@ -303,6 +303,22 @@ function summarizeSentry(preflight, config) {
         nextAction: 'Run: node scripts/openclaw-growth-wizard.mjs --connectors sentry.',
     });
 }
+function summarizeCoolify(preflight, config) {
+    if (!isEnabled(config?.sources?.coolify)) {
+        return connector('not_enabled', 'Coolify source is disabled');
+    }
+    const connection = checkByName(preflight, 'connection:coolify');
+    const command = checkByName(preflight, 'connection:coolify-command');
+    if (connection?.status === 'pass' && (!command || command.status === 'pass')) {
+        return connector('connected', command ? 'Coolify API and exporter smoke test passed' : 'Coolify API auth check passed');
+    }
+    if (connection?.status === 'pass' && command?.status !== 'pass') {
+        return connector('partial', command?.detail || 'Coolify API auth passed, exporter smoke test did not pass');
+    }
+    return connector('blocked', connection?.detail || 'Coolify connection was not verified', {
+        nextAction: 'Run: node scripts/openclaw-growth-wizard.mjs --connectors coolify.',
+    });
+}
 async function summarizeAsc(preflight, config, timeoutMs) {
     const ascSources = checksByPrefix(preflight, 'connection:asc_cli');
     const ascConnection = ascSources[0] || null;
@@ -346,6 +362,7 @@ async function main() {
             github: githubStatus,
             revenuecat: summarizeRevenueCat(preflightPayload, config),
             sentry: summarizeSentry(preflightPayload, config),
+            coolify: summarizeCoolify(preflightPayload, config),
             appStoreConnect: ascStatus,
         }
         : {
@@ -353,6 +370,7 @@ async function main() {
             github: githubStatus,
             revenuecat: connector('unknown', preflight.error || 'Preflight did not run'),
             sentry: connector('unknown', preflight.error || 'Preflight did not run'),
+            coolify: connector('unknown', preflight.error || 'Preflight did not run'),
             appStoreConnect: ascStatus,
         };
     emitProgress(args.progressJson, {

@@ -250,6 +250,7 @@ Growth Engineer connectors:
 - GitHub code access: repo context and issue/PR delivery
 - RevenueCat monetization: subscriptions, trials, revenue, and churn
 - Sentry-compatible crash monitoring: Sentry Cloud and/or self-hosted GlitchTip via multi-account Sentry config
+- Coolify deployment monitoring: failed deploys, unhealthy resources, servers, and production health-check gaps
 - ASC / App Store Connect CLI: store analytics, reviews/ratings, builds/TestFlight/release context, downloads/units, conversion, source traffic, app usage, subscriptions, purchases, and crash totals when configured
 
 Run the wizard from the active agent workspace:
@@ -272,6 +273,7 @@ Available connectors:
 - GitHub code access: repo context and issue/PR delivery
 - RevenueCat monetization: subscriptions, trials, revenue, and churn
 - Sentry-compatible crash monitoring: Sentry Cloud and/or self-hosted GlitchTip via multi-account Sentry config
+- Coolify deployment monitoring: failed deploys, unhealthy resources, servers, and production health-check gaps
 - ASC / App Store Connect CLI: store analytics, reviews/ratings, builds/TestFlight/release context, downloads/units, conversion, source traffic, app usage, subscriptions, purchases, and crash totals when configured
 
 Run the wizard from the active agent workspace:
@@ -288,14 +290,14 @@ If the user asks which connectors exist, list only the connector names and one s
 If the user already names specific connectors, still prefer the checkbox wizard unless they explicitly ask for a non-interactive command. For explicit connector setup, use one copy-paste command from the active agent workspace:
 
 ```bash
-npx -y @analyticscli/growth-engineer@preview wizard --connectors analytics,github,revenuecat,sentry,asc
+npx -y @analyticscli/growth-engineer@preview wizard --connectors analytics,github,revenuecat,sentry,coolify,asc
 ```
 
 Use only the connectors the user accepted. The wizard owns provider-specific instructions, local-terminal secret prompts, helper setup, and smoke tests. Chat should only summarize results after the wizard finishes or when the user asks.
 
 Do not ask for `ASC_APP_ID` during initial setup. ASC summaries default to all accessible App Store Connect apps. A single app ID is only an optional explicit filter later.
 
-Connection setup requests are not satisfied by a successful product-manager run. If the user asks to set up `asc`, App Store Connect, RevenueCat, Sentry, GitHub, or codebase access, point them to the wizard command above and keep any extra explanation out of chat unless requested.
+Connection setup requests are not satisfied by a successful product-manager run. If the user asks to set up `asc`, App Store Connect, RevenueCat, Sentry, Coolify, GitHub, or codebase access, point them to the wizard command above and keep any extra explanation out of chat unless requested.
 
 Reference URLs for the wizard or for explicit follow-up questions:
 
@@ -303,6 +305,7 @@ Reference URLs for the wizard or for explicit follow-up questions:
 - RevenueCat API key docs: https://www.revenuecat.com/docs/projects/authentication
 - RevenueCat MCP setup docs: https://www.revenuecat.com/docs/tools/mcp/setup
 - App Store Connect API keys: https://appstoreconnect.apple.com/access/integrations/api
+- Coolify API tokens: open the hosted Coolify base URL and go to `/security/api-tokens`, for example `https://coolify.wotaso.com/security/api-tokens`
 - App Store Connect users/access: https://appstoreconnect.apple.com/access/users
 - App Store Connect individual API key profile: https://appstoreconnect.apple.com/account
 - GitHub token creation: https://github.com/settings/tokens/new
@@ -538,6 +541,16 @@ Sentry setup guidance:
 - Configure optional Sentry MCP through `@sentry/mcp-server@latest` when `npx` and `SENTRY_AUTH_TOKEN` are available, but do not ask for broader write scopes unless the user explicitly wants Sentry mutation workflows.
 - Mark Sentry connected only after the auth check and exporter smoke test pass. Do not infer Sentry access from a token being present.
 - When Sentry is connected, always correlate top crashes/errors across every configured Sentry-compatible account with AnalyticsCLI funnel steps, RevenueCat purchase/churn movement, ASC release/build metadata, and GitHub production code version before recommending growth experiments.
+
+Coolify setup guidance:
+
+- Use the direct Coolify API exporter through the standalone CLI as the canonical deployment/hosting source: `npx -y @analyticscli/growth-engineer@preview exporters coolify-summary`.
+- Ask for the Coolify base URL and token only in the local terminal wizard. For Wotaso-hosted Coolify, the token page is `https://coolify.wotaso.com/security/api-tokens`.
+- Tell the user to open the Coolify dashboard, choose `Keys & Tokens` in the sidebar, open `API tokens`, and create an API key/token with read-only permissions.
+- Persist non-secret config in `sources.coolify` with `enabled=true`, `mode=command`, `command=npx -y @analyticscli/growth-engineer@preview exporters coolify-summary --config <config>`, `baseUrl`, and `tokenEnv`.
+- Persist the secret only as `COOLIFY_API_TOKEN`; keep `COOLIFY_BASE_URL` non-secret but allow it in the local secrets file for convenience.
+- The daily guardrail must read Coolify when configured and correlate failed deploys, unhealthy resources, disabled/missing health checks, and server/resource anomalies with Sentry errors, AnalyticsCLI traffic/conversion drops, and recent code changes.
+- Mark Coolify connected only after the auth check and exporter smoke test pass. Do not infer Coolify access from a token being present.
 
 Mobile-focused extra source examples:
 

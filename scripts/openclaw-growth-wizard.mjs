@@ -17,7 +17,7 @@ const DEFAULT_CONNECTOR_HEALTH_INTERVAL_MINUTES = 360;
 const DEFAULT_SCHEDULER_PROOF_PATH = 'data/openclaw-growth-engineer/runtime/scheduler-proof.jsonl';
 const GROWTH_ENGINEER_PACKAGE_SPEC = process.env.OPENCLAW_GROWTH_ENGINEER_PACKAGE || '@analyticscli/growth-engineer@preview';
 const RUNTIME_DIR = path.dirname(fileURLToPath(import.meta.url));
-const CONNECTOR_KEYS = ['analytics', 'github', 'revenuecat', 'sentry', 'asc'];
+const CONNECTOR_KEYS = ['analytics', 'github', 'revenuecat', 'sentry', 'coolify', 'asc'];
 class WizardAbortError extends Error {
     exitCode;
     constructor(message, exitCode = 130) {
@@ -52,6 +52,12 @@ const CONNECTOR_DEFINITIONS = [
         needs: 'A Sentry or GlitchTip-compatible auth token plus the org slug. Project scope is inferred later from app context or config.',
     },
     {
+        key: 'coolify',
+        label: 'Coolify deployment monitoring',
+        summary: 'Read applications, deployments, servers, resources, and production health-check gaps.',
+        needs: 'A Coolify API token with read-only permissions from Keys & Tokens / API tokens.',
+    },
+    {
         key: 'asc',
         label: 'ASC / App Store Connect CLI',
         summary: 'Read App Store analytics, reviews/ratings, builds/TestFlight/release context, subscriptions, purchases, and crash totals.',
@@ -64,9 +70,9 @@ const DEFAULT_CADENCE_PLAN = [
         title: 'Daily Sentry and production guardrail',
         intervalDays: 1,
         criticalOnly: true,
-        focusAreas: ['sentry_errors', 'crash', 'onboarding', 'conversion', 'paywall', 'purchase'],
-        sourcePriorities: ['sentry', 'glitchtip', 'analytics', 'revenuecat', 'asc_cli', 'feedback', 'github'],
-        objective: 'Analyze every configured project for critical production blockers: Sentry/GlitchTip errors, crashes, onboarding or purchase drop-offs, zero-conversion days, missing buyers, very low users, and other silent business anomalies.',
+        focusAreas: ['sentry_errors', 'crash', 'deployment', 'availability', 'onboarding', 'conversion', 'paywall', 'purchase'],
+        sourcePriorities: ['sentry', 'glitchtip', 'coolify', 'analytics', 'revenuecat', 'asc_cli', 'feedback', 'github'],
+        objective: 'Analyze every configured project for critical production blockers: Sentry/GlitchTip errors, Coolify failed deploys or unhealthy resources, crashes, onboarding or purchase drop-offs, zero-conversion days, missing buyers, very low users, and other silent business anomalies.',
         instructions: 'Compare against recent baselines across connected sources and code changes. If the finding is critical, produce the exact fix or next debugging step and prefer a GitHub issue or draft PR when GitHub write access is configured; otherwise hand off via OpenClaw chat. Avoid generic growth ideas.',
     },
     {
@@ -75,7 +81,7 @@ const DEFAULT_CADENCE_PLAN = [
         intervalDays: 7,
         criticalOnly: false,
         focusAreas: ['conversion', 'paywall', 'onboarding', 'marketing', 'retention', 'stability'],
-        sourcePriorities: ['analytics', 'revenuecat', 'asc_cli', 'feedback', 'sentry', 'github'],
+        sourcePriorities: ['analytics', 'revenuecat', 'asc_cli', 'feedback', 'sentry', 'coolify', 'github'],
         objective: 'Create an executive summary across all configured projects, connectors, recent releases, code changes, revenue, activation, retention, reviews, and production stability.',
         instructions: 'Pick one to three high-confidence improvements with evidence, expected KPI movement, likely code/store surfaces, owner-ready next steps, and a verification plan. Create GitHub issues or draft PR proposals only when the evidence is specific enough.',
     },
@@ -85,7 +91,7 @@ const DEFAULT_CADENCE_PLAN = [
         intervalDays: 30,
         criticalOnly: false,
         focusAreas: ['conversion', 'paywall', 'retention', 'marketing', 'onboarding', 'codebase'],
-        sourcePriorities: ['analytics', 'revenuecat', 'asc_cli', 'feedback', 'sentry', 'github'],
+        sourcePriorities: ['analytics', 'revenuecat', 'asc_cli', 'feedback', 'sentry', 'coolify', 'github'],
         objective: 'Compare all configured projects month-over-month: MRR, trial conversion, churn, acquisition quality, store conversion, retention, review themes, feature usage, crash totals, and codebase changes.',
         instructions: 'Decide what should be built, changed, deleted, or instrumented next. Tie conclusions to connector data plus codebase evidence and explain why each recommendation should move revenue, activation, retention, stability, or acquisition quality.',
     },
@@ -223,8 +229,11 @@ function printHelpAndExit(exitCode, reason = null) {
 OpenClaw Growth Setup Wizard
 
 Usage:
-  node scripts/openclaw-growth-wizard.mjs [--out <config-path>]
-  node scripts/openclaw-growth-wizard.mjs --connectors [analytics,github,revenuecat,sentry,asc] [--config <config-path>]
+  npx -y @analyticscli/growth-engineer@preview wizard [--out <config-path>]
+  npx -y @analyticscli/growth-engineer@preview wizard --connectors [analytics,github,revenuecat,sentry,coolify,asc] [--config <config-path>]
+
+Compatibility fallback:
+  node scripts/openclaw-growth-wizard.mjs --connectors [analytics,github,revenuecat,sentry,coolify,asc] [--config <config-path>]
 
 Options:
   --no-self-update   Skip the ClawHub skill update check for this run
@@ -262,6 +271,9 @@ function getWizardDefaultSourceCommand(sourceName) {
     if (normalized === 'sentry' || normalized === 'glitchtip') {
         return nodeRuntimeScriptCommand('export-sentry-summary.mjs');
     }
+    if (normalized === 'coolify') {
+        return growthEngineerPackageCommand('exporters coolify-summary');
+    }
     if (normalized === 'feedback') {
         return getDefaultSourceCommand('feedback');
     }
@@ -274,7 +286,7 @@ function replaceLegacyRuntimeScriptCommand(command) {
     const trimmed = String(command || '').trim();
     if (!trimmed)
         return trimmed;
-    return trimmed.replace(/^node\s+scripts\/(export-analytics-summary\.mjs|export-revenuecat-summary\.mjs|export-sentry-summary\.mjs|export-asc-summary\.mjs|openclaw-growth-start\.mjs|openclaw-growth-status\.mjs|openclaw-growth-runner\.mjs|openclaw-growth-preflight\.mjs)(?=\s|$)/, (_match, scriptName) => nodeRuntimeScriptCommand(scriptName));
+    return trimmed.replace(/^node\s+scripts\/(export-analytics-summary\.mjs|export-revenuecat-summary\.mjs|export-sentry-summary\.mjs|export-coolify-summary\.mjs|export-asc-summary\.mjs|openclaw-growth-start\.mjs|openclaw-growth-status\.mjs|openclaw-growth-runner\.mjs|openclaw-growth-preflight\.mjs)(?=\s|$)/, (_match, scriptName) => nodeRuntimeScriptCommand(scriptName));
 }
 function normalizeWizardSourceCommand(sourceName, source) {
     const current = replaceLegacyRuntimeScriptCommand(source?.command || '');
@@ -285,7 +297,7 @@ function migrateRuntimeSourceCommands(config) {
         return config;
     const sources = config.sources && typeof config.sources === 'object' ? config.sources : {};
     const nextSources = { ...sources };
-    for (const sourceName of ['analytics', 'revenuecat', 'sentry']) {
+    for (const sourceName of ['analytics', 'revenuecat', 'sentry', 'coolify']) {
         if (nextSources[sourceName]?.mode === 'command') {
             nextSources[sourceName] = {
                 ...nextSources[sourceName],
@@ -336,6 +348,8 @@ function normalizeConnectorKey(value) {
         return 'revenuecat';
     if (['sentry', 'sentry-api', 'sentry-mcp', 'crashes', 'errors', 'crash-reporting'].includes(normalized))
         return 'sentry';
+    if (['coolify', 'coolify-api', 'deployment', 'deployments', 'hosting', 'infra', 'infrastructure'].includes(normalized))
+        return 'coolify';
     if (['asc', 'asc-cli', 'app-store-connect', 'appstoreconnect', 'app-store'].includes(normalized))
         return 'asc';
     return null;
@@ -365,6 +379,8 @@ function isConnectorLocallyConfigured(key) {
         return Boolean(process.env.REVENUECAT_API_KEY?.trim());
     if (key === 'sentry')
         return Boolean(process.env.SENTRY_AUTH_TOKEN?.trim());
+    if (key === 'coolify')
+        return Boolean(process.env.COOLIFY_API_TOKEN?.trim() && process.env.COOLIFY_BASE_URL?.trim());
     if (key === 'asc') {
         return Boolean(process.env.ASC_KEY_ID?.trim() &&
             process.env.ASC_ISSUER_ID?.trim() &&
@@ -724,6 +740,8 @@ function normalizeConnectorProgressKey(key) {
         return 'revenuecat';
     if (normalized === 'sentry')
         return 'sentry';
+    if (normalized === 'coolify')
+        return 'coolify';
     if (normalized === 'asc' || normalized === 'appstoreconnect' || normalized === 'app-store-connect')
         return 'asc';
     return null;
@@ -894,6 +912,7 @@ async function getConnectorPickerHealth(configPath, onProgress = () => { }) {
         github: connectors.github,
         revenuecat: connectors.revenuecat,
         sentry: connectors.sentry,
+        coolify: connectors.coolify,
         asc: connectors.appStoreConnect,
     };
     return Object.fromEntries(CONNECTOR_KEYS.map((key) => [key, getConnectorHealth(key, healthByConnector)]));
@@ -1299,6 +1318,9 @@ function summarizeFailureFix(connector, blockers) {
     if (connector === 'revenuecat') {
         return 'Paste a RevenueCat v2 secret API key with read-only project permissions, then rerun setup.';
     }
+    if (connector === 'coolify') {
+        return 'Paste a Coolify base URL and read-only API token from Keys & Tokens / API tokens, then rerun setup.';
+    }
     if (connector === 'asc') {
         return 'Rerun ASC setup and verify ASC credentials, key role access, and `asc apps list --output json`.';
     }
@@ -1429,6 +1451,8 @@ function connectorFromCheckName(name) {
         return 'revenuecat';
     if (value.includes('sentry') || value.includes('SENTRY') || value.includes('GLITCHTIP'))
         return 'sentry';
+    if (value.includes('coolify') || value.includes('COOLIFY'))
+        return 'coolify';
     if (value.includes('asc') || value.includes('ASC_'))
         return 'asc';
     return null;
@@ -1569,6 +1593,9 @@ function buildSetupTestProgressPlan(selected) {
     }
     if (selectedSet.has('revenuecat')) {
         items.push({ key: 'revenuecat', label: 'RevenueCat', detail: 'waiting for API key auth + project read', status: 'pending' });
+    }
+    if (selectedSet.has('coolify')) {
+        items.push({ key: 'coolify', label: 'Coolify', detail: 'waiting for API key auth + deployment/resource read', status: 'pending' });
     }
     if (selectedSet.has('github')) {
         items.push({ key: 'github', label: 'GitHub', detail: 'waiting for repo/token access check', status: 'pending' });
@@ -2254,6 +2281,30 @@ async function upsertSentryAccountsConfig(configPath, accounts) {
     await writeJsonFile(configPath, config);
     return true;
 }
+async function upsertCoolifyConfig(configPath, { baseUrl, tokenEnv = 'COOLIFY_API_TOKEN' }) {
+    if (!(await fileExists(configPath)))
+        return false;
+    const coolifyCommand = `${getWizardDefaultSourceCommand('coolify')} --config ${quote(configPath)}`;
+    const config = await readJsonFile(configPath);
+    config.sources = {
+        ...(config.sources || {}),
+        coolify: {
+            ...(config.sources?.coolify || {}),
+            enabled: true,
+            mode: 'command',
+            command: coolifyCommand,
+            baseUrl,
+            tokenEnv,
+        },
+    };
+    config.secrets = {
+        ...(config.secrets || {}),
+        coolifyTokenEnv: tokenEnv,
+        coolifyTokenRef: { source: 'env', provider: 'default', id: tokenEnv },
+    };
+    await writeJsonFile(configPath, config);
+    return true;
+}
 const ASC_PRIVATE_KEY_BEGIN = '-----BEGIN PRIVATE KEY-----';
 const ASC_PRIVATE_KEY_END = '-----END PRIVATE KEY-----';
 const BRACKETED_PASTE_START = new RegExp(`${String.fromCharCode(27)}\\[200~`, 'g');
@@ -2631,6 +2682,34 @@ async function guideSentryConnector(rl, secrets) {
     }
     return accounts;
 }
+function normalizeCoolifyBaseUrl(value) {
+    const raw = String(value || '').trim().replace(/\/+$/, '');
+    if (!raw)
+        return '';
+    return /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
+}
+async function guideCoolifyConnector(rl, secrets) {
+    printSection('Coolify deployment monitoring', [
+        'Use this when OpenClaw should read deployment, resource, server, and health-check signals from Coolify.',
+        'The token should be read-only. Do not use "*" or sensitive-token permissions for normal monitoring.',
+    ]);
+    const baseUrl = normalizeCoolifyBaseUrl(await ask(rl, 'Coolify base URL', process.env.COOLIFY_BASE_URL || 'https://coolify.wotaso.com'));
+    const tokenUrl = baseUrl ? `${baseUrl}/security/api-tokens` : 'https://<your-coolify-host>/security/api-tokens';
+    process.stdout.write(`\nToken page: ${tokenUrl}\n\n`);
+    printBullets([
+        'Open the Coolify dashboard.',
+        'In the sidebar, go to "Keys & Tokens".',
+        'Open "API tokens".',
+        'Create a new API key/token with read-only permissions.',
+        'Copy the token once and paste it into this local terminal.',
+    ]);
+    const token = await maybePromptSecret(rl, 'Paste COOLIFY_API_TOKEN into this local terminal', 'COOLIFY_API_TOKEN');
+    if (baseUrl)
+        secrets.COOLIFY_BASE_URL = baseUrl;
+    if (token)
+        secrets.COOLIFY_API_TOKEN = token;
+    return { baseUrl, tokenEnv: 'COOLIFY_API_TOKEN' };
+}
 async function guideAscConnector(rl, secrets) {
     printSection('App Store Connect CLI', [
         'Use this mainly for App Store analytics batch reports, plus builds, TestFlight, reviews, ratings, and store context.',
@@ -2777,6 +2856,7 @@ async function runConnectorSetupSteps({ rl, args, selected, healthByConnector, a
     process.stdout.write('\n');
     const secrets = {};
     let sentryAccounts = [];
+    let coolifyConfig = null;
     if (selected.includes('analytics')) {
         let forceFreshAnalyticsToken = shouldForceFreshAnalyticsToken(healthByConnector);
         while (true) {
@@ -2836,6 +2916,23 @@ async function runConnectorSetupSteps({ rl, args, selected, healthByConnector, a
                 break;
         }
     }
+    if (selected.includes('coolify')) {
+        while (true) {
+            clearTerminal();
+            coolifyConfig = await guideCoolifyConnector(rl, secrets);
+            if (coolifyConfig?.baseUrl) {
+                await upsertCoolifyConfig(args.config, coolifyConfig);
+            }
+            const check = await runImmediateConnectorHealthCheck({
+                rl,
+                configPath: args.config,
+                connector: 'coolify',
+                secrets,
+            });
+            if (!check.retry)
+                break;
+        }
+    }
     if (selected.includes('asc')) {
         while (true) {
             clearTerminal();
@@ -2863,6 +2960,9 @@ async function runConnectorSetupSteps({ rl, args, selected, healthByConnector, a
     if (sentryAccounts.length > 0 && await upsertSentryAccountsConfig(args.config, sentryAccounts)) {
         process.stdout.write(`Configured ${sentryAccounts.length} Sentry-compatible account(s) in ${args.config}.\n`);
     }
+    if (coolifyConfig?.baseUrl && await upsertCoolifyConfig(args.config, coolifyConfig)) {
+        process.stdout.write(`Configured Coolify monitoring for ${coolifyConfig.baseUrl} in ${args.config}.\n`);
+    }
     const env = {
         ...process.env,
         ...secrets,
@@ -2872,6 +2972,9 @@ async function runConnectorSetupSteps({ rl, args, selected, healthByConnector, a
     let setupPayload = parseJsonFromStdout(setupResult.stdout);
     if (sentryAccounts.length > 0 && await upsertSentryAccountsConfig(args.config, sentryAccounts)) {
         process.stdout.write(`Sentry-compatible account config is up to date in ${args.config}.\n`);
+    }
+    if (coolifyConfig?.baseUrl && await upsertCoolifyConfig(args.config, coolifyConfig)) {
+        process.stdout.write(`Coolify config is up to date in ${args.config}.\n`);
     }
     if (setupResult.ok && setupPayload?.ok !== false) {
         printSetupSuccess(setupPayload);
@@ -3108,6 +3211,13 @@ async function buildDefaultWizardConfig() {
                 mode: 'command',
                 command: getWizardDefaultSourceCommand('sentry'),
             },
+            coolify: {
+                enabled: true,
+                mode: 'command',
+                command: getWizardDefaultSourceCommand('coolify'),
+                baseUrl: process.env.COOLIFY_BASE_URL || 'https://coolify.wotaso.com',
+                tokenEnv: 'COOLIFY_API_TOKEN',
+            },
             feedback: {
                 enabled: true,
                 mode: 'command',
@@ -3223,6 +3333,8 @@ async function buildDefaultWizardConfig() {
             revenuecatTokenRef: { source: 'env', provider: 'default', id: 'REVENUECAT_API_KEY' },
             sentryTokenEnv: 'SENTRY_AUTH_TOKEN',
             sentryTokenRef: { source: 'env', provider: 'default', id: 'SENTRY_AUTH_TOKEN' },
+            coolifyTokenEnv: 'COOLIFY_API_TOKEN',
+            coolifyTokenRef: { source: 'env', provider: 'default', id: 'COOLIFY_API_TOKEN' },
         },
     };
 }
@@ -3242,6 +3354,13 @@ function buildRecommendedSourceConfig() {
             enabled: true,
             mode: 'command',
             command: getWizardDefaultSourceCommand('sentry'),
+        },
+        coolify: {
+            enabled: true,
+            mode: 'command',
+            command: getWizardDefaultSourceCommand('coolify'),
+            baseUrl: process.env.COOLIFY_BASE_URL || 'https://coolify.wotaso.com',
+            tokenEnv: 'COOLIFY_API_TOKEN',
         },
         feedback: {
             enabled: true,
@@ -3268,6 +3387,8 @@ function getInputChannelInitialSelection(config) {
         selected.add('revenuecat');
     if (!hasExplicitSources || sources.sentry?.enabled !== false)
         selected.add('sentry');
+    if (sources.coolify?.enabled === true || isConnectorLocallyConfigured('coolify'))
+        selected.add('coolify');
     if (extraSources.some((source) => ['asc', 'asc-cli', 'app-store-connect', 'app_store_connect'].includes(String(source?.service || source?.key || '').toLowerCase()) &&
         source?.enabled !== false) ||
         isConnectorLocallyConfigured('asc')) {
@@ -3314,6 +3435,15 @@ function buildSourceConfigFromInputChannels(selectedConnectors, existingSources 
                 ...(migratedSources.sentry || {}),
             }),
             enabled: selected.has('sentry'),
+        },
+        coolify: {
+            ...recommended.coolify,
+            ...(migratedSources.coolify || {}),
+            command: normalizeWizardSourceCommand('coolify', {
+                ...recommended.coolify,
+                ...(migratedSources.coolify || {}),
+            }),
+            enabled: selected.has('coolify'),
         },
         feedback: {
             ...recommended.feedback,
@@ -3674,7 +3804,7 @@ async function writeOpenClawJobManifest(configPath, config) {
             openClawCanEditOutputDelivery: true,
             openClawCanEditConnectors: true,
             openClawCanEditConnectorSecrets: false,
-            connectorChanges: 'OpenClaw may read and modify non-secret connector config such as enabled flags, source commands, project/app mappings, and source priorities. Use `node scripts/openclaw-growth-wizard.mjs --connectors` for API keys or other connector secrets; never write secret values into config files, manifests, issues, PRs, or chat output.',
+            connectorChanges: 'OpenClaw may read and modify non-secret connector config such as enabled flags, source commands, project/app mappings, and source priorities. Use `npx -y @analyticscli/growth-engineer@preview wizard --connectors` for API keys or other connector secrets; never write secret values into config files, manifests, issues, PRs, or chat output.',
             secretAccessMode: config?.security?.connectorSecrets?.mode || 'local-user-file',
             secretPolicy: config?.security?.connectorSecrets?.mode === 'isolated-runner'
                 ? 'OpenClaw must use the allowlisted sudo wrapper commands and must not read the persisted secret file.'

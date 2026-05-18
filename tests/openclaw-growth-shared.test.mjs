@@ -183,6 +183,61 @@ test('OpenClaw cron commands announce through the instance default channel by de
   assert.match(silentCommand, /--no-deliver --wake now/);
 });
 
+test('OpenClaw cron verification rejects runner jobs with disabled delivery', () => {
+  const configPath = 'data/openclaw-growth-engineer/config.json';
+  const addCommand = buildOpenClawCronAddCommand(configPath, {});
+  const verification = buildOpenClawCronVerification(configPath, {});
+
+  const parsed = evaluateOpenClawCronRecords(
+    {
+      jobs: [
+        {
+          name: 'OpenClaw Growth Engineer scheduler',
+          schedule: '*/30 * * * *',
+          timezone: 'UTC',
+          command: addCommand,
+          delivery: {
+            mode: 'none',
+          },
+        },
+      ],
+    },
+    verification,
+  );
+
+  assert.equal(parsed.exists, true);
+  assert.equal(parsed.verified, false);
+  assert.equal(parsed.reason, 'delivery_mismatch');
+});
+
+test('OpenClaw cron verification accepts pinned Discord announce delivery for the default channel config', () => {
+  const configPath = 'data/openclaw-growth-engineer/config.json';
+  const addCommand = buildOpenClawCronAddCommand(configPath, {});
+  const verification = buildOpenClawCronVerification(configPath, {});
+
+  const parsed = evaluateOpenClawCronRecords(
+    {
+      jobs: [
+        {
+          name: 'OpenClaw Growth Engineer scheduler',
+          schedule: '*/30 * * * *',
+          timezone: 'UTC',
+          command: addCommand,
+          delivery: {
+            mode: 'announce',
+            channel: 'discord',
+            to: 'channel:1504655172947673139',
+          },
+        },
+      ],
+    },
+    verification,
+  );
+
+  assert.equal(parsed.exists, true);
+  assert.equal(parsed.verified, true);
+});
+
 test('Hermes cron verification rejects stale name-only jobs', () => {
   const configPath = 'data/openclaw-growth-engineer/config.json';
   const workdir = '/srv/example-app';

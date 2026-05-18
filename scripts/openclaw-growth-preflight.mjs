@@ -28,7 +28,7 @@ Options:
   --config <file>        Config path (default: ${DEFAULT_CONFIG_PATH})
   --test-connections     Run live API/connector smoke checks for enabled channels
   --only-connectors <list>
-                         Limit live checks to analytics,github,asc,revenuecat,sentry
+                         Limit live checks to analytics,github,asc,revenuecat,sentry,coolify
   --timeout-ms <ms>      Connection test timeout in milliseconds (default: ${DEFAULT_CONNECTION_TIMEOUT_MS})
   --progress-json        Emit machine-readable progress events on stderr
   --json                 Print JSON only (default)
@@ -101,6 +101,8 @@ function normalizeConnectorKey(value) {
         return 'revenuecat';
     if (['sentry', 'sentry-api', 'sentry-mcp', 'glitchtip', 'crashes', 'errors', 'crash-reporting'].includes(normalized))
         return 'sentry';
+    if (['coolify', 'coolify-api', 'deployment', 'deployments', 'hosting', 'infra', 'infrastructure'].includes(normalized))
+        return 'coolify';
     return null;
 }
 function parseConnectorList(value) {
@@ -110,7 +112,7 @@ function parseConnectorList(value) {
     for (const entry of String(value).split(',')) {
         const connector = normalizeConnectorKey(entry);
         if (!connector) {
-            printHelpAndExit(1, `Unknown connector: ${entry.trim()}. Use analytics, github, asc, revenuecat, sentry, or all.`);
+            printHelpAndExit(1, `Unknown connector: ${entry.trim()}. Use analytics, github, asc, revenuecat, sentry, coolify, or all.`);
         }
         if (connector === 'all') {
             connectors.add('analytics');
@@ -118,6 +120,7 @@ function parseConnectorList(value) {
             connectors.add('asc');
             connectors.add('revenuecat');
             connectors.add('sentry');
+            connectors.add('coolify');
         }
         else {
             connectors.add(connector);
@@ -156,10 +159,10 @@ function commandHasConfigArg(command) {
     return /(?:^|\s)--config(?:=|\s|$)/.test(String(command || ''));
 }
 function commandIsBuiltinExporter(command) {
-    return /(?:^|\s)(?:node\s+)?(?:\S*\/)?(?:export-analytics-summary|export-revenuecat-summary|export-sentry-summary|export-asc-summary)\.mjs(?:\s|$)/.test(String(command || ''));
+    return /(?:^|\s)(?:node\s+)?(?:\S*\/)?(?:export-analytics-summary|export-revenuecat-summary|export-sentry-summary|export-coolify-summary|export-asc-summary)\.mjs(?:\s|$)/.test(String(command || ''));
 }
 function commandSupportsActiveConfig(command) {
-    return /(?:^|\s)(?:node\s+)?(?:\S*\/)?export-sentry-summary\.mjs(?:\s|$)/.test(String(command || ''));
+    return /(?:^|\s)(?:node\s+)?(?:\S*\/)?(?:export-sentry-summary|export-coolify-summary)\.mjs(?:\s|$)/.test(String(command || ''));
 }
 function withActiveConfigArg(command, configPath) {
     const trimmed = String(command || '').trim();
@@ -652,6 +655,62 @@ async function testSentryConnection(sentryToken, timeoutMs, baseUrl = 'https://s
         };
     }
 }
+function normalizeCoolifyBaseUrl(value) {
+    const raw = String(value || '').trim().replace(/\/+$/, '');
+    if (!raw)
+        return '';
+    return /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
+}
+function resolveCoolifyApiBaseUrl(baseUrl) {
+    const normalized = normalizeCoolifyBaseUrl(baseUrl);
+    if (!normalized)
+        return '';
+    if (/\/api\/v1$/i.test(normalized))
+        return normalized;
+    if (/\/api$/i.test(normalized))
+        return `${normalized}/v1`;
+    return `${normalized}/api/v1`;
+}
+async function testCoolifyConnection(coolifyToken, timeoutMs, baseUrl) {
+    if (!coolifyToken) {
+        return {
+            ok: false,
+            detail: 'missing token',
+        };
+    }
+    const apiBaseUrl = resolveCoolifyApiBaseUrl(baseUrl);
+    if (!apiBaseUrl) {
+        return {
+            ok: false,
+            detail: 'missing base URL',
+        };
+    }
+    try {
+        const response = await fetchWithTimeout(`${apiBaseUrl}/applications?limit=1`, {
+            method: 'GET',
+            headers: {
+                Accept: 'application/json',
+                Authorization: `Bearer ${coolifyToken}`,
+            },
+        }, timeoutMs);
+        if (!response.ok) {
+            return {
+                ok: false,
+                detail: `HTTP ${response.status}: ${truncate(response.body)}`,
+            };
+        }
+        return {
+            ok: true,
+            detail: `HTTP ${response.status}`,
+        };
+    }
+    catch (error) {
+        return {
+            ok: false,
+            detail: error instanceof Error ? error.message : String(error),
+        };
+    }
+}
 function normalizeSentryAccounts(config, sentryTokenEnv) {
     const sentrySource = config?.sources?.sentry;
     const accounts = Array.isArray(sentrySource?.accounts) ? sentrySource.accounts : [];
@@ -783,6 +842,7 @@ async function runConnectionChecks({ checks, config, configPath, timeoutMs, prog
     const analyticsTokenEnv = getSecretName(config, 'analyticsTokenEnv', 'ANALYTICSCLI_ACCESS_TOKEN');
     const revenuecatTokenEnv = getSecretName(config, 'revenuecatTokenEnv', 'REVENUECAT_API_KEY');
     const sentryTokenEnv = getSecretName(config, 'sentryTokenEnv', 'SENTRY_AUTH_TOKEN');
+    const coolifyTokenEnv = getSecretName(config, 'coolifyTokenEnv', 'COOLIFY_API_TOKEN');
     const feedbackTokenEnv = getSecretName(config, 'feedbackTokenEnv', 'FEEDBACK_API_TOKEN');
     const githubTokenEnv = getSecretName(config, 'githubTokenEnv', 'GITHUB_TOKEN');
     const githubRepo = isConfiguredGitHubRepo(config?.project?.githubRepo)
@@ -889,6 +949,47 @@ async function runConnectionChecks({ checks, config, configPath, timeoutMs, prog
             },
         });
     }
+    const coolifySource = config.sources?.coolify;
+    if (onlyAllows(onlyConnectors, 'coolify')) {
+        scheduleProgressGroup(tasks, checks, progressJson, {
+            key: 'coolify',
+            label: 'Coolify',
+            detail: 'API key auth + deployment/resource read',
+            run: async (groupChecks) => {
+                if (sourceEnabled(config, 'coolify')) {
+                    const token = process.env[coolifySource?.tokenEnv || coolifySource?.secretEnv || coolifyTokenEnv] || '';
+                    const baseUrl = String(coolifySource?.baseUrl || coolifySource?.base_url || process.env.COOLIFY_BASE_URL || '').trim();
+                    if (!token) {
+                        addCheck(groupChecks, 'connection:coolify', false, `${coolifySource?.tokenEnv || coolifySource?.secretEnv || coolifyTokenEnv} missing (required for live Coolify API test)`, coolifySource?.mode === 'command' ? 'fail' : 'warn');
+                    }
+                    else if (!baseUrl) {
+                        addCheck(groupChecks, 'connection:coolify', false, 'COOLIFY_BASE_URL or sources.coolify.baseUrl missing (required for live Coolify API test)', coolifySource?.mode === 'command' ? 'fail' : 'warn');
+                    }
+                    else {
+                        const coolifyConnection = await testCoolifyConnection(token, timeoutMs, baseUrl);
+                        addCheck(groupChecks, 'connection:coolify', coolifyConnection.ok, coolifyConnection.ok
+                            ? `Coolify auth check passed (${coolifyConnection.detail})`
+                            : `Coolify auth check failed (${coolifyConnection.detail})`);
+                    }
+                    if (coolifySource?.mode === 'command') {
+                        const command = withActiveConfigArg(replaceLegacyRuntimeScriptCommand(String(coolifySource.command || '').trim()), configPath);
+                        if (!command) {
+                            addCheck(groupChecks, 'connection:coolify-command', false, 'coolify source uses command mode but no command configured');
+                        }
+                        else {
+                            const commandCheck = await testCommandSourceJson(`${command} --limit 1 --max-signals 1 --last 24h`, commandCwd);
+                            addCheck(groupChecks, 'connection:coolify-command', commandCheck.ok, commandCheck.ok
+                                ? 'Coolify command smoke test passed'
+                                : `Coolify command smoke test failed (${commandCheck.detail})`);
+                        }
+                    }
+                }
+                else {
+                    addCheck(groupChecks, 'connection:coolify', true, 'source disabled');
+                }
+            },
+        });
+    }
     const feedbackSource = config.sources?.feedback;
     if (!onlyAllows(onlyConnectors, 'feedback')) {
         // Skip feedback during focused connector checks.
@@ -924,7 +1025,9 @@ async function runConnectionChecks({ checks, config, configPath, timeoutMs, prog
                 ? 'revenuecat'
                 : serviceKind === 'crash'
                     ? 'sentry'
-                    : serviceKind;
+                    : serviceKind === 'infrastructure'
+                        ? 'coolify'
+                        : serviceKind;
         if (!onlyAllows(onlyConnectors, connectorKind))
             continue;
         const checkName = `connection:${extraSource.key}`;
@@ -1079,6 +1182,14 @@ async function main() {
                             ? `set (required for ${account.label} Sentry command mode)`
                             : `missing (required for ${account.label} Sentry command mode)`);
                     }
+                }
+                if (sourceName === 'coolify') {
+                    const coolifyTokenEnv = getSecretName(config, 'coolifyTokenEnv', 'COOLIFY_API_TOKEN');
+                    const tokenEnv = String(source.tokenEnv || source.secretEnv || coolifyTokenEnv).trim();
+                    const hasCoolifyToken = Boolean(process.env[tokenEnv]);
+                    const hasCoolifyBaseUrl = Boolean(source.baseUrl || source.base_url || process.env.COOLIFY_BASE_URL);
+                    addCheck(checks, `secret:${tokenEnv}`, hasCoolifyToken, hasCoolifyToken ? 'set (required for Coolify command mode)' : 'missing (required for Coolify command mode)');
+                    addCheck(checks, 'source:coolify:base-url', hasCoolifyBaseUrl, hasCoolifyBaseUrl ? 'configured' : 'missing COOLIFY_BASE_URL or sources.coolify.baseUrl');
                 }
                 if (!source.builtIn && source.secretEnv) {
                     const hasConnectorToken = Boolean(process.env[source.secretEnv]);

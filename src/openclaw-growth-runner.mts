@@ -30,12 +30,12 @@ const DEFAULT_CADENCES = [
     title: 'Daily Sentry and production guardrail',
     intervalDays: 1,
     criticalOnly: true,
-    focusAreas: ['sentry_errors', 'crash', 'onboarding', 'conversion', 'paywall', 'purchase'],
-    sourcePriorities: ['sentry', 'glitchtip', 'analytics', 'revenuecat', 'asc_cli', 'feedback', 'github'],
+    focusAreas: ['sentry_errors', 'crash', 'deployment', 'availability', 'onboarding', 'conversion', 'paywall', 'purchase'],
+    sourcePriorities: ['sentry', 'glitchtip', 'coolify', 'analytics', 'revenuecat', 'asc_cli', 'feedback', 'github'],
     objective:
-      'Analyze every configured project for critical production blockers: Sentry/GlitchTip errors, crashes, onboarding or purchase drop-offs, zero-conversion days, missing buyers, very low users, and other silent business anomalies.',
+      'Analyze every configured project for critical production blockers: Sentry/GlitchTip errors, Coolify failed deploys or unhealthy resources, crashes, onboarding or purchase drop-offs, zero-conversion days, missing buyers, very low users, and other silent business anomalies.',
     instructions:
-      'Compare against recent baselines across Sentry/GlitchTip, AnalyticsCLI, RevenueCat, ASC, feedback, release metadata, memory/state, and recent code changes. If the finding is critical, produce the exact fix or next debugging step and prefer a GitHub issue or draft PR when GitHub write access is configured; otherwise hand off via OpenClaw chat. Do not invent generic growth ideas.',
+      'Compare against recent baselines across Sentry/GlitchTip, Coolify, AnalyticsCLI, RevenueCat, ASC, feedback, release metadata, memory/state, and recent code changes. If the finding is critical, produce the exact fix or next debugging step and prefer a GitHub issue or draft PR when GitHub write access is configured; otherwise hand off via OpenClaw chat. Do not invent generic growth ideas.',
   },
   {
     key: 'weekly',
@@ -43,7 +43,7 @@ const DEFAULT_CADENCES = [
     intervalDays: 7,
     criticalOnly: false,
     focusAreas: ['conversion', 'paywall', 'onboarding', 'marketing', 'retention', 'stability'],
-    sourcePriorities: ['analytics', 'revenuecat', 'asc_cli', 'feedback', 'sentry', 'github'],
+    sourcePriorities: ['analytics', 'revenuecat', 'asc_cli', 'feedback', 'sentry', 'coolify', 'github'],
     objective:
       'Create an executive summary across all configured projects, connectors, recent releases, code changes, revenue, activation, retention, reviews, and production stability.',
     instructions:
@@ -55,7 +55,7 @@ const DEFAULT_CADENCES = [
     intervalDays: 30,
     criticalOnly: false,
     focusAreas: ['conversion', 'paywall', 'retention', 'marketing', 'onboarding', 'codebase'],
-    sourcePriorities: ['analytics', 'revenuecat', 'asc_cli', 'feedback', 'sentry', 'github'],
+    sourcePriorities: ['analytics', 'revenuecat', 'asc_cli', 'feedback', 'sentry', 'coolify', 'github'],
     objective:
       'Compare all configured projects month-over-month: MRR, trial conversion, churn, acquisition channel quality, store/listing conversion, retention, review themes, feature usage, crash totals, and codebase changes.',
     instructions:
@@ -173,7 +173,7 @@ function replaceLegacyRuntimeScriptCommand(command) {
   const trimmed = String(command || '').trim();
   if (!trimmed) return trimmed;
   return trimmed.replace(
-    /^node\s+scripts\/(export-analytics-summary\.mjs|export-revenuecat-summary\.mjs|export-sentry-summary\.mjs|export-asc-summary\.mjs|openclaw-growth-engineer\.mjs|openclaw-growth-status\.mjs|openclaw-growth-preflight\.mjs|openclaw-growth-runner\.mjs)(?=\s|$)/,
+    /^node\s+scripts\/(export-analytics-summary\.mjs|export-revenuecat-summary\.mjs|export-sentry-summary\.mjs|export-coolify-summary\.mjs|export-asc-summary\.mjs|openclaw-growth-engineer\.mjs|openclaw-growth-status\.mjs|openclaw-growth-preflight\.mjs|openclaw-growth-runner\.mjs)(?=\s|$)/,
     (_match, scriptName) => nodeRuntimeScriptCommand(scriptName),
   );
 }
@@ -183,7 +183,7 @@ function commandHasConfigArg(command) {
 }
 
 function commandIsBuiltinExporter(command) {
-  return /(?:^|\s)(?:node\s+)?(?:\S*\/)?(?:export-analytics-summary|export-revenuecat-summary|export-sentry-summary|export-asc-summary)\.mjs(?:\s|$)/.test(
+  return /(?:^|\s)(?:node\s+)?(?:\S*\/)?(?:export-analytics-summary|export-revenuecat-summary|export-sentry-summary|export-coolify-summary|export-asc-summary)\.mjs(?:\s|$)/.test(
     String(command || ''),
   );
 }
@@ -1330,6 +1330,9 @@ async function runAnalyzer({
   }
   if (sourceFiles.sentry) {
     args.push('--sentry', sourceFiles.sentry);
+  }
+  if (sourceFiles.coolify) {
+    args.push('--source', `coolify=${sourceFiles.coolify}`);
   }
   if (sourceFiles.feedback) {
     args.push('--feedback', sourceFiles.feedback);

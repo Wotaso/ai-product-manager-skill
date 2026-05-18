@@ -3,6 +3,7 @@ import test from 'node:test';
 import {
   buildAnalyticsSummary,
   buildAscSummary,
+  buildCoolifySummary,
   buildRevenueCatSummary,
   buildSentrySummary,
 } from '../scripts/openclaw-exporters-lib.mjs';
@@ -206,6 +207,44 @@ test('buildRevenueCatSummary emits live metrics and catalog signals', () => {
   assert.equal(summary.meta.productsCount, 1);
   assert(summary.signals.some((signal) => signal.id === 'revenuecat_overview_metrics_available'));
   assert(summary.signals.some((signal) => signal.id === 'revenuecat_catalog_summary'));
+});
+
+test('buildCoolifySummary emits deployment and health-check signals', () => {
+  const summary = buildCoolifySummary({
+    baseUrl: 'https://coolify.wotaso.com',
+    last: '24h',
+    applications: [
+      {
+        uuid: 'app-1',
+        name: 'Landing',
+        domains: 'https://analyticscli.com',
+        status: 'running',
+        health_check_enabled: false,
+      },
+      {
+        uuid: 'app-2',
+        name: 'API',
+        domains: 'https://api.analyticscli.com',
+        status: 'unhealthy',
+        health_check_enabled: true,
+      },
+    ],
+    deployments: [
+      {
+        deployment_uuid: 'dep-1',
+        application_name: 'API',
+        status: 'failed',
+        created_at: new Date().toISOString(),
+      },
+    ],
+    maxSignals: 5,
+  });
+
+  assert.equal(summary.project, 'coolify:https://coolify.wotaso.com');
+  assert.equal(summary.meta.source, 'coolify');
+  assert(summary.signals.some((signal) => signal.id === 'coolify_failed_deployments'));
+  assert(summary.signals.some((signal) => signal.id === 'coolify_unhealthy_resources'));
+  assert(summary.signals.some((signal) => signal.id === 'coolify_public_apps_without_health_checks'));
 });
 
 test('buildSentrySummary emits crash issues and signals from unresolved issues', () => {
