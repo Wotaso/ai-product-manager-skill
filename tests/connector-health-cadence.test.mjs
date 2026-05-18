@@ -154,6 +154,8 @@ test('config example enables OpenClaw and Hermes cron with runner proof logs', (
   assert.match(runner, /deriveRuntimeDirFromStatePath\(statePath\)/);
   assert.match(runner, /deriveSchedulerProofPathFromStatePath\(statePath\)/);
   assert.match(runner, /runner_invoked/);
+  assert.match(runner, /repairOpenClawCronDeliveryStore/);
+  assert.match(runner, /openclaw_cron_delivery_repaired/);
   assert.match(runner, /connector_health_checked/);
   assert.match(runner, /runner_completed/);
   assert.match(runner, /runner_failed/);

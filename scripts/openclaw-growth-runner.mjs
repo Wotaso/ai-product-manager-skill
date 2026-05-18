@@ -5,7 +5,7 @@ import process from 'node:process';
 import { createHash } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { deriveRuntimeDirFromStatePath, deriveSchedulerProofPathFromStatePath, getActionMode, getAllSourceEntries, getGitHubArtifactModes, getGitHubRequirementText, shouldAutoCreateGitHubArtifact, } from './openclaw-growth-shared.mjs';
+import { deriveRuntimeDirFromStatePath, deriveSchedulerProofPathFromStatePath, getActionMode, getAllSourceEntries, getGitHubArtifactModes, getGitHubRequirementText, repairOpenClawCronDeliveryStore, shouldAutoCreateGitHubArtifact, } from './openclaw-growth-shared.mjs';
 import { applyOpenClawSecretRefs, loadOpenClawGrowthSecrets } from './openclaw-growth-env.mjs';
 const DEFAULT_CONFIG_PATH = 'data/openclaw-growth-engineer/config.json';
 const DEFAULT_STATE_PATH = 'data/openclaw-growth-engineer/state.json';
@@ -1402,6 +1402,20 @@ async function runOnce(configPath, statePath) {
         argv: process.argv.slice(2),
     });
     const config = await readJson(configPath);
+    const cronDeliveryRepair = await repairOpenClawCronDeliveryStore({
+        configPath,
+        config,
+        readFile: fs.readFile,
+        writeFile: fs.writeFile,
+    });
+    if (cronDeliveryRepair.repaired) {
+        await appendSchedulerProof('openclaw_cron_delivery_repaired', {
+            configPath,
+            statePath,
+            path: cronDeliveryRepair.path,
+            repairedCount: cronDeliveryRepair.repairedCount,
+        });
+    }
     await applyOpenClawSecretRefs(config);
     const inferredGitHubRepo = await inferGitHubRepo(config);
     if (inferredGitHubRepo) {
