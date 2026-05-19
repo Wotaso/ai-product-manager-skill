@@ -1510,10 +1510,9 @@ async function runOnce(configPath, statePath) {
     });
     const issueFingerprint = buildIssueFingerprint(dryRun.issuesPayload);
     const unchangedIssueSet = issueFingerprint === stateAfterHealthCheck.lastIssueFingerprint;
-    if (activeCadences.length === 0 &&
-        unchangedIssueSet &&
+    if (unchangedIssueSet &&
         config.schedule?.skipIfIssueSetUnchanged !== false) {
-        process.stdout.write(`[${new Date().toISOString()}] Issue set unchanged. Skip GitHub creation.\n`);
+        process.stdout.write(`[${new Date().toISOString()}] Issue set unchanged. Skip GitHub creation and external growth notification.\n`);
         const completedAt = new Date().toISOString();
         await fs.mkdir(path.dirname(statePath), { recursive: true });
         await fs.writeFile(statePath, JSON.stringify({
@@ -1524,6 +1523,13 @@ async function runOnce(configPath, statePath) {
             lastRunAt: completedAt,
             lastOutFile: dryRun.outFile,
             cadences: markCadencesRan(stateAfterHealthCheck, activeCadences, completedAt),
+            lastGrowthRunNotifications: [
+                {
+                    sent: false,
+                    target: 'growth_run',
+                    detail: 'issue set unchanged; external growth notification suppressed',
+                },
+            ],
             skippedReason: 'issue_set_unchanged',
         }, null, 2), 'utf8');
         await appendSchedulerProof('runner_completed', {
@@ -1533,6 +1539,8 @@ async function runOnce(configPath, statePath) {
             skippedReason: 'issue_set_unchanged',
             activeCadences: activeCadences.map((cadence) => cadence.key),
             outFile: dryRun.outFile,
+            issueCount: Number(dryRun.issuesPayload?.issue_count || 0),
+            externalGrowthNotification: 'suppressed_unchanged_issue_set',
         });
         return;
     }

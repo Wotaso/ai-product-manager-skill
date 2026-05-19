@@ -44,11 +44,14 @@ test('notification delivery fallbacks are merged with explicit channels', () => 
   assert.doesNotMatch(wizard, /discord-openclaw-bridge/);
 });
 
-test('due growth cadences still run and notify even when source data or findings are unchanged', () => {
+test('due growth cadences still run and log, but suppress social delivery when findings are unchanged', () => {
   const runner = readFileSync(join(skillRoot, 'scripts/openclaw-growth-runner.mjs'), 'utf8');
 
   assert.match(runner, /activeCadences\.length === 0 && !changed/);
-  assert.match(runner, /activeCadences\.length === 0 &&\s+unchangedIssueSet/);
+  assert.doesNotMatch(runner, /activeCadences\.length === 0 &&\s+unchangedIssueSet/);
+  assert.match(runner, /Skip GitHub creation and external growth notification/);
+  assert.match(runner, /issue set unchanged; external growth notification suppressed/);
+  assert.match(runner, /externalGrowthNotification: 'suppressed_unchanged_issue_set'/);
   assert.match(runner, /issueSetChangedOrExplicitlyAllowed/);
   assert.match(runner, /lastGrowthRunNotifications: await deliverGrowthRunSummary/);
 });

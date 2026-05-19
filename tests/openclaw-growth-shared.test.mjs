@@ -121,6 +121,10 @@ test('OpenClaw cron commands keep state and proof beside the active config', () 
   assert.match(eventText, /Execute only that runner command/);
   assert.match(eventText, /Do not run sudo/);
   assert.match(eventText, /instead of prompting/);
+  assert.match(eventText, /Always let the runner write state and proof logs/);
+  assert.match(eventText, /only summarize new or changed findings/);
+  assert.match(eventText, /skippedReason issue_set_unchanged or no_data_change/);
+  assert.match(eventText, /do not repeat old findings/);
 });
 
 test('OpenClaw cron verification rejects stale name-only jobs', () => {
