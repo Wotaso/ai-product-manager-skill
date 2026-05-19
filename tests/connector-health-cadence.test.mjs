@@ -59,6 +59,17 @@ test('due growth cadences still run and log, but suppress social delivery when f
   assert.match(runner, /lastGrowthRunNotifications: await deliverGrowthRunSummary/);
 });
 
+test('scheduled source collection retries transient upstream failures once', () => {
+  const runner = readFileSync(join(skillRoot, 'scripts/openclaw-growth-runner.mjs'), 'utf8');
+
+  assert.match(runner, /function isTransientNetworkFailure/);
+  assert.match(runner, /upstream connect error/);
+  assert.match(runner, /disconnect\\\/reset before headers/);
+  assert.match(runner, /isTransientNetworkFailure\(result\.stderr \|\| result\.stdout\)/);
+  assert.match(runner, /transient network error persisted after retry/);
+  assert.match(runner, /lastRetriedTransientFailureAt/);
+});
+
 test('connector health alerts include direct repair commands without broad menu detours', () => {
   const runner = readFileSync(join(skillRoot, 'scripts/openclaw-growth-runner.mjs'), 'utf8');
   const wizard = readFileSync(join(skillRoot, 'scripts/openclaw-growth-wizard.mjs'), 'utf8');
@@ -71,6 +82,30 @@ test('connector health alerts include direct repair commands without broad menu 
   assert.match(runner, /Do not rerun the API-key ASC wizard unless the API-key smoke test also fails/);
   assert.match(wizard, /requestedConnectors\.length > 0\s+\? orderConnectors\(requestedConnectors\)/);
   assert.doesNotMatch(wizard, /requestedConnectors\.length > 0\s+\? orderConnectors\(\[\.\.\.new Set\(\[\.\.\.requestedConnectors, \.\.\.existingFixes\]\)\]\)/);
+});
+
+test('ASC wizard requests the report-creation role and vendor number', () => {
+  const wizard = readFileSync(join(skillRoot, 'scripts/openclaw-growth-wizard.mjs'), 'utf8');
+  const start = readFileSync(join(skillRoot, 'scripts/openclaw-growth-start.mjs'), 'utf8');
+  const exportAsc = readFileSync(join(skillRoot, 'scripts/export-asc-summary.mjs'), 'utf8');
+
+  assert.match(wizard, /Required for first setup: Admin/);
+  assert.match(wizard, /create the initial Analytics Report Request/);
+  assert.match(wizard, /Sales and Reports/);
+  assert.match(wizard, /Growth Engineer automatically creates an ongoing App Analytics report request/);
+  assert.match(wizard, /ASC_VENDOR_NUMBER for Sales and Trends\/App Units/);
+  assert.match(wizard, /process\.env\.ASC_ANALYTICS_VENDOR_NUMBER/);
+  assert.match(start, /configureAscAllApps/);
+  assert.match(start, /removeAscAppFlag/);
+  assert.match(start, /delete process\.env\.ASC_APP_ID/);
+  assert.match(start, /ensureAscAnalyticsRequestsForAppScope/);
+  assert.match(start, /asc analytics request --app/);
+  assert.match(start, /--access-type ONGOING/);
+  assert.match(start, /phase: 'asc_analytics_request_setup'/);
+  assert.match(start, /Use an ASC API key with Admin for first setup/);
+  assert.doesNotMatch(wizard, /ASC_APP_ID for the app to analyze/);
+  assert.doesNotMatch(exportAsc, /app: String\(process\.env\.ASC_APP_ID/);
+  assert.doesNotMatch(wizard, /Avoid: Admin unless/);
 });
 
 test('wizard exposes connector and output interval setup paths', () => {
