@@ -41,7 +41,7 @@ Use this command block for OpenClaw, Hermes, VPS, Linux, and macOS hosts:
 npx -y @analyticscli/growth-engineer@preview wizard --connectors
 ```
 
-If npm/npx is unavailable, fall back to the bundled installed skill script path and run `node scripts/openclaw-growth-wizard.mjs --connectors` only after bootstrapping the workspace from the installed skill root.
+If npm/npx is unavailable, install Node/npm on the host first. Do not instruct users to open the setup wizard through workspace-copied runtime scripts.
 
 ## Post-Setup Reply Contract
 

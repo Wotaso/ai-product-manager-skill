@@ -26,6 +26,7 @@ test('runtime auth remediation does not route AnalyticsCLI setup to standalone l
   for (const file of runtimeFiles) {
     const source = readFileSync(join(skillRoot, file), 'utf8');
     assert.doesNotMatch(source, /analyticscli login/);
-    assert.match(source, /openclaw-growth-wizard\.mjs --connectors analytics/);
+    assert.match(source, /npx -y @analyticscli\/growth-engineer@preview wizard --connectors analytics/);
+    assert.doesNotMatch(source, /node scripts\/openclaw-growth-wizard\.mjs/);
   }
 });

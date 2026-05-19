@@ -75,13 +75,32 @@ test('connector health alerts include direct repair commands without broad menu 
   const wizard = readFileSync(join(skillRoot, 'scripts/openclaw-growth-wizard.mjs'), 'utf8');
 
   assert.match(runner, /Run on the host terminal/);
-  assert.match(runner, /nodeRuntimeScriptCommand\('openclaw-growth-wizard\.mjs'\)/);
-  assert.match(runner, /--connectors \$\{quote\(connector\)\} --config \$\{quote\(configPath\)\}/);
+  assert.match(runner, /npx -y @analyticscli\/growth-engineer@preview wizard --connectors/);
+  assert.doesNotMatch(runner, /nodeRuntimeScriptCommand\('openclaw-growth-wizard\.mjs'\)/);
   assert.match(runner, /ASC web-auth refresh only/);
   assert.match(runner, /asc web auth login --apple-id "\$ASC_WEB_APPLE_ID"/);
   assert.match(runner, /Do not rerun the API-key ASC wizard unless the API-key smoke test also fails/);
   assert.match(wizard, /requestedConnectors\.length > 0\s+\? orderConnectors\(requestedConnectors\)/);
   assert.doesNotMatch(wizard, /requestedConnectors\.length > 0\s+\? orderConnectors\(\[\.\.\.new Set\(\[\.\.\.requestedConnectors, \.\.\.existingFixes\]\)\]\)/);
+});
+
+test('agent-facing wizard guidance uses the npx Growth Engineer package', () => {
+  const files = [
+    'SKILL.md',
+    'scripts/openclaw-growth-preflight.mjs',
+    'scripts/openclaw-growth-status.mjs',
+    'scripts/openclaw-growth-start.mjs',
+    'scripts/openclaw-growth-runner.mjs',
+    'scripts/openclaw-growth-wizard.mjs',
+    'references/setup-and-scheduling.md',
+    'references/advanced-setup.md',
+  ];
+
+  for (const file of files) {
+    const source = readFileSync(join(skillRoot, file), 'utf8');
+    assert.match(source, /npx -y @analyticscli\/growth-engineer@preview wizard/);
+    assert.doesNotMatch(source, /node scripts\/openclaw-growth-wizard\.mjs/);
+  }
 });
 
 test('ASC wizard requests the report-creation role and vendor number', () => {

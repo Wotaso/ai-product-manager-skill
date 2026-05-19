@@ -604,7 +604,7 @@ function buildConnectorWizardCommand(configPath, entry) {
     const connector = connectorWizardKey(entry.key);
     if (!connector)
         return null;
-    return `${nodeRuntimeScriptCommand('openclaw-growth-wizard.mjs')} --connectors ${quote(connector)} --config ${quote(configPath)}`;
+    return `npx -y @analyticscli/growth-engineer@preview wizard --connectors ${quote(connector)} --config ${quote(configPath)}`;
 }
 function isAscWebAuthIssue(entry) {
     if (entry.key !== 'appStoreConnect')

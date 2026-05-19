@@ -28,7 +28,7 @@ install/update automatically before using `analyticscli`.
 ## 2) Generate Config
 
 ```bash
-node scripts/openclaw-growth-wizard.mjs
+npx -y @analyticscli/growth-engineer@preview wizard
 ```
 
 The config is non-secret and commit-safe:
@@ -49,7 +49,7 @@ The setup flow should be developer-friendly:
 For GitHub, RevenueCat, Sentry, and App Store Connect connector setup, use the connector wizard instead of asking the user to compose setup commands manually:
 
 ```bash
-node scripts/openclaw-growth-wizard.mjs --connectors github,revenuecat,sentry,asc
+npx -y @analyticscli/growth-engineer@preview wizard --connectors github,revenuecat,sentry,asc
 ```
 
 The connector wizard asks only for the selected connectors, explains each provider step in the terminal, writes local secrets to `~/.config/openclaw-growth/secrets.env`, and runs helper setup for the selected connectors.
@@ -241,7 +241,7 @@ tasks:
 
 - name: openclaw-growth-engineer-run
   interval: 6h
-  prompt: "Run `node scripts/openclaw-growth-runner.mjs --config data/openclaw-growth-engineer/config.json` from the workspace if the config and runtime files exist. The runner owns schedule.cadences, connectorHealthCheckIntervalMinutes, skipIfNoDataChange, and skipIfIssueSetUnchanged. If it reports connector-health alerts, production crashes, generated issues, or actionable growth findings, summarize only the action and evidence. If setup files are missing, tell the user to run `node scripts/openclaw-growth-wizard.mjs --connectors`. If there is no actionable output, reply HEARTBEAT_OK."
+  prompt: "Run `node scripts/openclaw-growth-runner.mjs --config data/openclaw-growth-engineer/config.json` from the workspace if the config and runtime files exist. The runner owns schedule.cadences, connectorHealthCheckIntervalMinutes, skipIfNoDataChange, and skipIfIssueSetUnchanged. If it reports connector-health alerts, production crashes, generated issues, or actionable growth findings, summarize only the action and evidence. If setup files are missing, tell the user to run `npx -y @analyticscli/growth-engineer@preview wizard --connectors --config data/openclaw-growth-engineer/config.json`. If there is no actionable output, reply HEARTBEAT_OK."
 ```
 
 When `schedule.intervalMinutes` or `schedule.connectorHealthCheckIntervalMinutes` is customized, `openclaw-growth-start.mjs` should rewrite this task interval to the smaller cadence. Heartbeat is not the primary scheduler on VPS installs; OpenClaw cron should wake the agent, and the runner decides whether daily, weekly, monthly, quarterly, six-month, or yearly growth work is due.
