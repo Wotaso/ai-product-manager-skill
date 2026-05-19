@@ -70,6 +70,17 @@ test('scheduled source collection retries transient upstream failures once', () 
   assert.match(runner, /lastRetriedTransientFailureAt/);
 });
 
+test('optional source collection failures become connector-health incidents', () => {
+  const runner = readFileSync(join(skillRoot, 'scripts/openclaw-growth-runner.mjs'), 'utf8');
+
+  assert.match(runner, /source_collection_degraded/);
+  assert.match(runner, /Source collection failed during scheduled run/);
+  assert.match(runner, /Optional source "\$\{source\.key\}" failed; continuing without it/);
+  assert.match(runner, /if \(source\.key === 'analytics'\)/);
+  assert.match(runner, /recordSourceCollectionFailures/);
+  assert.match(runner, /new or changed source-collection connector incident/);
+});
+
 test('connector health alerts include direct repair commands without broad menu detours', () => {
   const runner = readFileSync(join(skillRoot, 'scripts/openclaw-growth-runner.mjs'), 'utf8');
   const wizard = readFileSync(join(skillRoot, 'scripts/openclaw-growth-wizard.mjs'), 'utf8');
