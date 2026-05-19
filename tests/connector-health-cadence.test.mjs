@@ -76,6 +76,7 @@ test('connector health alerts include direct repair commands without broad menu 
 
   assert.match(runner, /Run on the host terminal/);
   assert.match(runner, /npx -y @analyticscli\/growth-engineer@preview wizard --connectors/);
+  assert.doesNotMatch(runner, /@analyticscli\/growth-engineer@preview wizard --connectors .*--config/);
   assert.doesNotMatch(runner, /nodeRuntimeScriptCommand\('openclaw-growth-wizard\.mjs'\)/);
   assert.match(runner, /ASC web-auth refresh only/);
   assert.match(runner, /asc web auth login --apple-id "\$ASC_WEB_APPLE_ID"/);
@@ -100,6 +101,7 @@ test('agent-facing wizard guidance uses the npx Growth Engineer package', () => 
     const source = readFileSync(join(skillRoot, file), 'utf8');
     assert.match(source, /npx -y @analyticscli\/growth-engineer@preview wizard/);
     assert.doesNotMatch(source, /node scripts\/openclaw-growth-wizard\.mjs/);
+    assert.doesNotMatch(source, /@analyticscli\/growth-engineer@preview wizard --connectors .*--config/);
   }
 });
 
