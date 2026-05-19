@@ -25,6 +25,9 @@ test('unchanged unhealthy connectors are retried until an external alert is deli
   assert.match(runner, /activeIncidentFingerprint = fingerprint/);
   assert.match(runner, /lastExternalAlertedFingerprint = fingerprint/);
   assert.match(runner, /hasSuccessfulExternalDelivery\(deliveries\)/);
+  assert.match(runner, /connector_health_unchanged/);
+  assert.match(runner, /persisted unhealthy state is not a new event/);
+  assert.match(runner, /alertTriggered \? 'CONNECTOR_HEALTH_ALERT' : 'HEARTBEAT_OK'/);
   assert.doesNotMatch(runner, /isDue\(healthState\.lastAlertedAt, intervalMinutes\)/);
 });
 

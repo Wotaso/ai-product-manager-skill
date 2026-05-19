@@ -1079,6 +1079,10 @@ async function maybeRunConnectorHealthCheck({ config, configPath, state, statePa
             statePath,
             intervalMinutes,
             lastCheckedAt: healthState.lastCheckedAt || null,
+            persistedLastStatusOk: healthState.lastStatusOk !== false,
+            activeIncidentFingerprint: healthState.activeIncidentFingerprint || null,
+            socialOutput: 'HEARTBEAT_OK',
+            socialReason: 'connector health was not due; persisted unhealthy state is not a new event',
         });
         return state;
     }
@@ -1126,6 +1130,8 @@ async function maybeRunConnectorHealthCheck({ config, configPath, state, statePa
         lastError: null,
     };
     const previousExternallyDeliveredFingerprint = healthState.lastExternalAlertedFingerprint || null;
+    let alertTriggered = false;
+    let alertDeliveries = [];
     if (unhealthyConnectors.length === 0) {
         nextHealthState.activeIncidentFingerprint = null;
         nextHealthState.lastExternalAlertedFingerprint = null;
@@ -1148,6 +1154,8 @@ async function maybeRunConnectorHealthCheck({ config, configPath, state, statePa
             unhealthyConnectors,
             fingerprint,
         });
+        alertTriggered = true;
+        alertDeliveries = deliveries;
         nextHealthState.lastAlertedAt = checkedAt;
         nextHealthState.lastAlertedFingerprint = fingerprint;
         nextHealthState.lastAlertMarkdownPath = paths.markdownPath;
@@ -1178,9 +1186,27 @@ async function maybeRunConnectorHealthCheck({ config, configPath, state, statePa
             detail: entry.detail,
         })),
         alertMarkdownPath: nextHealthState.lastAlertMarkdownPath || null,
-        deliveryCount: Array.isArray(nextHealthState.lastAlertDeliveries) ? nextHealthState.lastAlertDeliveries.length : 0,
-        externalDeliverySent: nextHealthState.lastAlertExternalSent === true,
+        alertTriggered,
+        deliveryCount: alertDeliveries.length,
+        externalDeliverySent: alertTriggered ? hasSuccessfulExternalDelivery(alertDeliveries) : false,
+        socialOutput: alertTriggered ? 'CONNECTOR_HEALTH_ALERT' : 'HEARTBEAT_OK',
+        socialReason: alertTriggered
+            ? 'new or changed connector-health incident'
+            : unhealthyConnectors.length > 0
+                ? 'connector-health incident unchanged'
+                : healthState.lastStatusOk === false
+                    ? 'connector health recovered'
+                    : 'connector health unchanged healthy',
     });
+    if (unhealthyConnectors.length > 0 && !alertTriggered) {
+        await appendSchedulerProof('connector_health_unchanged', {
+            configPath,
+            statePath,
+            checkedAt,
+            fingerprint,
+            socialOutput: 'HEARTBEAT_OK',
+        });
+    }
     return nextState;
 }
 function buildIssueFingerprint(issuesPayload) {
@@ -1541,6 +1567,7 @@ async function runOnce(configPath, statePath) {
             outFile: dryRun.outFile,
             issueCount: Number(dryRun.issuesPayload?.issue_count || 0),
             externalGrowthNotification: 'suppressed_unchanged_issue_set',
+            socialOutput: 'HEARTBEAT_OK',
         });
         return;
     }
