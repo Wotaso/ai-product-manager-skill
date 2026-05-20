@@ -63,11 +63,25 @@ test('scheduled source collection retries transient upstream failures once', () 
   const runner = readFileSync(join(skillRoot, 'scripts/openclaw-growth-runner.mjs'), 'utf8');
 
   assert.match(runner, /function isTransientNetworkFailure/);
+  assert.match(runner, /function isRequiredSource/);
   assert.match(runner, /upstream connect error/);
   assert.match(runner, /disconnect\\\/reset before headers/);
   assert.match(runner, /isTransientNetworkFailure\(result\.stderr \|\| result\.stdout\)/);
   assert.match(runner, /transient network error persisted after retry/);
   assert.match(runner, /lastRetriedTransientFailureAt/);
+  assert.match(runner, /source_collection_degraded/);
+  assert.match(runner, /lastSourceFailures/);
+  assert.match(runner, /socialOutput: 'HEARTBEAT_OK'/);
+});
+
+test('Sentry exporter retries retryable API failures before surfacing the error', () => {
+  const exporter = readFileSync(join(skillRoot, 'scripts/export-sentry-summary.mjs'), 'utf8');
+
+  assert.match(exporter, /DEFAULT_SENTRY_FETCH_RETRIES = 3/);
+  assert.match(exporter, /function isRetryableSentryStatus/);
+  assert.match(exporter, /status === 429 \|\| status >= 500/);
+  assert.match(exporter, /retry-after/);
+  assert.match(exporter, /Sentry API \$\{response\.status\}/);
 });
 
 test('optional source collection failures become connector-health incidents', () => {
