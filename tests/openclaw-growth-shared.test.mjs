@@ -123,7 +123,7 @@ test('OpenClaw cron commands keep state and proof beside the active config', () 
   assert.match(eventText, /instead of prompting/);
   assert.match(eventText, /Always let the runner write state and proof logs/);
   assert.match(eventText, /only summarize new or changed findings/);
-  assert.match(eventText, /skippedReason issue_set_unchanged or no_data_change/);
+  assert.match(eventText, /skippedReason cadence_not_due, issue_set_unchanged, or no_data_change/);
   assert.match(eventText, /do not repeat old findings/);
   assert.match(eventText, /Persisted connectorHealth\.lastStatusOk=false is not by itself a new event/);
   assert.match(eventText, /connector_health_not_due, connector_health_unchanged/);
