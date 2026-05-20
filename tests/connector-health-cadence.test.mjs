@@ -50,7 +50,7 @@ test('notification delivery fallbacks are merged with explicit channels', () => 
 test('due growth cadences still run and log, but suppress social delivery when findings are unchanged', () => {
   const runner = readFileSync(join(skillRoot, 'scripts/openclaw-growth-runner.mjs'), 'utf8');
 
-  assert.match(runner, /activeCadences\.length === 0 && !changed/);
+  assert.match(runner, /skippedReason: 'cadence_not_due'/);
   assert.doesNotMatch(runner, /activeCadences\.length === 0 &&\s+unchangedIssueSet/);
   assert.match(runner, /Skip GitHub creation and external growth notification/);
   assert.match(runner, /issue set unchanged; external growth notification suppressed/);
@@ -152,7 +152,8 @@ test('wizard exposes connector and output interval setup paths', () => {
   assert.match(wizard, /Daily\/weekly\/monthly jobs, GitHub issue\/PR delivery, and OpenClaw chat notifications/);
   assert.match(wizard, /label: 'Advanced intervals only'/);
   assert.match(wizard, /Runner wake-up interval and connector health check cadence/);
-  assert.match(wizard, /Daily Sentry and production guardrail/);
+  assert.match(wizard, /90-minute production error healthcheck/);
+  assert.match(wizard, /Daily behavioral anomaly guardrail/);
   assert.match(wizard, /openClawCanEditConnectors: true/);
   assert.match(wizard, /openClawCanEditConnectorSecrets: false/);
   assert.match(wizard, /non-secret connector config/);
