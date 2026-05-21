@@ -74,6 +74,19 @@ test('scheduled source collection retries transient upstream failures once', () 
   assert.match(runner, /socialOutput: 'HEARTBEAT_OK'/);
 });
 
+test('required Sentry-compatible API 5xx failures are still degraded after retry', () => {
+  const runner = readFileSync(join(skillRoot, 'scripts/openclaw-growth-runner.mjs'), 'utf8');
+
+  assert.match(runner, /function isSentryCompatibleSource/);
+  assert.match(runner, /sourceKey === 'sentry'/);
+  assert.match(runner, /sourceKey === 'glitchtip'/);
+  assert.match(runner, /command\.includes\('export-sentry-summary'\)/);
+  assert.match(runner, /function shouldDegradeTransientSourceFailure/);
+  assert.match(runner, /if \(!isRequiredSource\(sourceConfig, sourceName\)\)\s+return true/);
+  assert.match(runner, /return isSentryCompatibleSource\(sourceConfig, sourceName\)/);
+  assert.match(runner, /shouldDegradeTransientSourceFailure\(sourceConfig, sourceName, retried\)/);
+});
+
 test('Sentry exporter retries retryable API failures before surfacing the error', () => {
   const exporter = readFileSync(join(skillRoot, 'scripts/export-sentry-summary.mjs'), 'utf8');
 
