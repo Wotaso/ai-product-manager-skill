@@ -3,7 +3,7 @@ name: growth-engineer
 description: Growth Engineer for mobile apps and agent runtimes including OpenClaw and Hermes. Correlate analytics, crashes, billing, feedback, store signals, and repo context into proposal drafts that can flow into agent chat, GitHub issues, or draft pull requests.
 license: MIT
 homepage: https://github.com/Wotaso/growth-engineer-skill
-metadata: {"author":"wotaso","version":"1.0.129","analyticscli-target":"@analyticscli/cli","analyticscli-supported-range":">=0.1.2-preview.0 <0.2.0","openclaw":{"emoji":"🚀","homepage":"https://github.com/Wotaso/growth-engineer-skill","requires":{"bins":["node","analyticscli"]},"install":[{"id":"analyticscli-cli","kind":"node","package":"@analyticscli/cli@preview","bins":["analyticscli"],"label":"Install/update AnalyticsCLI CLI (npm package @analyticscli/cli@preview)"}]},"hermes":{"tags":["Growth","Analytics","Mobile","Product","OpenClaw","Hermes"],"homepage":"https://github.com/Wotaso/growth-engineer-skill","requires":{"bins":["node","analyticscli"]},"install":[{"id":"growth-engineer","kind":"skill","package":"Wotaso/growth-engineer-skill","label":"Install the shared Growth Engineer for Hermes"}]}}
+metadata: {"author":"wotaso","version":"1.0.132","analyticscli-target":"@analyticscli/cli","analyticscli-supported-range":">=0.1.2-preview.0 <0.2.0","openclaw":{"emoji":"🚀","homepage":"https://github.com/Wotaso/growth-engineer-skill","requires":{"bins":["node","analyticscli"]},"install":[{"id":"analyticscli-cli","kind":"node","package":"@analyticscli/cli@preview","bins":["analyticscli"],"label":"Install/update AnalyticsCLI CLI (npm package @analyticscli/cli@preview)"}]},"hermes":{"tags":["Growth","Analytics","Mobile","Product","OpenClaw","Hermes"],"homepage":"https://github.com/Wotaso/growth-engineer-skill","requires":{"bins":["node","analyticscli"]},"install":[{"id":"growth-engineer","kind":"skill","package":"Wotaso/growth-engineer-skill","label":"Install the shared Growth Engineer for Hermes"}]}}
 ---
 
 # Growth Engineer
@@ -79,7 +79,7 @@ If AnalyticsCLI auth is missing or invalid, the next action is still the wizard 
 ## Use This Skill When
 
 - you want an agent to turn product signals into execution-ready backlog work
-- you need one mobile-first workflow across AnalyticsCLI product analytics/feedback, RevenueCat, Sentry-compatible crash monitoring including GlitchTip, ASC/App Store Connect, app reviews, and repo context
+- you need one workflow across AnalyticsCLI product analytics/feedback, RevenueCat or Paddle monetization, SEO/GSC/DataForSEO acquisition, Sentry-compatible crash monitoring including GlitchTip, ASC/App Store Connect, app reviews, and repo context
 - you want the deterministic work to live in a standalone CLI and the host agent to stay the AI/chat layer
 - you want proposal delivery to be configurable between agent chat handoff, GitHub issues, and draft pull requests
 
@@ -199,7 +199,7 @@ AnalyticsCLI product feedback:
 Growth operating plan:
 
 - Goal: increase durable product value and business output by reducing churn, increasing MRR/LTV, improving acquisition quality, optimizing funnels/paywalls/onboarding/activation, and creating, changing, or deleting features only when the data supports it.
-- Data-first rule: gather all connected sources before recommendations whenever feasible: AnalyticsCLI events/funnels/retention, RevenueCat subscriptions/churn/revenue, Sentry crashes/performance, App Store Connect store/reviews/builds, GitHub code/release context, feedback, and any configured social/marketing sources.
+- Data-first rule: gather all connected sources before recommendations whenever feasible: AnalyticsCLI events/funnels/retention, RevenueCat subscriptions/churn/revenue, Paddle billing metrics, SEO/GSC/DataForSEO acquisition signals, Sentry crashes/performance, App Store Connect store/reviews/builds, GitHub code/release context, feedback, and any configured social/marketing sources.
 - Long analysis rule: prefer a longer cross-source investigation over fast generic advice. Look for correlations across connectors, for example Sentry regressions after a release, RevenueCat churn after a paywall change, App Store review themes matching funnel drop-offs, or marketing traffic that brings low-retention users.
 - Usage-choice rule: setup must ask how the user wants to use the tool before scheduling it. At minimum offer production autopilot, advisory-only summaries, and manual reports. Then ask whether the default cadence plan is acceptable; if not, collect/edit what should happen daily, weekly, monthly, every 3 months, every 6 months, and yearly.
 - GitHub production-version rule: always determine which code version is production before mapping data to files. Check repo default branch, release branches/tags, app version/build metadata, deployment workflows, App Store Connect build/version, Sentry release tags, and AnalyticsCLI appVersion. If they disagree, state the uncertainty and avoid overconfident file blame.
@@ -290,14 +290,18 @@ If the user asks which connectors exist, list only the connector names and one s
 If the user already names specific connectors, still prefer the checkbox wizard unless they explicitly ask for a non-interactive command. For explicit connector setup, use one copy-paste command from the active agent workspace:
 
 ```bash
-npx -y @analyticscli/growth-engineer@preview wizard --connectors analytics,github,revenuecat,sentry,coolify,asc
+npx -y @analyticscli/growth-engineer@preview wizard --connectors analytics,github,revenuecat,paddle,seo,sentry,coolify,asc
 ```
 
 Use only the connectors the user accepted. The wizard owns provider-specific instructions, local-terminal secret prompts, helper setup, and smoke tests. Chat should only summarize results after the wizard finishes or when the user asks.
 
 Do not ask for `ASC_APP_ID` during initial setup. ASC summaries default to all accessible App Store Connect apps. A single app ID is only an optional explicit filter later.
 
-Connection setup requests are not satisfied by a successful product-manager run. If the user asks to set up `asc`, App Store Connect, RevenueCat, Sentry, Coolify, GitHub, or codebase access, point them to the wizard command above and keep any extra explanation out of chat unless requested.
+Connection setup requests are not satisfied by a successful product-manager run. If the user asks to set up `asc`, App Store Connect, RevenueCat, Paddle, SEO/GSC/DataForSEO, Sentry, Coolify, GitHub, or codebase access, point them to the wizard command above and keep any extra explanation out of chat unless requested.
+
+For Paddle setup, the wizard must explain the account-level metrics model: do not ask for or hard-code one Paddle product/project. The user should create a live API key at `https://vendors.paddle.com/authentication` with `metrics.read` only.
+
+For SEO setup, the wizard must not hard-code one Search Console property by default. Leave `GSC_SITE_URL` empty to query all verified properties visible to the account; set it only when the user explicitly wants to restrict analysis. Explain Search Console (`https://search.google.com/search-console`), service-account setup (`https://console.cloud.google.com/iam-admin/serviceaccounts`), and optional paid DataForSEO (`https://app.dataforseo.com/api-dashboard`) step by step.
 
 Reference URLs for the wizard or for explicit follow-up questions:
 

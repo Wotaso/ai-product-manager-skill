@@ -42,14 +42,14 @@ The setup flow should be developer-friendly:
 - ask for the minimum missing secret or permission, not a broad token
 - show a status checklist after setup: configured, optional, blocked, and next command
 - hand off weak or missing app instrumentation to the `analyticscli-ts-sdk` skill with concrete SDK setup steps
-- ask exactly which optional connections the user wants to set up before requesting credentials: AnalyticsCLI baseline with feedback summaries, GitHub code access, ASC / App Store Connect CLI, RevenueCat, Sentry-compatible crash monitoring including Sentry Cloud and GlitchTip accounts, or skip
+- ask exactly which optional connections the user wants to set up before requesting credentials: AnalyticsCLI baseline with feedback summaries, GitHub code access, ASC / App Store Connect CLI, RevenueCat, Paddle, SEO/GSC/DataForSEO, Sentry-compatible crash monitoring including Sentry Cloud and GlitchTip accounts, or skip
 - ask how the tool should be used before enabling scheduling: production autopilot, advisory-only summaries, or manual reports
 - ask whether to keep the default cadence plan; if not, collect what should happen daily, weekly, monthly, every 3 months, every 6 months, and yearly
 
-For GitHub, RevenueCat, Sentry, and App Store Connect connector setup, use the connector wizard instead of asking the user to compose setup commands manually:
+For GitHub, RevenueCat, Paddle, SEO/GSC/DataForSEO, Sentry, and App Store Connect connector setup, use the connector wizard instead of asking the user to compose setup commands manually:
 
 ```bash
-npx -y @analyticscli/growth-engineer@preview wizard --connectors github,revenuecat,sentry,asc
+npx -y @analyticscli/growth-engineer@preview wizard --connectors github,revenuecat,paddle,seo,sentry,asc
 ```
 
 The connector wizard asks only for the selected connectors, explains each provider step in the terminal, writes local secrets to `~/.config/openclaw-growth/secrets.env`, and runs helper setup for the selected connectors.
@@ -84,7 +84,10 @@ Built-in source keys:
 
 - `analytics`
 - `revenuecat`
+- `paddle`
+- `seo`
 - `sentry`
+- `coolify`
 - `feedback`
 
 Treat `feedback` as an AnalyticsCLI/custom feedback source key, not as a separate primary connector in high-level setup answers.
@@ -101,6 +104,24 @@ Recommended mobile extras:
 - `play-console`
 
 Do not configure GlitchTip as a separate extra connector when it exposes the Sentry-compatible API. Put Sentry Cloud and GlitchTip instances under `sources.sentry.accounts[]` so crash monitoring remains one Sentry-compatible connector. ASC is a first-class App Store Connect connector, not an extra analytics alias.
+
+Paddle setup:
+
+- Ask whether to connect Paddle for web billing, MRR, revenue, refunds, chargebacks, checkout conversion, and active subscriber metrics.
+- Do not ask for or store a single Paddle product/project selection in the wizard. Keep account-level metrics access so the Growth Engineer can compare all Paddle revenue context available to the API key.
+- Tell the user to open `https://vendors.paddle.com/authentication`, go to Developer Tools > Authentication, create a live API key, and grant `metrics.read` only.
+- Store the key as `PADDLE_API_KEY` in the local secrets file.
+- Treat sandbox Paddle metrics as setup-only evidence, not production revenue evidence.
+
+SEO / Search Console / DataForSEO setup:
+
+- Ask whether to connect SEO acquisition data from Google Search Console and optional DataForSEO.
+- Do not hard-code one Search Console property by default. Leave `GSC_SITE_URL` empty so the exporter lists and queries all verified properties visible to the account.
+- Only set `GSC_SITE_URL` when the user intentionally wants to restrict analysis to one domain/property.
+- Tell the user to open `https://search.google.com/search-console` and verify the properties they want included.
+- For OAuth token mode, use a read-only Search Console token with `webmasters.readonly` scope and store it as `GOOGLE_SEARCH_CONSOLE_ACCESS_TOKEN`.
+- For service-account mode, tell the user to open `https://console.cloud.google.com/iam-admin/serviceaccounts`, create or choose a service account, add its email as a Search Console user on the relevant properties, then set `GOOGLE_APPLICATION_CREDENTIALS` or `GSC_SERVICE_ACCOUNT_JSON` outside chat.
+- DataForSEO is optional and paid. Tell the user to open `https://app.dataforseo.com/api-dashboard`; store `DATAFORSEO_LOGIN` and `DATAFORSEO_PASSWORD` only when requested. Commands must include `--confirm-paid` and a bounded `--max-paid-requests`.
 
 For Apple-platform apps, ask whether to connect the `asc` CLI plus the App Store Connect agent skill for read-only App Store Connect reporting.
 When configured, use every available read-only ASC surface: App Analytics, Sales and Trends, downloads/units, redownloads, conversion, source traffic, app usage, purchases, subscriptions, ratings/reviews, build/TestFlight/release context, and crash totals. Do not describe ASC as partial or analytics-only once it is connected.

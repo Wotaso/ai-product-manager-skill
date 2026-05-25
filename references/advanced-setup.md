@@ -7,7 +7,7 @@ Default path:
 1. Install with `npx -y clawhub install openclaw-growth-engineer`
 2. Bootstrap once with `bash skills/openclaw-growth-engineer/scripts/bootstrap-openclaw-workspace.sh`
 3. Run `npx -y @analyticscli/growth-engineer@preview wizard`
-4. For connector setup, run `npx -y @analyticscli/growth-engineer@preview wizard --connectors github,revenuecat,sentry,asc`
+4. For connector setup, run `npx -y @analyticscli/growth-engineer@preview wizard --connectors github,revenuecat,paddle,seo,sentry,asc`
 5. Run `node scripts/openclaw-growth-start.mjs --config data/openclaw-growth-engineer/config.json`
 
 ## Secrets
@@ -19,7 +19,7 @@ Default path:
 
 ## Connector Overrides
 
-- Built-in source keys are `analytics`, `revenuecat`, `sentry`, and `feedback`; `feedback` is part of the AnalyticsCLI/custom feedback source, not a separate primary setup connector.
+- Built-in source keys are `analytics`, `revenuecat`, `paddle`, `seo`, `sentry`, `coolify`, and `feedback`; `feedback` is part of the AnalyticsCLI/custom feedback source, not a separate primary setup connector.
 - Extra mobile connectors go into `sources.extra[]`.
 - Prefer `mode=file` for maximum stability.
 - Use `mode=command` when the command deterministically returns JSON.

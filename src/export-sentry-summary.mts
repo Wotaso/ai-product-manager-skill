@@ -3,7 +3,6 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { writeJsonOutput, buildSentrySummary } from './openclaw-exporters-lib.mjs';
-import { applyOpenClawSecretRefs, loadOpenClawGrowthSecrets } from './openclaw-growth-env.mjs';
 
 const DEFAULT_BASE_URL = 'https://sentry.io';
 const DEFAULT_CONFIG_PATH = 'data/openclaw-growth-engineer/config.json';
@@ -157,48 +156,12 @@ function normalizeProjectEntries(account) {
     }));
 }
 
-function toEnvName(value, fallback = 'SENTRY') {
-  const normalized = String(value || '')
-    .trim()
-    .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
-    .replace(/[^a-zA-Z0-9]+/g, '_')
-    .replace(/^_+|_+$/g, '')
-    .toUpperCase();
-  return normalized || fallback;
-}
-
-function uniqueStrings(values: unknown[]): string[] {
-  return [...new Set(values.map((value) => String(value || '').trim()).filter((value): value is string => Boolean(value)))];
-}
-
-function inferSentryTokenEnvCandidates(account, index, args) {
-  const explicit = account?.tokenEnv || account?.token_env || account?.secretEnv;
-  const label = String(account?.label || account?.name || account?.id || account?.key || '').trim();
-  const id = String(account?.id || account?.key || label || `sentry_${index + 1}`).trim();
-  const baseUrl = String(account?.baseUrl || account?.base_url || account?.url || args.baseUrl || DEFAULT_BASE_URL)
-    .trim()
-    .toLowerCase();
-  const combined = `${id} ${label} ${baseUrl}`.toLowerCase();
-  const candidates = [explicit];
-
-  if (combined.includes('glitchtip')) candidates.push('GLITCHTIP_AUTH_TOKEN');
-  if (combined.includes('sentry_cloud') || combined.includes('sentry cloud') || combined.includes('sentry.io')) {
-    candidates.push('SENTRY_CLOUD_AUTH_TOKEN');
-  }
-  candidates.push(`${toEnvName(label || id, `SENTRY_${index + 1}`)}_AUTH_TOKEN`);
-  candidates.push(`${toEnvName(id, `SENTRY_${index + 1}`)}_AUTH_TOKEN`);
-  candidates.push('SENTRY_AUTH_TOKEN');
-
-  return uniqueStrings(candidates);
-}
-
 function normalizeAccountConfigs(rawAccounts, args) {
   return rawAccounts.flatMap((account, index) => {
     if (!account || typeof account !== 'object') return [];
     const id = String(account.id || account.key || account.label || `sentry_${index + 1}`).trim();
     const baseUrl = String(account.baseUrl || account.base_url || account.url || args.baseUrl || DEFAULT_BASE_URL).trim();
-    const tokenEnvCandidates = inferSentryTokenEnvCandidates(account, index, args);
-    const tokenEnv = tokenEnvCandidates[0] || 'SENTRY_AUTH_TOKEN';
+    const tokenEnv = String(account.tokenEnv || account.token_env || account.secretEnv || 'SENTRY_AUTH_TOKEN').trim();
     const projectEntries = normalizeProjectEntries(account);
     if (projectEntries.length > 0) {
       return projectEntries.map((projectEntry) => ({
@@ -208,7 +171,6 @@ function normalizeAccountConfigs(rawAccounts, args) {
         label: String(account.label || account.name || id).trim(),
         baseUrl,
         tokenEnv,
-        tokenEnvCandidates,
         maxSignals: args.maxSignals,
       }));
     }
@@ -221,7 +183,6 @@ function normalizeAccountConfigs(rawAccounts, args) {
       label: String(account.label || account.name || id).trim(),
       baseUrl,
       tokenEnv,
-      tokenEnvCandidates,
       org,
       project: '',
       environment: String(account.environment || args.environment || process.env.SENTRY_ENVIRONMENT || 'production').trim(),
@@ -261,7 +222,6 @@ async function loadConfiguredAccounts(args) {
 
   const configPath = args.config || DEFAULT_CONFIG_PATH;
   const config = await readJsonIfPresent(configPath, Boolean(args.config));
-  if (config) await applyOpenClawSecretRefs(config);
   const accountsFromConfig = normalizeArray(config?.sources?.sentry);
   if (accountsFromConfig.length > 0) return normalizeAccountConfigs(accountsFromConfig, args);
 
@@ -280,15 +240,6 @@ async function loadConfiguredAccounts(args) {
   return normalizeProjectEntries(singleAccount).length > 0 ? normalizeAccountConfigs([singleAccount], args) : [];
 }
 
-function resolveAccountToken(account) {
-  const candidates = uniqueStrings([...(account.tokenEnvCandidates || []), account.tokenEnv]);
-  for (const envName of candidates) {
-    const token = String(process.env[envName] || '').trim();
-    if (token) return { token, envName };
-  }
-  throw new Error(`${candidates.join(' or ') || 'SENTRY_AUTH_TOKEN'} is required. Set it in the Sentry connector wizard or pass the flag explicitly.`);
-}
-
 function normalizeInteger(value, label, min, max) {
   const parsed = Number.parseInt(String(value || ''), 10);
   if (!Number.isFinite(parsed) || parsed < min || parsed > max) {
@@ -303,6 +254,24 @@ function requireValue(value, label) {
     throw new Error(`${label} is required. Set it in the Sentry connector wizard or pass the flag explicitly.`);
   }
   return normalized;
+}
+
+function describeAccountTarget(account) {
+  const parts = [
+    account.label || account.accountId || account.id || 'Sentry',
+    account.accountId || account.id ? `id=${account.accountId || account.id}` : null,
+    `baseUrl=${account.baseUrl || DEFAULT_BASE_URL}`,
+    account.org ? `org=${account.org}` : null,
+    account.project ? `project=${account.project}` : null,
+    account.environment ? `environment=${account.environment}` : null,
+    account.tokenEnv ? `tokenEnv=${account.tokenEnv}` : null,
+  ].filter(Boolean);
+  return parts.join(' ');
+}
+
+function withAccountTargetError(error, account, action) {
+  const detail = error instanceof Error ? error.message : String(error);
+  return new Error(`${action} failed for ${describeAccountTarget(account)}: ${detail}`);
 }
 
 function buildUrl(baseUrl, pathname, params) {
@@ -391,20 +360,23 @@ function redactData(value) {
 }
 
 async function listIssues(account, token) {
-  const org = encodeURIComponent(requireValue(account.org, 'SENTRY_ORG'));
-  const project = encodeURIComponent(requireValue(account.project, 'SENTRY_PROJECT'));
-  const url = buildUrl(account.baseUrl || DEFAULT_BASE_URL, `/api/0/projects/${org}/${project}/issues/`, {
-    statsPeriod: account.last,
-    environment: account.environment,
-    query: account.query,
-    per_page: account.limit,
-  });
-  const payload = await sentryFetchJson(url, token);
-  return Array.isArray(payload) ? payload : [];
+  try {
+    const org = encodeURIComponent(requireValue(account.org, 'SENTRY_ORG'));
+    const project = encodeURIComponent(requireValue(account.project, 'SENTRY_PROJECT'));
+    const url = buildUrl(account.baseUrl || DEFAULT_BASE_URL, `/api/0/projects/${org}/${project}/issues/`, {
+      statsPeriod: account.last,
+      environment: account.environment,
+      query: account.query,
+      per_page: account.limit,
+    });
+    const payload = await sentryFetchJson(url, token);
+    return Array.isArray(payload) ? payload : [];
+  } catch (error) {
+    throw withAccountTargetError(error, account, 'Sentry issue fetch');
+  }
 }
 
 async function main() {
-  await loadOpenClawGrowthSecrets();
   const args = parseArgs(process.argv.slice(2));
   const configuredAccounts = await loadConfiguredAccounts(args);
   if (configuredAccounts.length === 0) {
@@ -414,12 +386,16 @@ async function main() {
   }
   const accounts = [];
   for (const account of configuredAccounts) {
-    const { token } = resolveAccountToken(account);
-    accounts.push(...await expandDiscoveredProjects(account, token));
+    try {
+      const token = requireValue(process.env[account.tokenEnv], `${account.tokenEnv} for ${describeAccountTarget(account)}`);
+      accounts.push(...await expandDiscoveredProjects(account, token));
+    } catch (error) {
+      throw withAccountTargetError(error, account, 'Sentry project discovery');
+    }
   }
   const summaries = [];
   for (const account of accounts) {
-    const { token } = resolveAccountToken(account);
+    const token = requireValue(process.env[account.tokenEnv], `${account.tokenEnv} for ${describeAccountTarget(account)}`);
     const issuesPayload = redactData(await listIssues(account, token));
     summaries.push({
       id: account.id,

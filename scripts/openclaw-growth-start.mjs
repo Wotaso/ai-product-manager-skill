@@ -16,6 +16,55 @@ const ANALYTICSCLI_PACKAGE_SPEC = process.env.ANALYTICSCLI_CLI_PACKAGE || '@anal
 const ANALYTICSCLI_NPM_PREFIX = process.env.ANALYTICSCLI_NPM_PREFIX ||
     (process.env.HOME ? path.join(process.env.HOME, '.local') : path.join(process.cwd(), '.analyticscli-npm'));
 const RUNTIME_DIR = path.dirname(fileURLToPath(import.meta.url));
+const ACCOUNT_SIGNAL_CONNECTORS = [
+    'stripe',
+    'lemonsqueezy',
+    'adapty',
+    'superwall',
+    'google-play',
+    'datadog',
+    'bugsnag',
+    'intercom',
+    'zendesk',
+    'apple-search-ads',
+    'google-ads',
+    'meta-ads',
+    'tiktok-ads',
+    'vercel',
+    'cloudflare',
+    'resend',
+    'customerio',
+    'mailchimp',
+    'appfollow',
+    'apptweak',
+    'linear',
+    'postiz',
+];
+const SUPPORTED_CONNECTORS = ['analytics', 'github', 'asc', 'revenuecat', 'paddle', 'seo', 'sentry', 'coolify', ...ACCOUNT_SIGNAL_CONNECTORS];
+const ACCOUNT_SIGNAL_SECRET_ENVS = {
+    stripe: ['STRIPE_API_KEY'],
+    lemonsqueezy: ['LEMON_SQUEEZY_API_KEY'],
+    adapty: ['ADAPTY_API_KEY'],
+    superwall: ['SUPERWALL_API_KEY'],
+    'google-play': ['GOOGLE_PLAY_SERVICE_ACCOUNT_JSON'],
+    datadog: ['DATADOG_API_KEY', 'DATADOG_APP_KEY'],
+    bugsnag: ['BUGSNAG_AUTH_TOKEN'],
+    intercom: ['INTERCOM_ACCESS_TOKEN'],
+    zendesk: ['ZENDESK_SUBDOMAIN', 'ZENDESK_EMAIL', 'ZENDESK_API_TOKEN'],
+    'apple-search-ads': ['APPLE_SEARCH_ADS_REFRESH_TOKEN'],
+    'google-ads': ['GOOGLE_ADS_DEVELOPER_TOKEN', 'GOOGLE_ADS_CLIENT_ID', 'GOOGLE_ADS_CLIENT_SECRET', 'GOOGLE_ADS_REFRESH_TOKEN'],
+    'meta-ads': ['META_ADS_ACCESS_TOKEN'],
+    'tiktok-ads': ['TIKTOK_ADS_ACCESS_TOKEN'],
+    vercel: ['VERCEL_ACCESS_TOKEN'],
+    cloudflare: ['CLOUDFLARE_API_TOKEN'],
+    resend: ['RESEND_API_KEY'],
+    customerio: ['CUSTOMERIO_APP_API_KEY'],
+    mailchimp: ['MAILCHIMP_API_KEY'],
+    appfollow: ['APPFOLLOW_API_TOKEN'],
+    apptweak: ['APPTWEAK_API_TOKEN'],
+    linear: ['LINEAR_API_KEY'],
+    postiz: ['POSTIZ_API_KEY'],
+};
 function printHelpAndExit(exitCode, reason = null) {
     if (reason) {
         process.stderr.write(`${reason}\n\n`);
@@ -35,9 +84,9 @@ Options:
   --config <file>        Config path (default: ${DEFAULT_CONFIG_PATH})
   --project <id>         Optional AnalyticsCLI project ID pin for generated source commands
   --asc-app <id>         Optional ASC app ID filter (defaults to all accessible apps)
-  --connectors <list>    Install/enable connector helpers (analytics,github,asc,revenuecat,sentry,coolify,all)
+  --connectors <list>    Install/enable connector helpers (${SUPPORTED_CONNECTORS.join(',')},all)
   --only-connectors <list>
-                         Limit live preflight checks to analytics,github,asc,revenuecat,sentry,coolify
+                         Limit live preflight checks to ${SUPPORTED_CONNECTORS.join(',')}
   --setup-only           Run bootstrap + preflight only (skip first run)
   --no-test-connections  Skip live API smoke checks in preflight
   --openclaw-cron <mode> Configure OpenClaw Gateway cron: auto, enable, require, disable (default: auto)
@@ -159,10 +208,58 @@ function normalizeConnectorKey(value) {
         return 'asc';
     if (['revenuecat', 'revenue-cat', 'rc', 'revenuecat-mcp'].includes(normalized))
         return 'revenuecat';
+    if (['paddle', 'paddle-billing', 'billing-metrics', 'web-revenue'].includes(normalized))
+        return 'paddle';
+    if (['seo', 'gsc', 'google-search-console', 'search-console', 'dataforseo', 'organic-search'].includes(normalized))
+        return 'seo';
     if (['sentry', 'sentry-api', 'sentry-mcp', 'crashes', 'errors', 'crash-reporting'].includes(normalized))
         return 'sentry';
     if (['coolify', 'coolify-api', 'deployment', 'deployments', 'hosting', 'infra', 'infrastructure'].includes(normalized))
         return 'coolify';
+    if (['stripe', 'stripe-billing', 'stripe-payments'].includes(normalized))
+        return 'stripe';
+    if (['lemonsqueezy', 'lemon-squeezy', 'lemon', 'ls'].includes(normalized))
+        return 'lemonsqueezy';
+    if (['adapty', 'adapty-paywalls', 'adapty-subscriptions'].includes(normalized))
+        return 'adapty';
+    if (['superwall', 'superwall-paywalls'].includes(normalized))
+        return 'superwall';
+    if (['google-play', 'google-play-console', 'play-console', 'play-store', 'android-store'].includes(normalized))
+        return 'google-play';
+    if (['datadog', 'datadog-rum', 'datadog-apm', 'datadog-logs'].includes(normalized))
+        return 'datadog';
+    if (['bugsnag', 'bugsnag-crashes'].includes(normalized))
+        return 'bugsnag';
+    if (['intercom', 'intercom-support'].includes(normalized))
+        return 'intercom';
+    if (['zendesk', 'zendesk-support'].includes(normalized))
+        return 'zendesk';
+    if (['apple-search-ads', 'apple-ads', 'asa', 'search-ads'].includes(normalized))
+        return 'apple-search-ads';
+    if (['google-ads', 'adwords'].includes(normalized))
+        return 'google-ads';
+    if (['meta-ads', 'facebook-ads', 'instagram-ads', 'fb-ads'].includes(normalized))
+        return 'meta-ads';
+    if (['tiktok-ads', 'tiktok-business', 'tiktok-business-api'].includes(normalized))
+        return 'tiktok-ads';
+    if (['vercel', 'vercel-deployments', 'vercel-hosting'].includes(normalized))
+        return 'vercel';
+    if (['cloudflare', 'cf', 'cloudflare-workers', 'cloudflare-pages'].includes(normalized))
+        return 'cloudflare';
+    if (['resend', 'resend-email'].includes(normalized))
+        return 'resend';
+    if (['customerio', 'customer-io', 'customer.io', 'cio'].includes(normalized))
+        return 'customerio';
+    if (['mailchimp', 'mailchimp-marketing'].includes(normalized))
+        return 'mailchimp';
+    if (['appfollow', 'app-follow'].includes(normalized))
+        return 'appfollow';
+    if (['apptweak', 'app-tweak'].includes(normalized))
+        return 'apptweak';
+    if (['linear', 'linear-issues', 'linear-planning'].includes(normalized))
+        return 'linear';
+    if (['postiz', 'postiz-api', 'social-publishing', 'social-scheduler'].includes(normalized))
+        return 'postiz';
     return null;
 }
 function parseConnectorList(value) {
@@ -172,15 +269,10 @@ function parseConnectorList(value) {
     for (const entry of String(value).split(',')) {
         const connector = normalizeConnectorKey(entry);
         if (!connector) {
-            printHelpAndExit(1, `Unknown connector: ${entry.trim()}. Use analytics, github, asc, revenuecat, sentry, coolify, or all.`);
+            printHelpAndExit(1, `Unknown connector: ${entry.trim()}. Use ${SUPPORTED_CONNECTORS.join(', ')}, or all.`);
         }
         if (connector === 'all') {
-            connectors.add('analytics');
-            connectors.add('github');
-            connectors.add('asc');
-            connectors.add('revenuecat');
-            connectors.add('sentry');
-            connectors.add('coolify');
+            SUPPORTED_CONNECTORS.forEach((supported) => connectors.add(supported));
         }
         else {
             connectors.add(connector);
@@ -213,6 +305,12 @@ function getRuntimeSourceCommand(sourceName) {
     if (normalized === 'revenuecat' || normalized === 'revenue-cat') {
         return nodeRuntimeScriptCommand('export-revenuecat-summary.mjs');
     }
+    if (normalized === 'paddle') {
+        return nodeRuntimeScriptCommand('export-paddle-summary.mjs');
+    }
+    if (['seo', 'gsc', 'google-search-console', 'search-console', 'dataforseo'].includes(normalized)) {
+        return nodeRuntimeScriptCommand('export-seo-summary.mjs');
+    }
     if (normalized === 'sentry' || normalized === 'glitchtip') {
         return nodeRuntimeScriptCommand('export-sentry-summary.mjs');
     }
@@ -228,7 +326,7 @@ function replaceLegacyRuntimeScriptCommand(command) {
     const trimmed = String(command || '').trim();
     if (!trimmed)
         return trimmed;
-    return trimmed.replace(/^node\s+scripts\/(export-analytics-summary\.mjs|export-revenuecat-summary\.mjs|export-sentry-summary\.mjs|export-coolify-summary\.mjs|export-asc-summary\.mjs|openclaw-growth-start\.mjs|openclaw-growth-status\.mjs|openclaw-growth-preflight\.mjs|openclaw-growth-runner\.mjs|openclaw-growth-engineer\.mjs)(?=\s|$)/, (_match, scriptName) => nodeRuntimeScriptCommand(scriptName));
+    return trimmed.replace(/^node\s+scripts\/(export-analytics-summary\.mjs|export-revenuecat-summary\.mjs|export-paddle-summary\.mjs|export-seo-summary\.mjs|export-sentry-summary\.mjs|export-coolify-summary\.mjs|export-asc-summary\.mjs|openclaw-growth-start\.mjs|openclaw-growth-status\.mjs|openclaw-growth-preflight\.mjs|openclaw-growth-runner\.mjs|openclaw-growth-engineer\.mjs)(?=\s|$)/, (_match, scriptName) => nodeRuntimeScriptCommand(scriptName));
 }
 function normalizeSourceCommand(sourceName, source) {
     return replaceLegacyRuntimeScriptCommand(source?.command || '') || getRuntimeSourceCommand(sourceName);
@@ -238,7 +336,7 @@ function migrateRuntimeSourceCommands(config) {
         return config;
     const sources = config.sources && typeof config.sources === 'object' ? config.sources : {};
     const nextSources = { ...sources };
-    for (const sourceName of ['analytics', 'revenuecat', 'sentry', 'coolify']) {
+    for (const sourceName of ['analytics', 'revenuecat', 'paddle', 'seo', 'sentry', 'coolify']) {
         if (nextSources[sourceName]?.mode === 'command') {
             nextSources[sourceName] = {
                 ...nextSources[sourceName],
@@ -1150,6 +1248,20 @@ async function installAnalyticsConnector() {
             : 'analyticscli binary missing after dependency setup',
     };
 }
+function isAccountSignalConnector(connector) {
+    return ACCOUNT_SIGNAL_CONNECTORS.includes(connector);
+}
+async function installAccountSignalConnector(connector) {
+    const envs = ACCOUNT_SIGNAL_SECRET_ENVS[connector] || [];
+    const missing = envs.filter((envName) => !String(process.env[envName] || '').trim());
+    return {
+        connector,
+        ok: missing.length === 0,
+        detail: missing.length === 0
+            ? 'account-wide credential is present; project/app/product scope is discovered later'
+            : `missing account-wide credential(s): ${missing.join(', ')}`,
+    };
+}
 async function enableConnectorConfig(configPath, connectors) {
     if (connectors.length === 0 || !(await fileExists(configPath)))
         return;
@@ -1165,6 +1277,12 @@ async function enableConnectorConfig(configPath, connectors) {
             revenuecat: connectors.includes('revenuecat')
                 ? { ...(config.sources?.revenuecat || {}), enabled: true, mode: 'command', command: normalizeSourceCommand('revenuecat', config.sources?.revenuecat) }
                 : config.sources?.revenuecat,
+            paddle: connectors.includes('paddle')
+                ? { ...(config.sources?.paddle || {}), enabled: true, mode: 'command', command: normalizeSourceCommand('paddle', config.sources?.paddle) }
+                : config.sources?.paddle,
+            seo: connectors.includes('seo')
+                ? { ...(config.sources?.seo || {}), enabled: true, mode: 'command', command: normalizeSourceCommand('seo', config.sources?.seo) }
+                : config.sources?.seo,
             sentry: connectors.includes('sentry')
                 ? { ...(config.sources?.sentry || {}), enabled: true, mode: 'command', command: normalizeSourceCommand('sentry', config.sources?.sentry) }
                 : config.sources?.sentry,
@@ -1180,7 +1298,9 @@ async function enableConnectorConfig(configPath, connectors) {
                 : config.sources?.coolify,
             extra: extra.map((source) => connectors.includes('asc') && source?.service === 'asc-cli'
                 ? { ...source, enabled: true, mode: 'command', command: normalizeSourceCommand('asc', source) }
-                : source),
+                : connectors.includes(String(source?.key || source?.service || '')) && isAccountSignalConnector(String(source?.key || source?.service || ''))
+                    ? { ...source, enabled: true, mode: source.mode || 'file' }
+                    : source),
         },
     };
     await writeJson(configPath, next);
@@ -1197,10 +1317,16 @@ async function installConnectorHelpers(configPath, connectors) {
             results.push(await installAscConnector());
         if (connector === 'revenuecat')
             results.push(await installRevenueCatConnector());
+        if (connector === 'paddle')
+            results.push({ connector, ok: true, detail: 'Paddle uses the built-in metrics exporter; token is checked during preflight' });
+        if (connector === 'seo')
+            results.push({ connector, ok: true, detail: 'SEO/GSC uses the built-in exporter; credentials or CSV inputs are checked during preflight' });
         if (connector === 'sentry')
             results.push(await installSentryConnector());
         if (connector === 'coolify')
             results.push(await installCoolifyConnector());
+        if (isAccountSignalConnector(connector))
+            results.push(await installAccountSignalConnector(connector));
     }
     return results;
 }

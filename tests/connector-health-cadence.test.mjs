@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 
 const skillRoot = resolve(import.meta.dirname, '..');
@@ -95,6 +97,106 @@ test('Sentry exporter retries retryable API failures before surfacing the error'
   assert.match(exporter, /status === 429 \|\| status >= 500/);
   assert.match(exporter, /retry-after/);
   assert.match(exporter, /Sentry API \$\{response\.status\}/);
+  assert.match(exporter, /function describeAccountTarget/);
+  assert.match(exporter, /baseUrl=\$\{account\.baseUrl \|\| DEFAULT_BASE_URL\}/);
+  assert.match(exporter, /project=\$\{account\.project\}/);
+  assert.match(exporter, /environment=\$\{account\.environment\}/);
+  assert.match(exporter, /withAccountTargetError\(error, account, 'Sentry issue fetch'\)/);
+  assert.match(exporter, /withAccountTargetError\(error, account, 'Sentry project discovery'\)/);
+});
+
+test('Sentry connector setup cannot report success with disabled or placeholder-only config', () => {
+  const wizard = readFileSync(join(skillRoot, 'scripts/openclaw-growth-wizard.mjs'), 'utf8');
+  const preflight = readFileSync(join(skillRoot, 'scripts/openclaw-growth-preflight.mjs'), 'utf8');
+
+  assert.match(wizard, /function isPlaceholderSentryAccount/);
+  assert.match(wizard, /owner-org/);
+  assert.match(wizard, /example\.com/);
+  assert.match(wizard, /function verifySentryAccountsConfig/);
+  assert.match(wizard, /sources\.sentry\.enabled is not true/);
+  assert.match(wizard, /Sentry-compatible account config is up to date/);
+  assert.match(wizard, /--only-connectors \$\{quote\(selected\.join\(','\)\)\}/);
+  assert.match(preflight, /selected Sentry connector is still disabled in sources\.sentry/);
+});
+
+test('wizard persists active config paths for config-driven exporters', () => {
+  const wizard = readFileSync(join(skillRoot, 'scripts/openclaw-growth-wizard.mjs'), 'utf8');
+
+  assert.match(wizard, /function sourceCommandNeedsActiveConfig/);
+  assert.match(wizard, /value\.includes\('export-sentry-summary'\)/);
+  assert.match(wizard, /value\.includes\('exporters coolify-summary'\)/);
+  assert.match(wizard, /function withWizardConfigArg/);
+  assert.match(wizard, /--config \$\{quote\(configPath\)\}/);
+  assert.match(wizard, /migrateRuntimeSourceCommands\(existing, configPath\)/);
+  assert.match(wizard, /normalizeWizardSourceCommand\('sentry', config\.sources\?\.sentry \|\| \{\}, configPath\)/);
+  assert.match(wizard, /buildDefaultWizardConfig\(configPath\)/);
+  assert.match(wizard, /buildRecommendedSourceConfig\(configPath\)/);
+  assert.match(wizard, /buildSourceConfigFromInputChannels\(selected, config\.sources \|\| \{\}, configPath\)/);
+});
+
+test('wizard sandbox smoke migrates Sentry and Coolify commands to the active config', () => {
+  const tmp = mkdtempSync(join(tmpdir(), 'openclaw-growth-sandbox-'));
+  try {
+    const configPath = join(tmp, 'custom-config.json');
+    writeFileSync(
+      configPath,
+      `${JSON.stringify({
+        version: 7,
+        sources: {
+          sentry: {
+            enabled: true,
+            mode: 'command',
+            command: 'node scripts/export-sentry-summary.mjs',
+            accounts: [
+              {
+                id: 'sentry_cloud',
+                label: 'Sentry Cloud',
+                baseUrl: 'https://sentry.io',
+                tokenEnv: 'SENTRY_CLOUD_TOKEN',
+                org: 'example-org',
+                projects: ['example-app'],
+              },
+            ],
+          },
+          coolify: {
+            enabled: true,
+            mode: 'command',
+            command: 'npx -y @analyticscli/growth-engineer@preview exporters coolify-summary',
+            baseUrl: 'https://coolify.example.com',
+            tokenEnv: 'COOLIFY_API_TOKEN',
+          },
+        },
+      }, null, 2)}\n`,
+    );
+
+    const result = spawnSync(
+      process.execPath,
+      [
+        join(skillRoot, 'scripts/openclaw-growth-wizard.mjs'),
+        '--config',
+        configPath,
+        '--sandbox-smoke',
+      ],
+      {
+        cwd: tmp,
+        env: {
+          ...process.env,
+          OPENCLAW_GROWTH_SKIP_SELF_UPDATE: '1',
+        },
+        encoding: 'utf8',
+      },
+    );
+
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    const migrated = JSON.parse(readFileSync(configPath, 'utf8'));
+    assert.match(migrated.sources.sentry.command, /export-sentry-summary\.mjs/);
+    assert.match(migrated.sources.sentry.command, new RegExp(`--config ${configPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
+    assert.match(migrated.sources.coolify.command, /exporters coolify-summary/);
+    assert.match(migrated.sources.coolify.command, new RegExp(`--config ${configPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
+    assert.doesNotMatch(migrated.sources.sentry.command, /data\/openclaw-growth-engineer\/config\.json/);
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
 });
 
 test('optional source collection failures become connector-health incidents', () => {
@@ -112,13 +214,16 @@ test('connector health alerts include direct repair commands without broad menu 
   const runner = readFileSync(join(skillRoot, 'scripts/openclaw-growth-runner.mjs'), 'utf8');
   const wizard = readFileSync(join(skillRoot, 'scripts/openclaw-growth-wizard.mjs'), 'utf8');
 
-  assert.match(runner, /Run on the host terminal/);
+  assert.match(runner, /OpenClaw connector health: \$\{unhealthyConnectors\.length\} issue/);
+  assert.ok(runner.includes('Fix: \\`${command}\\`'));
+  assert.match(runner, /SENTRY_AUTH_TOKEN missing for source collection/);
+  assert.doesNotMatch(runner, /lines\.push\('  Account targets:'\)/);
   assert.match(runner, /npx -y @analyticscli\/growth-engineer@preview wizard --connectors/);
   assert.doesNotMatch(runner, /@analyticscli\/growth-engineer@preview wizard --connectors .*--config/);
   assert.doesNotMatch(runner, /nodeRuntimeScriptCommand\('openclaw-growth-wizard\.mjs'\)/);
-  assert.match(runner, /ASC web-auth refresh only/);
+  assert.match(runner, /ASC web-auth only/);
   assert.match(runner, /asc web auth login --apple-id "\$ASC_WEB_APPLE_ID"/);
-  assert.match(runner, /Do not rerun the API-key ASC wizard unless the API-key smoke test also fails/);
+  assert.match(runner, /Secrets stay in the host terminal or secret store/);
   assert.match(wizard, /requestedConnectors\.length > 0\s+\? orderConnectors\(requestedConnectors\)/);
   assert.doesNotMatch(wizard, /requestedConnectors\.length > 0\s+\? orderConnectors\(\[\.\.\.new Set\(\[\.\.\.requestedConnectors, \.\.\.existingFixes\]\)\]\)/);
 });
@@ -217,6 +322,75 @@ test('wizard exposes connector and output interval setup paths', () => {
   assert.match(wizard, /What it decides/);
   assert.match(wizard, /Space toggles, A toggles all optional items, Enter continues/);
   assert.match(wizard, /Customize GitHub issue\/PR limits, labels, or chart attachment settings/);
+});
+
+test('growth connector wizard keeps AnalyticsCLI as the only product analytics service', () => {
+  const wizard = readFileSync(join(skillRoot, 'scripts/openclaw-growth-wizard.mjs'), 'utf8');
+  const start = readFileSync(join(skillRoot, 'scripts/openclaw-growth-start.mjs'), 'utf8');
+  const preflight = readFileSync(join(skillRoot, 'scripts/openclaw-growth-preflight.mjs'), 'utf8');
+
+  for (const connector of [
+    'Stripe billing and checkout',
+    'Lemon Squeezy sales and licensing',
+    'Adapty subscriptions and paywalls',
+    'Superwall paywall experiments',
+    'Google Play Console',
+    'Datadog observability',
+    'Bugsnag crash monitoring',
+    'Intercom support and feedback',
+    'Zendesk support and feedback',
+  ]) {
+    assert.match(wizard, new RegExp(connector));
+  }
+
+  for (const connector of [
+    /Apple Search Ads \(experimental\)/,
+    /Google Ads \(experimental\)/,
+    /Meta Ads \(experimental\)/,
+    /TikTok Ads \(experimental\)/,
+    /Vercel deployments \(experimental\)/,
+    /Cloudflare traffic and edge \(experimental\)/,
+    /Resend lifecycle email \(experimental\)/,
+    /Customer\.io lifecycle messaging \(experimental\)/,
+    /Mailchimp lifecycle email \(experimental\)/,
+    /AppFollow reviews and ASO \(experimental\)/,
+    /AppTweak ASO intelligence \(experimental\)/,
+    /Linear planning context \(experimental\)/,
+    /Postiz social publishing \(experimental\)/,
+  ]) {
+    assert.match(wizard, connector);
+  }
+
+  for (const connectorKey of [
+    'apple-search-ads',
+    'google-ads',
+    'meta-ads',
+    'tiktok-ads',
+    'vercel',
+    'cloudflare',
+    'resend',
+    'customerio',
+    'mailchimp',
+    'appfollow',
+    'apptweak',
+    'linear',
+    'postiz',
+  ]) {
+    assert.match(start, new RegExp(`'${connectorKey}'`));
+    assert.match(preflight, new RegExp(`'${connectorKey}'`));
+  }
+
+  assert.match(wizard, /experimental: true/);
+  assert.match(wizard, /sourceKind: 'acquisition'/);
+  assert.match(wizard, /sourceKind: 'lifecycle'/);
+  assert.match(wizard, /Setup is account-wide/);
+  assert.match(wizard, /projectScope: 'discover_from_account'/);
+  assert.match(wizard, /experimental: Boolean\(definition\.experimental\)/);
+  assert.match(wizard, /Do not paste project IDs, app IDs, product IDs, package names, paywall IDs, service names, or tags here/);
+  assert.doesNotMatch(wizard, /PostHog product analytics/);
+  assert.doesNotMatch(wizard, /Amplitude analytics/);
+  assert.doesNotMatch(wizard, /Mixpanel analytics/);
+  assert.doesNotMatch(wizard, /Firebase \/ GA4 analytics/);
 });
 
 test('config example enables OpenClaw and Hermes cron with runner proof logs', () => {
