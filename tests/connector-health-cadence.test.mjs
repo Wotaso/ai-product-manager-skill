@@ -199,6 +199,86 @@ test('wizard sandbox smoke migrates Sentry and Coolify commands to the active co
   }
 });
 
+test('wizard persists active config paths for config-driven exporters', () => {
+  const wizard = readFileSync(join(skillRoot, 'scripts/openclaw-growth-wizard.mjs'), 'utf8');
+
+  assert.match(wizard, /function sourceCommandNeedsActiveConfig/);
+  assert.match(wizard, /value\.includes\('export-sentry-summary'\)/);
+  assert.match(wizard, /value\.includes\('exporters coolify-summary'\)/);
+  assert.match(wizard, /function withWizardConfigArg/);
+  assert.match(wizard, /--config \$\{quote\(configPath\)\}/);
+  assert.match(wizard, /migrateRuntimeSourceCommands\(existing, configPath\)/);
+  assert.match(wizard, /normalizeWizardSourceCommand\('sentry', config\.sources\?\.sentry \|\| \{\}, configPath\)/);
+  assert.match(wizard, /buildDefaultWizardConfig\(configPath\)/);
+  assert.match(wizard, /buildRecommendedSourceConfig\(configPath\)/);
+  assert.match(wizard, /buildSourceConfigFromInputChannels\(selected, config\.sources \|\| \{\}, configPath\)/);
+});
+
+test('wizard sandbox smoke migrates Sentry and Coolify commands to the active config', () => {
+  const tmp = mkdtempSync(join(tmpdir(), 'openclaw-growth-sandbox-'));
+  try {
+    const configPath = join(tmp, 'custom-config.json');
+    writeFileSync(
+      configPath,
+      `${JSON.stringify({
+        version: 7,
+        sources: {
+          sentry: {
+            enabled: true,
+            mode: 'command',
+            command: 'node scripts/export-sentry-summary.mjs',
+            accounts: [
+              {
+                id: 'sentry_cloud',
+                label: 'Sentry Cloud',
+                baseUrl: 'https://sentry.io',
+                tokenEnv: 'SENTRY_CLOUD_TOKEN',
+                org: 'example-org',
+                projects: ['example-app'],
+              },
+            ],
+          },
+          coolify: {
+            enabled: true,
+            mode: 'command',
+            command: 'npx -y @analyticscli/growth-engineer@preview exporters coolify-summary',
+            baseUrl: 'https://coolify.example.com',
+            tokenEnv: 'COOLIFY_API_TOKEN',
+          },
+        },
+      }, null, 2)}\n`,
+    );
+
+    const result = spawnSync(
+      process.execPath,
+      [
+        join(skillRoot, 'scripts/openclaw-growth-wizard.mjs'),
+        '--config',
+        configPath,
+        '--sandbox-smoke',
+      ],
+      {
+        cwd: tmp,
+        env: {
+          ...process.env,
+          OPENCLAW_GROWTH_SKIP_SELF_UPDATE: '1',
+        },
+        encoding: 'utf8',
+      },
+    );
+
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    const migrated = JSON.parse(readFileSync(configPath, 'utf8'));
+    assert.match(migrated.sources.sentry.command, /export-sentry-summary\.mjs/);
+    assert.match(migrated.sources.sentry.command, new RegExp(`--config ${configPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
+    assert.match(migrated.sources.coolify.command, /exporters coolify-summary/);
+    assert.match(migrated.sources.coolify.command, new RegExp(`--config ${configPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
+    assert.doesNotMatch(migrated.sources.sentry.command, /data\/openclaw-growth-engineer\/config\.json/);
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
 test('optional source collection failures become connector-health incidents', () => {
   const runner = readFileSync(join(skillRoot, 'scripts/openclaw-growth-runner.mjs'), 'utf8');
 
