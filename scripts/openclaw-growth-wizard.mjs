@@ -195,6 +195,7 @@ function parseArgs(argv) {
         connectors: '',
         noSelfUpdate: false,
         out: defaultConfigPath,
+        sandboxSmoke: false,
     };
     for (let i = 0; i < argv.length; i += 1) {
         const token = argv[i];
@@ -220,6 +221,10 @@ function parseArgs(argv) {
             i += 1;
         }
         else if (token === '--no-self-update') {
+            args.noSelfUpdate = true;
+        }
+        else if (token === '--sandbox-smoke') {
+            args.sandboxSmoke = true;
             args.noSelfUpdate = true;
         }
         else if (token === '--help' || token === '-h') {
@@ -299,11 +304,32 @@ function replaceLegacyRuntimeScriptCommand(command) {
         return trimmed;
     return trimmed.replace(/^node\s+scripts\/(export-analytics-summary\.mjs|export-revenuecat-summary\.mjs|export-sentry-summary\.mjs|export-coolify-summary\.mjs|export-asc-summary\.mjs|openclaw-growth-start\.mjs|openclaw-growth-status\.mjs|openclaw-growth-runner\.mjs|openclaw-growth-preflight\.mjs)(?=\s|$)/, (_match, scriptName) => nodeRuntimeScriptCommand(scriptName));
 }
-function normalizeWizardSourceCommand(sourceName, source) {
-    const current = replaceLegacyRuntimeScriptCommand(source?.command || '');
-    return current || getWizardDefaultSourceCommand(sourceName);
+function sourceCommandNeedsActiveConfig(sourceName, command) {
+    const normalized = String(sourceName || '').trim().toLowerCase();
+    const value = String(command || '').toLowerCase();
+    return (normalized === 'sentry' ||
+        normalized === 'glitchtip' ||
+        normalized === 'coolify' ||
+        value.includes('export-sentry-summary') ||
+        value.includes('export-coolify-summary') ||
+        value.includes('exporters coolify-summary'));
 }
-function migrateRuntimeSourceCommands(config) {
+function withWizardConfigArg(sourceName, command, configPath) {
+    const trimmed = String(command || '').trim();
+    if (!trimmed || !configPath || !sourceCommandNeedsActiveConfig(sourceName, trimmed))
+        return trimmed;
+    return trimmed
+        .replace(/(^|\s)--config=(?:"[^"]*"|'[^']*'|\S+)/, `$1--config ${quote(configPath)}`)
+        .replace(/(^|\s)--config\s+(?:"[^"]*"|'[^']*'|\S+)/, `$1--config ${quote(configPath)}`)
+        .replace(new RegExp(`^(?!.*(?:^|\\s)--config(?:=|\\s|$))(.+)$`), `$1 --config ${quote(configPath)}`)
+        .trim();
+}
+function normalizeWizardSourceCommand(sourceName, source, configPath = null) {
+    const current = replaceLegacyRuntimeScriptCommand(source?.command || '');
+    const command = current || getWizardDefaultSourceCommand(sourceName);
+    return withWizardConfigArg(sourceName, command, configPath);
+}
+function migrateRuntimeSourceCommands(config, configPath = null) {
     if (!config || typeof config !== 'object')
         return config;
     const sources = config.sources && typeof config.sources === 'object' ? config.sources : {};
@@ -312,7 +338,7 @@ function migrateRuntimeSourceCommands(config) {
         if (nextSources[sourceName]?.mode === 'command') {
             nextSources[sourceName] = {
                 ...nextSources[sourceName],
-                command: normalizeWizardSourceCommand(sourceName, nextSources[sourceName]),
+                command: normalizeWizardSourceCommand(sourceName, nextSources[sourceName], configPath),
             };
         }
     }
@@ -326,7 +352,7 @@ function migrateRuntimeSourceCommands(config) {
                 : service;
             return {
                 ...source,
-                command: normalizeWizardSourceCommand(sourceName, source),
+                command: normalizeWizardSourceCommand(sourceName, source, configPath),
             };
         });
     }
@@ -339,7 +365,7 @@ async function migrateRuntimeSourceCommandsFile(configPath) {
     const existing = await readJsonIfPresent(configPath).catch(() => null);
     if (!existing || typeof existing !== 'object')
         return null;
-    const migrated = migrateRuntimeSourceCommands(existing);
+    const migrated = migrateRuntimeSourceCommands(existing, configPath);
     if (JSON.stringify(existing.sources || {}) !== JSON.stringify(migrated.sources || {})) {
         await writeJsonFile(configPath, migrated);
     }
@@ -2285,7 +2311,7 @@ async function upsertSentryAccountsConfig(configPath, accounts) {
             ...(config.sources?.sentry || {}),
             enabled: true,
             mode: 'command',
-            command: getWizardDefaultSourceCommand('sentry'),
+            command: normalizeWizardSourceCommand('sentry', config.sources?.sentry || {}, configPath),
             accounts: [...merged.values()],
         },
     };
@@ -3240,7 +3266,7 @@ function printWizardHeader() {
     process.stdout.write('OpenClaw Growth Engineer - Setup Wizard\n');
     process.stdout.write('This wizard can configure connector secrets. Normal config is written to config JSON; API keys stay in the local chmod 600 secrets file.\n\n');
 }
-async function buildDefaultWizardConfig() {
+async function buildDefaultWizardConfig(configPath = null) {
     return {
         version: 7,
         generatedAt: new Date().toISOString(),
@@ -3266,12 +3292,12 @@ async function buildDefaultWizardConfig() {
             sentry: {
                 enabled: true,
                 mode: 'command',
-                command: getWizardDefaultSourceCommand('sentry'),
+                command: normalizeWizardSourceCommand('sentry', {}, configPath),
             },
             coolify: {
                 enabled: true,
                 mode: 'command',
-                command: getWizardDefaultSourceCommand('coolify'),
+                command: normalizeWizardSourceCommand('coolify', {}, configPath),
                 baseUrl: process.env.COOLIFY_BASE_URL || 'https://coolify.wotaso.com',
                 tokenEnv: 'COOLIFY_API_TOKEN',
             },
@@ -3396,7 +3422,7 @@ async function buildDefaultWizardConfig() {
         },
     };
 }
-function buildRecommendedSourceConfig() {
+function buildRecommendedSourceConfig(configPath = null) {
     return {
         analytics: {
             enabled: true,
@@ -3411,12 +3437,12 @@ function buildRecommendedSourceConfig() {
         sentry: {
             enabled: true,
             mode: 'command',
-            command: getWizardDefaultSourceCommand('sentry'),
+            command: normalizeWizardSourceCommand('sentry', {}, configPath),
         },
         coolify: {
             enabled: true,
             mode: 'command',
-            command: getWizardDefaultSourceCommand('coolify'),
+            command: normalizeWizardSourceCommand('coolify', {}, configPath),
             baseUrl: process.env.COOLIFY_BASE_URL || 'https://coolify.wotaso.com',
             tokenEnv: 'COOLIFY_API_TOKEN',
         },
@@ -3457,10 +3483,10 @@ function getInputChannelInitialSelection(config) {
         return orderConnectors([...CONNECTOR_KEYS]);
     return orderConnectors([...selected]);
 }
-function buildSourceConfigFromInputChannels(selectedConnectors, existingSources = {}) {
+function buildSourceConfigFromInputChannels(selectedConnectors, existingSources = {}, configPath = null) {
     const selected = new Set(selectedConnectors);
-    const recommended = buildRecommendedSourceConfig();
-    const migratedSources = migrateRuntimeSourceCommands({ sources: existingSources }).sources || {};
+    const recommended = buildRecommendedSourceConfig(configPath);
+    const migratedSources = migrateRuntimeSourceCommands({ sources: existingSources }, configPath).sources || {};
     const existingExtra = Array.isArray(migratedSources.extra) ? migratedSources.extra : [];
     const ascSource = existingExtra.find((source) => ['asc', 'asc-cli', 'app-store-connect', 'app_store_connect'].includes(String(source?.service || source?.key || '').toLowerCase()));
     const nonAscExtra = existingExtra.filter((source) => source !== ascSource);
@@ -3473,7 +3499,7 @@ function buildSourceConfigFromInputChannels(selectedConnectors, existingSources 
             command: normalizeWizardSourceCommand('analytics', {
                 ...recommended.analytics,
                 ...(migratedSources.analytics || {}),
-            }),
+            }, configPath),
             enabled: selected.has('analytics'),
         },
         revenuecat: {
@@ -3482,7 +3508,7 @@ function buildSourceConfigFromInputChannels(selectedConnectors, existingSources 
             command: normalizeWizardSourceCommand('revenuecat', {
                 ...recommended.revenuecat,
                 ...(migratedSources.revenuecat || {}),
-            }),
+            }, configPath),
             enabled: selected.has('revenuecat'),
         },
         sentry: {
@@ -3491,7 +3517,7 @@ function buildSourceConfigFromInputChannels(selectedConnectors, existingSources 
             command: normalizeWizardSourceCommand('sentry', {
                 ...recommended.sentry,
                 ...(migratedSources.sentry || {}),
-            }),
+            }, configPath),
             enabled: selected.has('sentry'),
         },
         coolify: {
@@ -3500,7 +3526,7 @@ function buildSourceConfigFromInputChannels(selectedConnectors, existingSources 
             command: normalizeWizardSourceCommand('coolify', {
                 ...recommended.coolify,
                 ...(migratedSources.coolify || {}),
-            }),
+            }, configPath),
             enabled: selected.has('coolify'),
         },
         feedback: {
@@ -3524,7 +3550,7 @@ function buildSourceConfigFromInputChannels(selectedConnectors, existingSources 
                         command: getWizardDefaultSourceCommand('asc'),
                     }),
                     ...(ascSource || {}),
-                }),
+                }, configPath),
                 enabled: selected.has('asc'),
             },
         ],
@@ -3533,8 +3559,8 @@ function buildSourceConfigFromInputChannels(selectedConnectors, existingSources 
 async function loadEditableConfig(configPath) {
     const existing = await readJsonIfPresent(configPath).catch(() => null);
     if (existing && typeof existing === 'object')
-        return migrateRuntimeSourceCommands(existing);
-    return await buildDefaultWizardConfig();
+        return migrateRuntimeSourceCommands(existing, configPath);
+    return await buildDefaultWizardConfig(configPath);
 }
 function mergeNotificationChannels(baseChannels, extraChannels) {
     const channels = [];
@@ -3864,7 +3890,7 @@ async function askOutputsAndIntervalsConfig(rl, config) {
     return await askGitHubArtifactDetails(rl, withOutput);
 }
 async function askInputSourceConfig(rl, config, configPath) {
-    config = migrateRuntimeSourceCommands(config);
+    config = migrateRuntimeSourceCommands(config, configPath);
     await ensureDirForFile(configPath);
     await writeJsonFile(configPath, config);
     const healthByConnector = await withConnectorHealthLoading((onProgress) => getConnectorPickerHealth(configPath, onProgress));
@@ -3875,7 +3901,7 @@ async function askInputSourceConfig(rl, config, configPath) {
         helpText: 'Use Up/Down to move, Space to toggle channels, A to toggle all channels, Enter to continue.',
         mode: 'input',
     });
-    config.sources = buildSourceConfigFromInputChannels(selected, config.sources || {});
+    config.sources = buildSourceConfigFromInputChannels(selected, config.sources || {}, configPath);
     return { config, selected, healthByConnector };
 }
 async function writeOpenClawJobManifest(configPath, config) {
@@ -4109,6 +4135,13 @@ async function main() {
     await loadOpenClawGrowthSecrets();
     const args = parseArgs(process.argv.slice(2));
     await maybeSelfUpdateFromClawHub(args);
+    if (args.sandboxSmoke) {
+        const configPath = path.resolve(args.out);
+        const config = await loadEditableConfig(configPath);
+        await writeJsonFile(configPath, config);
+        process.stdout.write(`${JSON.stringify({ ok: true, configPath, sources: config.sources || {} })}\n`);
+        return;
+    }
     if (args.connectorWizard) {
         await runConnectorSetupWizard(args);
         return;
