@@ -1575,6 +1575,16 @@ function normalizeSentryUserCount(issue) {
 function normalizeSentryIssueTitle(issue) {
     return String(issue?.title || issue?.metadata?.title || issue?.culprit || 'Untitled Sentry issue').trim();
 }
+function normalizeSentryIssueUrl(issue) {
+    return String(issue?.permalink ||
+        issue?.issueUrl ||
+        issue?.issue_url ||
+        issue?.webUrl ||
+        issue?.web_url ||
+        issue?.links?.permalink ||
+        issue?.links?.html ||
+        '').trim();
+}
 function normalizeSentryPriority(issue) {
     const level = String(issue?.level || issue?.priority || '').toLowerCase();
     const events = normalizeSentryIssueCount(issue);
@@ -1587,9 +1597,10 @@ function normalizeSentryPriority(issue) {
 }
 function normalizeSentryEvidence(issue, environment) {
     const releaseVersions = extractSentryReleaseVersions(issue);
+    const issueUrl = normalizeSentryIssueUrl(issue);
     return [
         issue?.shortId ? `Sentry issue: ${issue.shortId}` : issue?.id ? `Sentry issue id: ${issue.id}` : null,
-        issue?.permalink ? `Permalink: ${issue.permalink}` : null,
+        issueUrl ? `Issue link: ${issueUrl}` : null,
         issue?.level ? `Level: ${issue.level}` : null,
         issue?.status ? `Status: ${issue.status}` : null,
         issue?.firstSeen ? `First seen: ${issue.firstSeen}` : null,
@@ -1644,11 +1655,14 @@ function buildCombinedSentrySummary(input) {
         accountId,
         accountLabel: label,
         sourceProject: summary.project,
+        app: issue.app || summary.project,
     })));
     const signals = summaries
         .flatMap(({ accountId, label, summary }) => (Array.isArray(summary.signals) ? summary.signals : []).map((signal) => ({
         ...signal,
         id: `${accountId}:${signal.id}`,
+        app: signal.app || summary.project,
+        sourceProject: summary.project,
         evidence: [`Sentry account: ${label}`, `Sentry project: ${summary.project}`, ...(signal.evidence || [])],
         keywords: [accountId, ...(signal.keywords || [])],
     })))
@@ -1698,8 +1712,10 @@ export function buildSentrySummary(input) {
         .filter((issue) => issue && typeof issue === 'object')
         .map((issue, index) => {
         const releaseVersions = extractSentryReleaseVersions(issue);
+        const issueUrl = normalizeSentryIssueUrl(issue);
         return {
             id: String(issue.id || issue.shortId || `sentry_${index + 1}`),
+            shortId: issue.shortId ? String(issue.shortId) : null,
             title: normalizeSentryIssueTitle(issue),
             priority: normalizeSentryPriority(issue),
             impact: normalizeSentryUserCount(issue) > 0
@@ -1710,6 +1726,9 @@ export function buildSentrySummary(input) {
             releaseVersions,
             area: 'crash',
             metric: 'sentry_unresolved_issues',
+            sourceUrl: issueUrl || null,
+            issueUrl: issueUrl || null,
+            app: org ? `sentry:${org}/${project}` : `sentry:${project}`,
             stack_keywords: [
                 issue.level,
                 issue.type,
@@ -1755,6 +1774,9 @@ export function buildSentrySummary(input) {
             suggested_actions: issue.suggested_actions,
             keywords: issue.stack_keywords,
             confidence: issue.confidence,
+            app: issue.app,
+            sourceUrl: issue.sourceUrl,
+            issueUrl: issue.issueUrl,
         })),
         meta: {
             generatedAt: new Date().toISOString(),

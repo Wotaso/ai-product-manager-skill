@@ -275,8 +275,13 @@ test('buildSentrySummary emits crash issues and signals from unresolved issues',
   assert.equal(summary.issues.length, 1);
   assert.equal(summary.issues[0].id, '123');
   assert.equal(summary.issues[0].priority, 'medium');
+  assert.equal(summary.issues[0].sourceUrl, 'https://sentry.io/issues/123');
+  assert.equal(summary.issues[0].app, 'sentry:wotaso/flashes');
   assert.equal(summary.signals[0].area, 'crash');
+  assert.equal(summary.signals[0].sourceUrl, 'https://sentry.io/issues/123');
+  assert.equal(summary.signals[0].app, 'sentry:wotaso/flashes');
   assert(summary.signals[0].evidence.some((entry) => entry.includes('FLASHES-1')));
+  assert(summary.signals[0].evidence.some((entry) => entry.includes('https://sentry.io/issues/123')));
 });
 
 test('buildSentrySummary combines multiple Sentry-compatible accounts', () => {
@@ -288,7 +293,7 @@ test('buildSentrySummary combines multiple Sentry-compatible accounts', () => {
         org: 'wotaso',
         project: 'flashes-ios',
         environment: 'production',
-        issuesPayload: [{ id: 'ios-1', title: 'Fatal iOS crash', level: 'fatal', count: 3, userCount: 2 }],
+        issuesPayload: [{ id: 'ios-1', title: 'Fatal iOS crash', level: 'fatal', count: 3, userCount: 2, permalink: 'https://sentry.io/issues/ios-1' }],
       },
       {
         id: 'glitchtip_api',
@@ -296,7 +301,7 @@ test('buildSentrySummary combines multiple Sentry-compatible accounts', () => {
         org: 'wotaso',
         project: 'flashes-api',
         environment: 'production',
-        issuesPayload: [{ id: 'api-1', title: 'Webhook error', level: 'error', count: 30, userCount: 9 }],
+        issuesPayload: [{ id: 'api-1', title: 'Webhook error', level: 'error', count: 30, userCount: 9, permalink: 'https://glitchtip.wotaso.com/issues/api-1' }],
       },
     ],
     last: '7d',
@@ -307,7 +312,11 @@ test('buildSentrySummary combines multiple Sentry-compatible accounts', () => {
   assert.equal(summary.meta.multiAccount, true);
   assert.equal(summary.meta.accountCount, 2);
   assert.equal(summary.issues.length, 2);
+  assert(summary.issues.some((issue) => issue.app === 'sentry:wotaso/flashes-ios'));
+  assert(summary.issues.some((issue) => issue.sourceUrl === 'https://glitchtip.wotaso.com/issues/api-1'));
   assert(summary.signals.some((signal) => signal.id.startsWith('sentry_cloud_ios:')));
   assert(summary.signals.some((signal) => signal.id.startsWith('glitchtip_api:')));
+  assert(summary.signals.some((signal) => signal.app === 'sentry:wotaso/flashes-api'));
+  assert(summary.signals.some((signal) => signal.sourceUrl === 'https://sentry.io/issues/ios-1'));
   assert(summary.signals.every((signal) => signal.evidence.some((entry) => entry.startsWith('Sentry account:'))));
 });

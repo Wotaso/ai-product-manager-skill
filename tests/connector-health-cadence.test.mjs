@@ -93,8 +93,15 @@ test('Sentry exporter retries retryable API failures before surfacing the error'
   const exporter = readFileSync(join(skillRoot, 'scripts/export-sentry-summary.mjs'), 'utf8');
 
   assert.match(exporter, /DEFAULT_SENTRY_FETCH_RETRIES = 3/);
+  assert.match(exporter, /DEFAULT_SENTRY_REQUEST_TIMEOUT_MS = 15_000/);
+  assert.match(exporter, /DEFAULT_SENTRY_FETCH_CONCURRENCY = 3/);
   assert.match(exporter, /function isRetryableSentryStatus/);
   assert.match(exporter, /status === 429 \|\| status >= 500/);
+  assert.match(exporter, /function isRetryableSentryError/);
+  assert.match(exporter, /function compactErrorDetail/);
+  assert.match(exporter, /AbortController/);
+  assert.match(exporter, /OPENCLAW_SENTRY_REQUEST_TIMEOUT_MS/);
+  assert.match(exporter, /OPENCLAW_SENTRY_FETCH_CONCURRENCY/);
   assert.match(exporter, /retry-after/);
   assert.match(exporter, /Sentry API \$\{response\.status\}/);
   assert.match(exporter, /function describeAccountTarget/);
@@ -103,6 +110,36 @@ test('Sentry exporter retries retryable API failures before surfacing the error'
   assert.match(exporter, /environment=\$\{account\.environment\}/);
   assert.match(exporter, /withAccountTargetError\(error, account, 'Sentry issue fetch'\)/);
   assert.match(exporter, /withAccountTargetError\(error, account, 'Sentry project discovery'\)/);
+});
+
+test('Sentry exporter keeps transient provider failures out of connector-health alerts', () => {
+  const exporter = readFileSync(join(skillRoot, 'scripts/export-sentry-summary.mjs'), 'utf8');
+
+  assert.match(exporter, /function dedupeAccountConfigs/);
+  assert.match(exporter, /return dedupeAccountConfigs\(normalized\)/);
+  assert.match(exporter, /function buildFailureRecord/);
+  assert.match(exporter, /function attachFailureMeta/);
+  assert.match(exporter, /partial: true/);
+  assert.match(exporter, /failureCount: failures\.length/);
+  assert.match(exporter, /await mapLimit\(accounts, sentryFetchConcurrency\(\)/);
+  assert.match(exporter, /const blockingFailures = failures\.filter\(\(failure\) => !failure\.retryable\)/);
+  assert.match(exporter, /Sentry connector has non-retryable configuration\/auth failures/);
+  assert.doesNotMatch(exporter, /throw withAccountTargetError\(error, account, 'Sentry project discovery'\)/);
+});
+
+test('short operational growth notifications stay compact', () => {
+  const runner = readFileSync(join(skillRoot, 'scripts/openclaw-growth-runner.mjs'), 'utf8');
+
+  assert.match(runner, /function truncateMessageText/);
+  assert.match(runner, /function groupIssuesByProject/);
+  assert.match(runner, /function issueSourceUrl/);
+  assert.match(runner, /OpenClaw healthcheck/);
+  assert.match(runner, /OpenClaw daily/);
+  assert.match(runner, /Top by project:/);
+  assert.match(runner, /formatIssueSummaryLine/);
+  assert.match(runner, /Action: external alert only\./);
+  assert.doesNotMatch(runner, /Sources: \$\{sourceNames\}/);
+  assert.doesNotMatch(runner, /Action: alert\/handoff only; GitHub auto-create is disabled or unavailable\./);
 });
 
 test('Sentry connector setup cannot report success with disabled or placeholder-only config', () => {
