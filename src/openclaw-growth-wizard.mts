@@ -855,6 +855,7 @@ function parseArgs(argv) {
   const args = {
     config: defaultConfigPath,
     connectorWizard: false,
+    connectorRecovery: false,
     connectors: '',
     noSelfUpdate: false,
     out: defaultConfigPath,
@@ -872,6 +873,13 @@ function parseArgs(argv) {
       i += 1;
     } else if (token === '--connectors' || token === '--connector-setup') {
       args.connectorWizard = true;
+      if (next && !next.startsWith('-')) {
+        args.connectors = next;
+        i += 1;
+      }
+    } else if (token === '--recover-connectors' || token === '--restore-connectors' || token === '--connector-recovery') {
+      args.connectorWizard = true;
+      args.connectorRecovery = true;
       if (next && !next.startsWith('-')) {
         args.connectors = next;
         i += 1;
@@ -904,9 +912,10 @@ OpenClaw Growth Setup Wizard
 Usage:
   npx -y @analyticscli/growth-engineer@preview wizard [--out <config-path>]
   npx -y @analyticscli/growth-engineer@preview wizard --connectors [${CONNECTOR_KEYS.join(',')}]
+  npx -y @analyticscli/growth-engineer@preview wizard --recover-connectors [${CONNECTOR_KEYS.join(',')}]
 
 Compatibility note:
-  Existing cron/heartbeat runners may still execute generated runtime scripts, but user-facing setup and connector repair should use the npx command above.
+  --connectors is the full setup path. --recover-connectors first retests existing config/secrets and only asks for credentials when the connector still fails.
 
 Options:
   --config <file>    Override auto-discovered config path
@@ -1570,14 +1579,20 @@ function normalizeConnectorProgressKey(key): ConnectorKey | null {
 
 async function withConnectorHealthLoading<T>(
   taskFactory: (onProgress: (event: any) => void) => Promise<T>,
+  expectedConnectors: ConnectorKey[] = [...CONNECTOR_KEYS],
 ): Promise<T> {
+  const expected = orderConnectors(expectedConnectors);
+  if (expected.length === 0) {
+    return await taskFactory(() => {});
+  }
   const frames = ['-', '\\', '|', '/'];
   const completed = new Set<ConnectorKey>();
+  const expectedSet = new Set<ConnectorKey>(expected);
   let index = 0;
   let current = 'starting';
   const render = () => {
-    const count = Math.min(completed.size, CONNECTOR_KEYS.length);
-    process.stdout.write(`\rChecking connector health ${count}/${CONNECTOR_KEYS.length} (${current}) ${frames[index]}`);
+    const count = Math.min(completed.size, expected.length);
+    process.stdout.write(`\rChecking connector health ${count}/${expected.length} (${current}) ${frames[index]}`);
   };
   const timer = setInterval(() => {
     index = (index + 1) % frames.length;
@@ -1587,12 +1602,12 @@ async function withConnectorHealthLoading<T>(
   try {
     const result = await taskFactory((event) => {
       const key = normalizeConnectorProgressKey(event?.key);
-      if (!key) return;
+      if (!key || !expectedSet.has(key)) return;
       current = connectorLabel(key);
       if (event?.phase === 'finish') completed.add(key);
       render();
     });
-    CONNECTOR_KEYS.forEach((key) => completed.add(key));
+    expected.forEach((key) => completed.add(key));
     current = 'done';
     render();
     process.stdout.write('\n');
@@ -1715,7 +1730,44 @@ function connectorKeysNeedingAttention(healthByConnector: Record<string, any> = 
   );
 }
 
-async function getConnectorPickerHealth(configPath, onProgress: (event: any) => void = () => {}) {
+function isConfiguredSource(config, sourceName) {
+  return Boolean(config?.sources?.[sourceName] && config.sources[sourceName].enabled !== false);
+}
+
+function configuredConnectorKeysFromConfig(config): ConnectorKey[] {
+  const configured = new Set<ConnectorKey>();
+  if (!config || typeof config !== 'object') return [];
+  for (const key of ['analytics', 'revenuecat', 'paddle', 'seo', 'sentry', 'coolify'] as ConnectorKey[]) {
+    if (isConfiguredSource(config, key)) configured.add(key);
+  }
+  if (isConfiguredGitHubRepo(config?.project?.githubRepo)) configured.add('github');
+  for (const source of Array.isArray(config?.sources?.extra) ? config.sources.extra : []) {
+    if (!source || source.enabled === false) continue;
+    if (source.service === 'asc-cli') {
+      configured.add('asc');
+      continue;
+    }
+    const connector = normalizeConnectorProgressKey(source.key || source.service || source.type);
+    if (connector) configured.add(connector);
+  }
+  return [...configured];
+}
+
+async function connectorKeysForHealthCheck(configPath): Promise<ConnectorKey[]> {
+  const configured = new Set<ConnectorKey>();
+  CONNECTOR_KEYS.forEach((key) => {
+    if (isConnectorLocallyConfigured(key)) configured.add(key);
+  });
+  const config = await readJsonIfPresent(configPath).catch(() => null);
+  for (const key of configuredConnectorKeysFromConfig(config)) configured.add(key);
+  return orderConnectors([...configured]);
+}
+
+async function getConnectorPickerHealth(
+  configPath,
+  onProgress: (event: any) => void = () => {},
+  onlyConnectors: ConnectorKey[] = [],
+) {
   if (!(await fileExists(configPath))) {
     return Object.fromEntries(
       CONNECTOR_KEYS.map((key) => [
@@ -1729,8 +1781,12 @@ async function getConnectorPickerHealth(configPath, onProgress: (event: any) => 
       ]),
     );
   }
+  if (onlyConnectors.length === 0) {
+    return Object.fromEntries(CONNECTOR_KEYS.map((key) => [key, getConnectorHealth(key, {})]));
+  }
+  const onlyArg = ` --only-connectors ${quote(orderConnectors(onlyConnectors).join(','))}`;
   const result = await runCommandCaptureWithProgress(
-    `${nodeRuntimeScriptCommand('openclaw-growth-status.mjs')} --config ${quote(configPath)} --json --progress-json`,
+    `${nodeRuntimeScriptCommand('openclaw-growth-status.mjs')} --config ${quote(configPath)} --json --progress-json${onlyArg}`,
     onProgress,
   );
   const payload = parseJsonFromStdout(result.stdout);
@@ -4261,6 +4317,73 @@ async function runConnectorSetupSteps({
   return false;
 }
 
+function buildGrowthEngineerWizardCommand(flag, args, selected: ConnectorKey[]) {
+  const configArg = args.config && args.config !== DEFAULT_CONFIG_PATH ? ` --config ${quote(args.config)}` : '';
+  return `npx -y ${quote(GROWTH_ENGINEER_PACKAGE_SPEC)} wizard${configArg} ${flag} ${quote(selected.join(','))}`;
+}
+
+async function runConnectorRecoverySteps({ rl, args, selected, healthByConnector }) {
+  clearTerminal();
+  printConnectorIntro({
+    introTitle: 'OpenClaw connector recovery',
+    introDetail:
+      'Recovery first reuses the existing config and local secrets. It only opens focused credential prompts if the connector still fails.',
+  });
+  process.stdout.write(`${ANSI.bold}Recovering connectors${ANSI.reset}\n`);
+  for (const key of selected) {
+    process.stdout.write(`  - ${connectorLabel(key)}\n`);
+    writeWrapped(formatConnectorHealthText(key, healthByConnector), '    ', ANSI.dim);
+  }
+  process.stdout.write('\n');
+
+  const setupCommand = `${nodeRuntimeScriptCommand('openclaw-growth-start.mjs')} --config ${quote(args.config)} --setup-only --connectors ${quote(selected.join(','))} --only-connectors ${quote(selected.join(','))}`;
+  const recoveryCommand = buildGrowthEngineerWizardCommand('--recover-connectors', args, selected);
+  const fullSetupCommand = buildGrowthEngineerWizardCommand('--connectors', args, selected);
+  const setupResult = await runSetupCommandWithProgress(
+    setupCommand,
+    { ...process.env },
+    selected,
+    'Retesting connector health with existing config and local secrets...',
+  );
+  const setupPayload = parseJsonFromStdout(setupResult.stdout);
+  const failedConnectors = selected.filter((connector) => payloadHasConnectorFailures(setupPayload, connector));
+
+  if (setupResult.ok && setupPayload?.ok !== false && failedConnectors.length === 0) {
+    process.stdout.write('\nSUCCESS: Connector health is restored. No credentials were re-entered.\n');
+    printConnectorSetupProgress(setupPayload);
+    return true;
+  }
+
+  process.stdout.write('\nConnector is still unhealthy after retesting existing config/secrets.\n');
+  if (setupPayload) {
+    printConciseSetupBlockers(setupPayload, recoveryCommand, {
+      focusConnectors: selected,
+      hideRerunWhenClean: true,
+    });
+  } else {
+    const reason = setupResult.code === null ? 'health command did not report an exit code' : `health command exited with code ${setupResult.code}`;
+    process.stdout.write(`Reason: ${reason}.\n`);
+    const output = truncate(setupResult.stderr || setupResult.stdout);
+    if (output) process.stdout.write(`Details: ${output}\n`);
+  }
+
+  const openPrompts = await askYesNo(rl, 'Open focused credential prompts for the failed connector now?', false);
+  if (!openPrompts) {
+    process.stdout.write(`\nRecovery command: ${recoveryCommand}\n`);
+    process.stdout.write(`Full setup command: ${fullSetupCommand}\n`);
+    process.exitCode = 1;
+    return false;
+  }
+
+  return await runConnectorSetupSteps({
+    rl,
+    args,
+    selected,
+    healthByConnector,
+    allowIsolationPrompt: false,
+  });
+}
+
 async function runConnectorSetupWizard(args) {
   if (!process.stdin.isTTY || !process.stdout.isTTY) {
     throw new Error('Connector wizard requires an interactive terminal.');
@@ -4271,8 +4394,10 @@ async function runConnectorSetupWizard(args) {
     clearTerminal();
     printConnectorIntro();
     await migrateRuntimeSourceCommandsFile(args.config);
+    const healthCheckConnectors = await connectorKeysForHealthCheck(args.config);
     const healthByConnector = await withConnectorHealthLoading((onProgress) =>
-      getConnectorPickerHealth(args.config, onProgress),
+      getConnectorPickerHealth(args.config, onProgress, healthCheckConnectors),
+      healthCheckConnectors,
     );
     const existingFixes = connectorKeysNeedingAttention(healthByConnector);
     const requestedConnectors = args.connectors ? parseConnectorList(args.connectors) : [];
@@ -4281,14 +4406,18 @@ async function runConnectorSetupWizard(args) {
         ? orderConnectors(requestedConnectors)
         : await askConnectorSelectionWithHealth(rl, healthByConnector, existingFixes);
     const selected =
-      requestedConnectors.length > 0
+      requestedConnectors.length > 0 || args.connectorRecovery
         ? orderConnectors(chosenConnectors)
         : withMissingRequiredAnalyticsConnector(chosenConnectors);
     if (selected.length === 0) {
       throw new Error(`No supported connectors selected. Use ${CONNECTOR_KEYS.join(', ')}, or all.`);
     }
 
-    await runConnectorSetupSteps({ rl, args, selected, healthByConnector });
+    if (args.connectorRecovery) {
+      await runConnectorRecoverySteps({ rl, args, selected, healthByConnector });
+    } else {
+      await runConnectorSetupSteps({ rl, args, selected, healthByConnector });
+    }
   } finally {
     rl.close();
   }
@@ -5290,8 +5419,10 @@ async function askInputSourceConfig(rl, config, configPath) {
   config = migrateRuntimeSourceCommands(config, configPath);
   await ensureDirForFile(configPath);
   await writeJsonFile(configPath, config);
+  const healthCheckConnectors = await connectorKeysForHealthCheck(configPath);
   const healthByConnector = await withConnectorHealthLoading((onProgress) =>
-    getConnectorPickerHealth(configPath, onProgress),
+    getConnectorPickerHealth(configPath, onProgress, healthCheckConnectors),
+    healthCheckConnectors,
   );
   const selected = await askConnectorSelectionWithHealth(
     rl,
