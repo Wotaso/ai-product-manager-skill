@@ -61,6 +61,21 @@ test('due growth cadences still run and log, but suppress social delivery when f
   assert.match(runner, /lastGrowthRunNotifications: await deliverGrowthRunSummary/);
 });
 
+test('short operational findings are deduped per issue per day unless events spike', () => {
+  const runner = readFileSync(join(skillRoot, 'scripts/openclaw-growth-runner.mjs'), 'utf8');
+
+  assert.match(runner, /DEFAULT_DAILY_ISSUE_EVENT_GROWTH_MULTIPLIER = 2/);
+  assert.match(runner, /DEFAULT_DAILY_ISSUE_EVENT_GROWTH_MIN_DELTA = 10/);
+  assert.match(runner, /function applyDailyIssueDedupe/);
+  assert.match(runner, /function buildDailyIssueKey/);
+  assert.match(runner, /function issueEventCount/);
+  assert.match(runner, /isDrasticDailyIssueEventGrowth/);
+  assert.match(runner, /skippedReason: 'daily_issue_dedupe'/);
+  assert.match(runner, /externalGrowthNotification: 'suppressed_daily_issue_dedupe'/);
+  assert.match(runner, /Suppressed today: \$\{suppressedIssueCount\} previously reported finding\(s\)\./);
+  assert.doesNotMatch(runner, /dailyIssueDedupe\.suppressedCount === 0/);
+});
+
 test('scheduled source collection retries transient upstream failures once', () => {
   const runner = readFileSync(join(skillRoot, 'scripts/openclaw-growth-runner.mjs'), 'utf8');
 
@@ -154,6 +169,21 @@ test('Sentry connector setup cannot report success with disabled or placeholder-
   assert.match(wizard, /Sentry-compatible account config is up to date/);
   assert.match(wizard, /--only-connectors \$\{quote\(selected\.join\(','\)\)\}/);
   assert.match(preflight, /selected Sentry connector is still disabled in sources\.sentry/);
+});
+
+test('AnalyticsCLI-only connector setup reports configured ASC failures without blaming AnalyticsCLI', () => {
+  const start = readFileSync(join(skillRoot, 'scripts/openclaw-growth-start.mjs'), 'utf8');
+  const wizard = readFileSync(join(skillRoot, 'scripts/openclaw-growth-wizard.mjs'), 'utf8');
+
+  assert.match(start, /const shouldRunAscSetup = args\.onlyConnectors\.length === 0/);
+  assert.match(start, /args\.onlyConnectors\.includes\('asc'\)/);
+  assert.match(start, /configHasEnabledAscSource\(initialConfig\)/);
+  assert.match(start, /appScope: 'skipped_by_connector_filter'/);
+  assert.match(start, /detail: 'ASC connector was not selected'/);
+  assert.match(wizard, /App Store Connect\|app-store-connect\|app_store_connect\|Analytics Report Request/);
+  assert.match(wizard, /return 'asc';\s+if \(value\.includes\('analytics'\) \|\| value\.includes\('ANALYTICSCLI'\)\)/);
+  assert.match(wizard, /function payloadOtherConnectorFailures/);
+  assert.match(wizard, /another configured connector needs attention/);
 });
 
 test('wizard persists active config paths for config-driven exporters', () => {
@@ -343,6 +373,9 @@ test('connector health alerts include direct repair commands without broad menu 
   assert.match(runner, /Secrets stay in the host terminal or secret store/);
   assert.match(wizard, /requestedConnectors\.length > 0\s+\? orderConnectors\(requestedConnectors\)/);
   assert.doesNotMatch(wizard, /requestedConnectors\.length > 0\s+\? orderConnectors\(\[\.\.\.new Set\(\[\.\.\.requestedConnectors, \.\.\.existingFixes\]\)\]\)/);
+  assert.match(wizard, /return isConnectorLocallyConfigured\(key\) \|\| status !== 'not_connected'/);
+  assert.match(wizard, /new Set\(CONNECTOR_KEYS\.filter\(\(key\) => required\.has\(key\) \|\| initial\.has\(key\)\)\)/);
+  assert.doesNotMatch(wizard, /copy\.mode !== 'input' && !isConnectorLocallyConfigured\(key\)/);
 });
 
 test('agent-facing wizard guidance uses the npx Growth Engineer package', () => {

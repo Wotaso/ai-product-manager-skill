@@ -1100,7 +1100,7 @@ function withMissingRequiredAnalyticsConnector(selected) {
 }
 async function askConnectorSelectionWithHealth(rl, healthByConnector = {}, initialSelected = [], copy = {}) {
     if (!process.stdin.isTTY || !process.stdout.isTTY || !process.stdin.setRawMode) {
-        return await askConnectorSelectionByText(rl, healthByConnector, copy);
+        return await askConnectorSelectionByText(rl, healthByConnector, initialSelected, copy);
     }
     rl.pause();
     let completed = false;
@@ -1118,7 +1118,7 @@ async function askConnectorSelectionWithHealth(rl, healthByConnector = {}, initi
         }
     }
 }
-async function askConnectorSelectionByText(rl, healthByConnector = {}, copy = {}) {
+async function askConnectorSelectionByText(rl, healthByConnector = {}, initialSelected = [], copy = {}) {
     printConnectorIntro(copy);
     for (const group of connectorPickerGroups(healthByConnector)) {
         process.stdout.write(`${ANSI.bold}${group.title}${ANSI.reset}\n`);
@@ -1130,8 +1130,13 @@ async function askConnectorSelectionByText(rl, healthByConnector = {}, copy = {}
         }
         process.stdout.write('\n');
     }
+    const required = copy.mode === 'input' ? new Set() : getRequiredConnectorKeys();
+    const defaultSelection = orderConnectors([...new Set([...initialSelected, ...required])]);
+    const defaultAnswer = defaultSelection.length > 0
+        ? defaultSelection.map((key) => String(CONNECTOR_DEFINITIONS.findIndex((entry) => entry.key === key) + 1)).join(',')
+        : '';
     while (true) {
-        const answer = await ask(rl, 'Select connectors (comma-separated numbers/names, or all)', 'all');
+        const answer = await ask(rl, 'Select connectors (comma-separated numbers/names, or all)', defaultAnswer);
         const selected = parseConnectorAnswer(answer);
         if (selected.length > 0)
             return selected;
@@ -1604,7 +1609,13 @@ function connectorPickerDisplayItems(healthByConnector = {}) {
     return connectorPickerGroups(healthByConnector).flatMap((group) => group.connectors);
 }
 function connectorKeysNeedingAttention(healthByConnector = {}) {
-    return CONNECTOR_KEYS.filter((key) => ['blocked', 'partial', 'unknown', 'not_connected'].includes(String(getConnectorHealth(key, healthByConnector).status || '')));
+    return CONNECTOR_KEYS.filter((key) => {
+        const health = getConnectorHealth(key, healthByConnector);
+        const status = String(health.status || '');
+        if (!['blocked', 'partial', 'unknown', 'not_connected'].includes(status))
+            return false;
+        return isConnectorLocallyConfigured(key) || status !== 'not_connected';
+    });
 }
 function isConfiguredSource(config, sourceName) {
     return Boolean(config?.sources?.[sourceName] && config.sources[sourceName].enabled !== false);
@@ -1713,9 +1724,7 @@ async function askConnectorSelectionByKeys(healthByConnector = {}, initialSelect
     let cursorIndex = 0;
     const required = copy.mode === 'input' ? new Set() : getRequiredConnectorKeys();
     const initial = new Set(initialSelected);
-    const selected = new Set(CONNECTOR_KEYS.filter((key) => required.has(key) ||
-        initial.has(key) ||
-        (copy.mode !== 'input' && !isConnectorLocallyConfigured(key))));
+    const selected = new Set(CONNECTOR_KEYS.filter((key) => required.has(key) || initial.has(key)));
     let warning = '';
     return await new Promise((resolve, reject) => {
         const displayItems = () => connectorPickerDisplayItems(healthByConnector);
@@ -2155,6 +2164,15 @@ function payloadHasConnectorFailures(payload, connector) {
     const blockers = Array.isArray(payload?.blockers) ? payload.blockers : [];
     return blockers.some((blocker) => !isDeferredGitHubFailure(blocker) && connectorForBlocker(blocker) === connector);
 }
+function payloadOtherConnectorFailures(payload, connector) {
+    const blockers = Array.isArray(payload?.blockers) ? payload.blockers : [];
+    return blockers.filter((blocker) => {
+        if (isDeferredGitHubFailure(blocker))
+            return false;
+        const blockerConnector = connectorForBlocker(blocker);
+        return blockerConnector !== connector && blockerConnector !== 'setup';
+    });
+}
 async function askListSelection(rl, label, entries, options = {}) {
     const includeManual = Boolean(options.includeManual);
     const includeDefer = Boolean(options.includeDefer);
@@ -2210,6 +2228,8 @@ function printSetupSuccess(payload) {
 }
 function connectorFromCheckName(name) {
     const value = String(name || '');
+    if (value.includes('asc') || value.includes('ASC_') || /App Store Connect|app-store-connect|app_store_connect|Analytics Report Request/i.test(value))
+        return 'asc';
     if (value.includes('analytics') || value.includes('ANALYTICSCLI'))
         return 'analytics';
     if (value.includes('github') || value.includes('GITHUB'))
@@ -2224,8 +2244,6 @@ function connectorFromCheckName(name) {
         return 'sentry';
     if (value.includes('coolify') || value.includes('COOLIFY'))
         return 'coolify';
-    if (value.includes('asc') || value.includes('ASC_'))
-        return 'asc';
     for (const key of ACCOUNT_SIGNAL_CONNECTOR_KEYS) {
         const definition = getAccountSignalConnectorDefinition(key);
         const envMatch = definition?.credentials.some((credential) => value.includes(credential.env));
@@ -2464,6 +2482,17 @@ async function runImmediateConnectorHealthCheck({ rl, configPath, connector, sec
         });
         const retry = await askYesNo(rl, `Re-enter ${connectorLabel(connector)} configuration now?`, true);
         return { ok: false, retry, result, payload };
+    }
+    const otherConnectorBlockers = payloadOtherConnectorFailures(payload, connector);
+    if (otherConnectorBlockers.length > 0) {
+        process.stdout.write(`\n${connectorLabel(connector)} immediate health check passed, but another configured connector needs attention.\n`);
+        printConciseSetupBlockers({
+            ...payload,
+            blockers: otherConnectorBlockers,
+        }, command, {
+            hideRerunWhenClean: true,
+        });
+        return { ok: false, retry: false, result, payload };
     }
     process.stdout.write(`\n${connectorLabel(connector)} immediate health check passed or is only waiting on optional/deferred context.\n`);
     return { ok: true, retry: false, result, payload };
