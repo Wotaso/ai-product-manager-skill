@@ -587,6 +587,13 @@ test('config example enables OpenClaw and Hermes cron with runner proof logs', (
   assert.match(runner, /connector_health_checked/);
   assert.match(runner, /runner_completed/);
   assert.match(runner, /runner_failed/);
+  assert.match(runner, /function recordRunnerFailure/);
+  assert.match(runner, /dailyRunnerFailures/);
+  assert.match(runner, /runner_failed_suppressed/);
+  assert.match(runner, /runner failure unchanged and already reported today/);
+  assert.match(runner, /process\.exitCode = failureDecision\?\.exitCode \?\? 1/);
+  assert.match(runner, /function redactCommandForDiagnostics/);
+  assert.match(runner, /Source "\$\{sourceName\}" command failed: command/);
 });
 
 test('setup and preflight harden sudo commands for unattended VPS runs', () => {
