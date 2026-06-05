@@ -109,7 +109,7 @@ Paddle setup:
 
 - Ask whether to connect Paddle for web billing, MRR, revenue, refunds, chargebacks, checkout conversion, and active subscriber metrics.
 - Do not ask for or store a single Paddle product/project selection in the wizard. Keep account-level metrics access so the Growth Engineer can compare all Paddle revenue context available to the API key.
-- Tell the user to open `https://vendors.paddle.com/authentication`, go to Developer Tools > Authentication, create a live API key, and grant `metrics.read` only.
+- Tell the user to open `https://vendors.paddle.com/authentication`, go to Developer Tools > Authentication, and create a dedicated live API key. If Paddle shows API-key permissions, use only the permissions needed for metrics/revenue reads. If Paddle does not show scope selection, tell the user to use a dedicated Growth Engineer key that can be rotated/revoked.
 - Store the key as `PADDLE_API_KEY` in the local secrets file.
 - Treat sandbox Paddle metrics as setup-only evidence, not production revenue evidence.
 
