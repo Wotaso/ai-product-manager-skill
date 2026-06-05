@@ -27,7 +27,7 @@ hermes skills install Wotaso/openclaw-growth-engineer-skill
 1. Paste this into the VPS, Mac mini, or host shell for the active app workspace:
 
 ```bash
-npx -y Wotaso/growth-engineer-cli#main wizard --connectors
+npx -y @analyticscli/growth-engineer@preview wizard --connectors
 ```
 
 Secrets stay in the VPS/host shell wizard. Do not use chat or a standalone `analyticscli login` step for first setup.

@@ -37,7 +37,7 @@ test('bootstrap can refresh runtime and hand off to the local wizard in one comm
     assert.match(result.stdout, /Copied openclaw-growth-engineer runtime into workspace/);
     assert.match(result.stdout, /Starting Growth Engineer wizard/);
     assert.match(result.stdout, /OpenClaw Growth Setup Wizard/);
-    assert.match(result.stdout, /npx -y Wotaso\/growth-engineer-cli#main wizard --connectors/);
+    assert.match(result.stdout, /npx -y @analyticscli\/growth-engineer@preview wizard --connectors/);
   } finally {
     rmSync(workspace, { recursive: true, force: true });
   }

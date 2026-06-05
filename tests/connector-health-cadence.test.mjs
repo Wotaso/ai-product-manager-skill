@@ -360,7 +360,7 @@ test('wizard sandbox smoke migrates Sentry and Coolify commands to the active co
           coolify: {
             enabled: true,
             mode: 'command',
-            command: 'npx -y Wotaso/growth-engineer-cli#main exporters coolify-summary',
+            command: 'npx -y @analyticscli/growth-engineer@preview exporters coolify-summary',
             baseUrl: 'https://coolify.example.com',
             tokenEnv: 'COOLIFY_API_TOKEN',
           },
@@ -440,7 +440,7 @@ test('wizard sandbox smoke migrates Sentry and Coolify commands to the active co
           coolify: {
             enabled: true,
             mode: 'command',
-            command: 'npx -y Wotaso/growth-engineer-cli#main exporters coolify-summary',
+            command: 'npx -y @analyticscli/growth-engineer@preview exporters coolify-summary',
             baseUrl: 'https://coolify.example.com',
             tokenEnv: 'COOLIFY_API_TOKEN',
           },
@@ -497,7 +497,7 @@ test('connector health alerts include direct repair commands without broad menu 
   assert.ok(runner.includes('Fix: \\`${command}\\`'));
   assert.match(runner, /SENTRY_AUTH_TOKEN missing for source collection/);
   assert.doesNotMatch(runner, /lines\.push\('  Account targets:'\)/);
-  assert.match(runner, /npx -y Wotaso\/growth-engineer-cli#main wizard/);
+  assert.match(runner, /npx -y @analyticscli\/growth-engineer@preview wizard/);
   assert.match(runner, /--connectors \$\{quote\(connector\)\}/);
   assert.doesNotMatch(runner, /nodeRuntimeScriptCommand\('openclaw-growth-wizard\.mjs'\)/);
   assert.match(runner, /ASC web-auth only/);
@@ -522,7 +522,7 @@ test('agent-facing wizard guidance uses the npx Growth Engineer wizard', () => {
 
   for (const file of files) {
     const source = readFileSync(join(skillRoot, file), 'utf8');
-    assert.match(source, /npx -y Wotaso\/growth-engineer-cli#main wizard/);
+    assert.match(source, /npx -y @analyticscli\/growth-engineer@preview wizard/);
   }
 });
 
