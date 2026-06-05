@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -91,7 +91,111 @@ test('scheduled source collection retries transient upstream failures once', () 
   assert.match(runner, /socialOutput: 'HEARTBEAT_OK'/);
 });
 
-test('required Sentry-compatible API 5xx failures are still degraded after retry', () => {
+test('required analytics transient fetch failures degrade without failing repeated scheduled runs', () => {
+  const tmp = mkdtempSync(join(tmpdir(), 'openclaw-growth-analytics-transient-'));
+  try {
+    const binDir = join(tmp, 'bin');
+    mkdirSync(binDir, { recursive: true });
+    const analyticscliBin = join(binDir, 'analyticscli');
+    writeFileSync(analyticscliBin, '#!/bin/sh\nexit 0\n', 'utf8');
+    chmodSync(analyticscliBin, 0o755);
+
+    const failingSource = join(tmp, 'failing-analytics.mjs');
+    writeFileSync(failingSource, 'process.stderr.write("fetch failed\\n"); process.exit(1);\n', 'utf8');
+
+    const notifier = join(tmp, 'notify.mjs');
+    writeFileSync(notifier, 'process.stdin.resume();\n', 'utf8');
+
+    const configPath = join(tmp, 'config.json');
+    const statePath = join(tmp, 'state.json');
+    const now = new Date().toISOString();
+    const cadenceState = Object.fromEntries(
+      ['healthcheck', 'daily', 'weekly', 'monthly', 'quarterly', 'six_months', 'yearly'].map((key) => [
+        key,
+        { lastRanAt: now, title: key },
+      ]),
+    );
+    writeFileSync(
+      configPath,
+      `${JSON.stringify(
+        {
+          version: 7,
+          project: { repoRoot: tmp },
+          schedule: { connectorHealthCheckIntervalMinutes: 360 },
+          sources: {
+            analytics: {
+              enabled: true,
+              required: true,
+              mode: 'command',
+              command: `node ${failingSource}`,
+            },
+          },
+          notifications: {
+            connectorHealth: {
+              channels: [{ type: 'command', label: 'test_external', command: `node ${notifier}` }],
+            },
+          },
+        },
+        null,
+        2,
+      )}\n`,
+      'utf8',
+    );
+    writeFileSync(
+      statePath,
+      `${JSON.stringify(
+        {
+          sourceHashes: {},
+          sourceCursors: {},
+          lastRunAt: now,
+          cadences: cadenceState,
+          connectorHealth: {
+            lastCheckedAt: now,
+            lastStatusOk: true,
+          },
+        },
+        null,
+        2,
+      )}\n`,
+      'utf8',
+    );
+
+    const env = { ...process.env, PATH: `${binDir}:${process.env.PATH || ''}` };
+    const args = [
+      join(skillRoot, 'scripts/openclaw-growth-runner.mjs'),
+      '--no-self-update',
+      '--config',
+      configPath,
+      '--state',
+      statePath,
+    ];
+    const first = spawnSync(process.execPath, args, { cwd: tmp, env, encoding: 'utf8' });
+    assert.equal(first.status, 0, first.stderr || first.stdout);
+    const second = spawnSync(process.execPath, args, { cwd: tmp, env, encoding: 'utf8' });
+    assert.equal(second.status, 0, second.stderr || second.stdout);
+
+    const state = JSON.parse(readFileSync(statePath, 'utf8'));
+    assert.equal(state.connectorHealth.lastStatusOk, false);
+    assert.equal(state.lastSourceFailures?.[0]?.key, 'analytics');
+    assert.match(state.lastSourceFailures?.[0]?.detail || '', /transient network error persisted after retry/);
+
+    const proofPath = join(tmp, 'runtime/scheduler-proof.jsonl');
+    const proofEvents = readFileSync(proofPath, 'utf8')
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line));
+    const sourceCollectionEvents = proofEvents.filter(
+      (event) => event.event === 'source_collection_degraded' && Object.hasOwn(event, 'alertTriggered'),
+    );
+    assert.equal(sourceCollectionEvents.at(-1)?.alertTriggered, false);
+    assert.equal(sourceCollectionEvents.at(-1)?.socialOutput, 'HEARTBEAT_OK');
+    assert.equal(proofEvents.some((event) => event.event === 'runner_failed'), false);
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test('required source transient API failures are degraded after retry', () => {
   const runner = readFileSync(join(skillRoot, 'scripts/openclaw-growth-runner.mjs'), 'utf8');
 
   assert.match(runner, /function isSentryCompatibleSource/);
@@ -99,9 +203,37 @@ test('required Sentry-compatible API 5xx failures are still degraded after retry
   assert.match(runner, /sourceKey === 'glitchtip'/);
   assert.match(runner, /command\.includes\('export-sentry-summary'\)/);
   assert.match(runner, /function shouldDegradeTransientSourceFailure/);
+  assert.match(runner, /sourceConfig\?\.degradeTransientFailures === false/);
   assert.match(runner, /if \(!isRequiredSource\(sourceConfig, sourceName\)\)\s+return true/);
-  assert.match(runner, /return isSentryCompatibleSource\(sourceConfig, sourceName\)/);
+  assert.match(runner, /if \(isSentryCompatibleSource\(sourceConfig, sourceName\)\)\s+return true/);
+  assert.match(runner, /degradeRequiredTransientFailures !== false/);
   assert.match(runner, /shouldDegradeTransientSourceFailure\(sourceConfig, sourceName, retried\)/);
+});
+
+test('runner self-update uses the installed Growth Engineer skill slug', () => {
+  const runner = readFileSync(join(skillRoot, 'scripts/openclaw-growth-runner.mjs'), 'utf8');
+
+  assert.match(runner, /SELF_UPDATE_SKILL_SLUG_CANDIDATES = \['growth-engineer', 'openclaw-growth-engineer'\]/);
+  assert.match(runner, /OPENCLAW_GROWTH_SKILL_SLUG/);
+  assert.match(runner, /function resolveInstalledSelfUpdateSkill/);
+  assert.match(runner, /skills\/growth-engineer\/scripts/);
+  assert.match(runner, /clawhub --no-input --dir skills update \$\{quote\(installedSkill\.slug\)\} --force/);
+  assert.match(runner, /installedSkill\.bootstrapPath/);
+  assert.doesNotMatch(runner, /skills update openclaw-growth-engineer --force/);
+  assert.doesNotMatch(runner, /bash skills\/openclaw-growth-engineer\/scripts\/bootstrap-openclaw-workspace\.sh/);
+});
+
+test('wizard self-update uses the installed Growth Engineer skill slug', () => {
+  const wizard = readFileSync(join(skillRoot, 'scripts/openclaw-growth-wizard.mjs'), 'utf8');
+
+  assert.match(wizard, /SELF_UPDATE_SKILL_SLUG_CANDIDATES = \['growth-engineer', 'openclaw-growth-engineer'\]/);
+  assert.match(wizard, /OPENCLAW_GROWTH_SKILL_SLUG/);
+  assert.match(wizard, /function resolveInstalledSelfUpdateSkill/);
+  assert.match(wizard, /skills\/growth-engineer\/scripts/);
+  assert.match(wizard, /clawhub --no-input --dir skills update \$\{quote\(installedSkill\.slug\)\} --force/);
+  assert.match(wizard, /installedSkill\.bootstrapPath/);
+  assert.doesNotMatch(wizard, /skills update openclaw-growth-engineer --force/);
+  assert.doesNotMatch(wizard, /bash skills\/openclaw-growth-engineer\/scripts\/bootstrap-openclaw-workspace\.sh/);
 });
 
 test('Sentry exporter retries retryable API failures before surfacing the error', () => {
@@ -228,7 +360,7 @@ test('wizard sandbox smoke migrates Sentry and Coolify commands to the active co
           coolify: {
             enabled: true,
             mode: 'command',
-            command: 'npx -y @analyticscli/growth-engineer@preview exporters coolify-summary',
+            command: 'npx -y Wotaso/growth-engineer-cli#main exporters coolify-summary',
             baseUrl: 'https://coolify.example.com',
             tokenEnv: 'COOLIFY_API_TOKEN',
           },
@@ -308,7 +440,7 @@ test('wizard sandbox smoke migrates Sentry and Coolify commands to the active co
           coolify: {
             enabled: true,
             mode: 'command',
-            command: 'npx -y @analyticscli/growth-engineer@preview exporters coolify-summary',
+            command: 'npx -y Wotaso/growth-engineer-cli#main exporters coolify-summary',
             baseUrl: 'https://coolify.example.com',
             tokenEnv: 'COOLIFY_API_TOKEN',
           },
@@ -365,8 +497,8 @@ test('connector health alerts include direct repair commands without broad menu 
   assert.ok(runner.includes('Fix: \\`${command}\\`'));
   assert.match(runner, /SENTRY_AUTH_TOKEN missing for source collection/);
   assert.doesNotMatch(runner, /lines\.push\('  Account targets:'\)/);
-  assert.match(runner, /npx -y @analyticscli\/growth-engineer@preview wizard --connectors/);
-  assert.doesNotMatch(runner, /@analyticscli\/growth-engineer@preview wizard --connectors .*--config/);
+  assert.match(runner, /npx -y Wotaso\/growth-engineer-cli#main wizard/);
+  assert.match(runner, /--connectors \$\{quote\(connector\)\}/);
   assert.doesNotMatch(runner, /nodeRuntimeScriptCommand\('openclaw-growth-wizard\.mjs'\)/);
   assert.match(runner, /ASC web-auth only/);
   assert.match(runner, /asc web auth login --apple-id "\$ASC_WEB_APPLE_ID"/);
@@ -378,7 +510,7 @@ test('connector health alerts include direct repair commands without broad menu 
   assert.doesNotMatch(wizard, /copy\.mode !== 'input' && !isConnectorLocallyConfigured\(key\)/);
 });
 
-test('agent-facing wizard guidance uses the npx Growth Engineer package', () => {
+test('agent-facing wizard guidance uses the npx Growth Engineer wizard', () => {
   const files = [
     'SKILL.md',
     'scripts/openclaw-growth-preflight.mjs',
@@ -386,15 +518,11 @@ test('agent-facing wizard guidance uses the npx Growth Engineer package', () => 
     'scripts/openclaw-growth-start.mjs',
     'scripts/openclaw-growth-runner.mjs',
     'scripts/openclaw-growth-wizard.mjs',
-    'references/setup-and-scheduling.md',
-    'references/advanced-setup.md',
   ];
 
   for (const file of files) {
     const source = readFileSync(join(skillRoot, file), 'utf8');
-    assert.match(source, /npx -y @analyticscli\/growth-engineer@preview wizard/);
-    assert.doesNotMatch(source, /node scripts\/openclaw-growth-wizard\.mjs/);
-    assert.doesNotMatch(source, /@analyticscli\/growth-engineer@preview wizard --connectors .*--config/);
+    assert.match(source, /npx -y Wotaso\/growth-engineer-cli#main wizard/);
   }
 });
 
@@ -541,6 +669,23 @@ test('growth connector wizard keeps AnalyticsCLI as the only product analytics s
   assert.doesNotMatch(wizard, /Amplitude analytics/);
   assert.doesNotMatch(wizard, /Mixpanel analytics/);
   assert.doesNotMatch(wizard, /Firebase \/ GA4 analytics/);
+});
+
+test('wizard connector menus stay compact', () => {
+  const wizard = readFileSync(join(skillRoot, 'scripts/openclaw-growth-wizard.mjs'), 'utf8');
+
+  assert.match(wizard, /if \(!configured\)\s+return ''/);
+  assert.match(wizard, /if \(!label\)\s+return ''/);
+  assert.doesNotMatch(wizard, /Status: not configured/);
+  assert.doesNotMatch(wizard, /writeWrapped\(connector\.summary/);
+  assert.doesNotMatch(wizard, /formatConnectorHealthText\(connector\.key/);
+  assert.doesNotMatch(wizard, /const statusText = formatConnectorHealthText\(connector\.key/);
+  assert.doesNotMatch(
+    wizard,
+    /process\.stdout\.write\(`\$\{pointer\} \$\{box\} \$\{title\}\\n`\);\s*process\.stdout\.write\('\\n'\);/,
+  );
+  assert.doesNotMatch(wizard, /entry\.description \? ` - \$\{entry\.description\}`/);
+  assert.doesNotMatch(wizard, /\$\{entry\.label\}\$\{description\}/);
 });
 
 test('config example enables OpenClaw and Hermes cron with runner proof logs', () => {

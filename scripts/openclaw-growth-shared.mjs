@@ -111,7 +111,7 @@ export function getDefaultSourceHint(service) {
         return '- Revenue provider summary with monetization deltas, package/offering signals, and churn notes.\n- Command mode should output JSON in the shared signals[] shape.';
     }
     if (kind === 'seo') {
-        return '- SEO/acquisition summary from Google Search Console, DataForSEO, or CSV exports.\n- Prefer GSC and cached CSVs; only use paid APIs with an explicit request cap.';
+        return '- SEO/acquisition summary from Google Search Console, Bing Webmaster, DataForSEO, or CSV exports.\n- Prefer GSC, Bing Webmaster diagnostics, and cached CSVs; only use paid APIs with an explicit request cap.';
     }
     if (kind === 'crash') {
         return '- Crash/error provider summary with top regressions, affected users, and issue evidence.\n- `issues[]` or shared `signals[]` payloads are both accepted.';

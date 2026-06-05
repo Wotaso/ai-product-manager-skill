@@ -1441,6 +1441,7 @@ export function buildSeoSummary(input) {
     const rows = Array.isArray(input?.rows) ? input.rows.map(normalizeSeoRow) : [];
     const keywordRows = Array.isArray(input?.keywordRows) ? input.keywordRows.map(normalizeSeoRow) : [];
     const warnings = Array.isArray(input?.warnings) ? input.warnings.filter(Boolean).map(String) : [];
+    const bingWebmaster = input?.bingWebmaster && typeof input.bingWebmaster === 'object' ? input.bingWebmaster : null;
     const maxSignals = Math.max(1, Number(input?.maxSignals) || 8);
     const signals = [];
     const gscRows = rows.filter((row) => row.impressions > 0);
@@ -1513,6 +1514,49 @@ export function buildSeoSummary(input) {
             confidence: keywordOpportunities.some((row) => row.source.includes('dataforseo')) ? 'high' : 'medium',
         });
     }
+    const bingSites = Array.isArray(bingWebmaster?.sites) ? bingWebmaster.sites : [];
+    if (bingSites.length > 0) {
+        const pendingFeeds = [];
+        const failedFeeds = [];
+        const quotaEvidence = [];
+        for (const site of bingSites) {
+            const siteUrl = String(site?.siteUrl || '').trim() || 'unknown site';
+            const quota = site?.quota || {};
+            const dailyQuota = coerceNumber(quota.DailyQuota ?? quota.dailyQuota);
+            const monthlyQuota = coerceNumber(quota.MonthlyQuota ?? quota.monthlyQuota);
+            if (dailyQuota !== null || monthlyQuota !== null) {
+                quotaEvidence.push(`${siteUrl}: Bing URL submission quota daily=${dailyQuota ?? 'n/a'}, monthly=${monthlyQuota ?? 'n/a'}`);
+            }
+            for (const feed of Array.isArray(site?.feeds) ? site.feeds : []) {
+                const status = String(feed?.status || '').trim().toLowerCase();
+                const line = `${siteUrl} feed ${feed?.url || 'unknown'}: status=${feed?.status || 'unknown'}, type=${feed?.type || 'n/a'}, urlCount=${feed?.urlCount ?? 'n/a'}`;
+                if (status === 'pending')
+                    pendingFeeds.push(line);
+                if (status && !['success', 'pending'].includes(status))
+                    failedFeeds.push(line);
+            }
+        }
+        const feedEvidence = [...failedFeeds, ...pendingFeeds].slice(0, 8);
+        if (feedEvidence.length > 0 || quotaEvidence.length > 0) {
+            maybePushSignal(signals, {
+                id: 'seo_bing_webmaster_status',
+                title: failedFeeds.length > 0 ? 'Bing Webmaster reports sitemap/feed issues' : 'Bing Webmaster sitemap/feed status needs monitoring',
+                area: 'marketing',
+                priority: failedFeeds.length > 0 ? 'medium' : 'low',
+                metric: 'bing_webmaster_sites',
+                current_value: bingSites.length,
+                baseline_value: null,
+                delta_percent: null,
+                evidence: [...feedEvidence, ...quotaEvidence].slice(0, 8),
+                suggested_actions: [
+                    'Check Bing Webmaster URL Inspection for the affected P0 URLs after Bing processes the sitemap',
+                    'Keep Bing submissions limited to canonical changed URLs and monitor sitemap status before implementing IndexNow',
+                ],
+                keywords: ['seo', 'bing', 'bing-webmaster', 'sitemap', 'indexing'],
+                confidence: 'medium',
+            });
+        }
+    }
     if (gscRows.length === 0 && keywordRows.length === 0) {
         maybePushSignal(signals, {
             id: 'seo_no_search_data',
@@ -1526,9 +1570,10 @@ export function buildSeoSummary(input) {
             evidence: warnings.length > 0 ? warnings.slice(0, 5) : ['No GSC rows, keyword CSV rows, or DataForSEO rows were available.'],
             suggested_actions: [
                 'Connect Google Search Console or provide a recent GSC/keyword CSV export',
+                'Use Bing Webmaster API as a supplemental indexing/discovery check, not as query-performance replacement',
                 'Use DataForSEO only after narrowing seed topics and setting a paid request cap',
             ],
-            keywords: ['seo', 'gsc', 'dataforseo', 'setup'],
+            keywords: ['seo', 'gsc', 'bing', 'dataforseo', 'setup'],
             confidence: 'medium',
         });
     }
@@ -1562,6 +1607,7 @@ export function buildSeoSummary(input) {
             gscRows: gscRows.length,
             keywordRows: keywordRows.length,
             paidProvider: input?.paidProvider || null,
+            bingWebmaster,
             warnings,
         },
     };

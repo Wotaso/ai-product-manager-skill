@@ -13,6 +13,59 @@
 # Idempotent. Safe to re-run after skill updates.
 set -euo pipefail
 
+run_after=""
+declare -a wizard_args=()
+declare -a start_args=()
+wizard_has_mode=0
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --wizard|wizard)
+      run_after="wizard"
+      shift
+      ;;
+    --connectors|--connector-setup|--recover-connectors|--restore-connectors|--connector-recovery)
+      run_after="wizard"
+      wizard_has_mode=1
+      wizard_args+=("$1")
+      shift
+      if [[ $# -gt 0 && "$1" != --* ]]; then
+        wizard_args+=("$1")
+        shift
+      fi
+      ;;
+    --start|start)
+      run_after="start"
+      shift
+      ;;
+    --config)
+      if [[ $# -lt 2 ]]; then
+        echo "bootstrap-openclaw-workspace.sh: --config requires a path" >&2
+        exit 1
+      fi
+      OPENCLAW_GROWTH_CONFIG_PATH="$2"
+      export OPENCLAW_GROWTH_CONFIG_PATH
+      wizard_args+=("--config" "$2")
+      start_args+=("--config" "$2")
+      shift 2
+      ;;
+    --no-run|--no-wizard)
+      run_after=""
+      shift
+      ;;
+    --)
+      shift
+      while [[ $# -gt 0 ]]; do
+        wizard_args+=("$1")
+        shift
+      done
+      ;;
+    *)
+      wizard_args+=("$1")
+      shift
+      ;;
+  esac
+done
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SKILL_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
@@ -36,6 +89,17 @@ if [[ ( "${skill_slug}" == "growth-engineer" || "${skill_slug}" == "openclaw-gro
     (cd "${WORKSPACE}" && clawhub --no-input --dir skills update "${skill_slug}" --force) || true
   elif command -v npx >/dev/null 2>&1; then
     (cd "${WORKSPACE}" && npx -y clawhub --no-input --dir skills update "${skill_slug}" --force) || true
+  fi
+fi
+
+if [[ "${OPENCLAW_GROWTH_SKIP_ANALYTICSCLI_UPDATE:-}" != "1" ]]; then
+  if ! command -v analyticscli >/dev/null 2>&1 || ! analyticscli feedback summary --help >/dev/null 2>&1; then
+    if [[ -x "${SCRIPT_DIR}/install-analyticscli-cli.sh" ]]; then
+      echo "Ensuring AnalyticsCLI CLI supports feedback summaries..." >&2
+      bash "${SCRIPT_DIR}/install-analyticscli-cli.sh" || {
+        echo "AnalyticsCLI CLI update failed; continuing bootstrap, but feedback summary source may stay unavailable." >&2
+      }
+    fi
   fi
 fi
 
@@ -70,7 +134,7 @@ tasks:
 
 - name: openclaw-growth-engineer-run
   interval: 6h
-  prompt: "Run `node scripts/openclaw-growth-runner.mjs --config __OPENCLAW_GROWTH_CONFIG_PATH__ --state __OPENCLAW_GROWTH_STATE_PATH__` from the workspace if the config and runtime files exist. The runner owns schedule.cadences, connectorHealthCheckIntervalMinutes, skipIfNoDataChange, and skipIfIssueSetUnchanged. If it reports connector-health alerts, production crashes, generated issues, or actionable growth findings, summarize only the action and evidence. If setup files are missing, tell the user to run `node scripts/openclaw-growth-wizard.mjs --connectors --config __OPENCLAW_GROWTH_CONFIG_PATH__`. If there is no actionable output, reply HEARTBEAT_OK."
+  prompt: "Run `node scripts/openclaw-growth-runner.mjs --config __OPENCLAW_GROWTH_CONFIG_PATH__ --state __OPENCLAW_GROWTH_STATE_PATH__` from the workspace if the config and runtime files exist. The runner owns schedule.cadences, connectorHealthCheckIntervalMinutes, skipIfNoDataChange, and skipIfIssueSetUnchanged. If it reports connector-health alerts, production crashes, generated issues, or actionable growth findings, summarize only the action and evidence. If setup files are missing, tell the user to run `npx -y Wotaso/growth-engineer-cli#main wizard --connectors --config __OPENCLAW_GROWTH_CONFIG_PATH__`. If there is no actionable output, reply HEARTBEAT_OK."
 
 # Keep this section small. Do not put secrets in HEARTBEAT.md.
 <!-- openclaw-growth-engineer:end -->
@@ -113,7 +177,25 @@ echo "Copied ${skill_slug} runtime into workspace:"
 echo "  ${WORKSPACE}/scripts"
 echo "  ${WORKSPACE}/data/openclaw-growth-engineer"
 echo "  ${WORKSPACE}/HEARTBEAT.md"
-echo "Next:"
-echo "  cd ${WORKSPACE} && node scripts/openclaw-growth-wizard.mjs --connectors --config ${heartbeat_config_path}"
-echo "Then:"
-echo "  cd ${WORKSPACE} && node scripts/openclaw-growth-start.mjs --config ${heartbeat_config_path}"
+
+if [[ "${run_after}" == "wizard" ]]; then
+  if [[ "${wizard_has_mode}" == "0" ]]; then
+    wizard_args=("--connectors" "${wizard_args[@]}")
+  fi
+  if [[ " ${wizard_args[*]} " != *" --config "* ]]; then
+    wizard_args+=("--config" "${heartbeat_config_path}")
+  fi
+  echo "Starting Growth Engineer wizard..."
+  cd "${WORKSPACE}"
+  exec node scripts/openclaw-growth-wizard.mjs "${wizard_args[@]}"
+elif [[ "${run_after}" == "start" ]]; then
+  if [[ " ${start_args[*]} " != *" --config "* ]]; then
+    start_args+=("--config" "${heartbeat_config_path}")
+  fi
+  echo "Starting Growth Engineer..."
+  cd "${WORKSPACE}"
+  exec node scripts/openclaw-growth-start.mjs "${start_args[@]}"
+else
+  echo "Next:"
+  echo "  cd ${WORKSPACE} && npx -y Wotaso/growth-engineer-cli#main wizard --connectors --config ${heartbeat_config_path}"
+fi

@@ -34,6 +34,9 @@ Options:
   --dataforseo              Fetch live DataForSEO keyword data
   --confirm-paid            Required for live DataForSEO calls
   --max-paid-requests <n>   DataForSEO request cap (default: 1)
+  --bing                    Fetch Bing Webmaster quota/feed status
+  --bing-site <url>         Bing verified site URL (repeatable; default: BING_WEBMASTER_SITE_URL or --site when URL-shaped)
+  --bing-feed <url>         Expected Bing sitemap/feed URL (repeatable)
   --location-code <n>       DataForSEO location code (default: 2840)
   --language-code <code>    DataForSEO language code (default: en)
   --out <file>              Write JSON to file instead of stdout
@@ -44,6 +47,8 @@ Environment:
   GSC_SITE_URL
   GOOGLE_SEARCH_CONSOLE_ACCESS_TOKEN or GSC_ACCESS_TOKEN
   GOOGLE_APPLICATION_CREDENTIALS or GSC_SERVICE_ACCOUNT_JSON
+  BING_WEBMASTER_API_KEY
+  BING_WEBMASTER_SITE_URL
   DATAFORSEO_LOGIN and DATAFORSEO_PASSWORD
 `);
   process.exit(exitCode);
@@ -84,6 +89,9 @@ function parseArgs(argv) {
     dataforseo: false,
     confirmPaid: false,
     maxPaidRequests: 1,
+    bing: false,
+    bingSites: [],
+    bingFeeds: [],
     locationCode: 2840,
     languageCode: 'en',
     out: '',
@@ -141,6 +149,16 @@ function parseArgs(argv) {
     } else if (token === '--max-paid-requests') {
       args.maxPaidRequests = positiveInt(next, '--max-paid-requests');
       index += 1;
+    } else if (token === '--bing') {
+      args.bing = true;
+    } else if (token === '--bing-site') {
+      args.bing = true;
+      args.bingSites.push(String(next || '').trim());
+      index += 1;
+    } else if (token === '--bing-feed') {
+      args.bing = true;
+      args.bingFeeds.push(String(next || '').trim());
+      index += 1;
     } else if (token === '--location-code') {
       args.locationCode = positiveInt(next, '--location-code');
       index += 1;
@@ -163,7 +181,20 @@ function parseArgs(argv) {
   if (!args.from) {
     args.from = formatDate(addDays(new Date(`${args.to}T00:00:00Z`), -parseDurationDays(args.last, 90)));
   }
+  if (!args.bing && process.env.BING_WEBMASTER_API_KEY && (process.env.BING_WEBMASTER_SITE_URL || isUrlLike(args.site))) {
+    args.bing = true;
+  }
   return args;
+}
+
+function isUrlLike(value) {
+  return /^https?:\/\//i.test(String(value || '').trim());
+}
+
+function normalizeSiteUrl(value) {
+  const trimmed = String(value || '').trim();
+  if (!trimmed) return '';
+  return trimmed.endsWith('/') ? trimmed : `${trimmed}/`;
 }
 
 function positiveInt(value, label) {
@@ -445,6 +476,87 @@ async function fetchDataForSeoRows(args, warnings) {
   return normalizeDataForSeoItems(payload, 'dataforseo-ideas');
 }
 
+async function bingWebmasterGetJson(path, apiKey, queryParams = {}) {
+  const query = new URLSearchParams({ ...queryParams, apikey: apiKey });
+  const response = await fetch(`https://ssl.bing.com/webmaster/api.svc/json/${path}?${query.toString()}`, {
+    method: 'GET',
+    headers: { accept: 'application/json' },
+  });
+  const body = await response.json().catch(() => null);
+  if (!response.ok) {
+    throw new Error(`Bing Webmaster API ${path} failed (${response.status}): ${JSON.stringify(body)}`);
+  }
+  return body;
+}
+
+function normalizeBingFeed(feed) {
+  return {
+    url: String(feed?.Url || feed?.url || '').trim(),
+    status: String(feed?.Status || feed?.status || '').trim(),
+    type: String(feed?.Type || feed?.type || '').trim(),
+    urlCount: parseNumber(feed?.UrlCount ?? feed?.urlCount),
+    fileSize: parseNumber(feed?.FileSize ?? feed?.fileSize),
+    compressed: Boolean(feed?.Compressed ?? feed?.compressed),
+    submitted: feed?.Submitted || feed?.submitted || null,
+    lastCrawled: feed?.LastCrawled || feed?.lastCrawled || null,
+  };
+}
+
+async function fetchBingWebmasterSummary(args, warnings) {
+  if (!args.bing) return null;
+  const apiKey = String(process.env.BING_WEBMASTER_API_KEY || '').trim();
+  if (!apiKey) {
+    warnings.push('Bing Webmaster API key missing; skipped Bing Webmaster quota/feed status.');
+    return null;
+  }
+
+  const configuredSites = [
+    ...args.bingSites,
+    process.env.BING_WEBMASTER_SITE_URL,
+    isUrlLike(args.site) ? args.site : '',
+  ]
+    .map(normalizeSiteUrl)
+    .filter(Boolean);
+  const sites = [...new Set(configuredSites)];
+  if (sites.length === 0) {
+    warnings.push('Bing Webmaster enabled but no --bing-site, BING_WEBMASTER_SITE_URL, or URL-shaped --site was provided.');
+    return null;
+  }
+
+  const expectedFeeds = args.bingFeeds.filter(Boolean);
+  const siteSummaries = [];
+  for (const siteUrl of sites) {
+    const siteSummary = {
+      siteUrl,
+      quota: null,
+      feeds: [],
+      expectedFeeds,
+      errors: [],
+    };
+    try {
+      const quotaPayload = await bingWebmasterGetJson('GetUrlSubmissionQuota', apiKey, { siteUrl });
+      siteSummary.quota = quotaPayload?.d || quotaPayload || null;
+    } catch (error) {
+      siteSummary.errors.push(`quota: ${error instanceof Error ? error.message : String(error)}`);
+    }
+    try {
+      const feedsPayload = await bingWebmasterGetJson('GetFeeds', apiKey, { siteUrl });
+      siteSummary.feeds = (Array.isArray(feedsPayload?.d) ? feedsPayload.d : []).map(normalizeBingFeed);
+    } catch (error) {
+      siteSummary.errors.push(`feeds: ${error instanceof Error ? error.message : String(error)}`);
+    }
+    if (siteSummary.errors.length > 0) {
+      warnings.push(`Bing Webmaster read failed for ${siteUrl}: ${siteSummary.errors.join('; ')}`);
+    }
+    siteSummaries.push(siteSummary);
+  }
+
+  return {
+    source: 'bing-webmaster-api',
+    sites: siteSummaries,
+  };
+}
+
 async function main() {
   await loadOpenClawGrowthSecrets();
   const args = parseArgs(process.argv.slice(2));
@@ -476,6 +588,7 @@ async function main() {
   } catch (error) {
     warnings.push(error instanceof Error ? error.message : String(error));
   }
+  const bingWebmaster = await fetchBingWebmasterSummary(args, warnings);
 
   const summary = buildSeoSummary({
     siteUrl: args.site || 'all_verified_gsc_sites',
@@ -483,6 +596,7 @@ async function main() {
     rows,
     keywordRows,
     paidProvider: args.dataforseo && args.confirmPaid ? 'dataforseo' : null,
+    bingWebmaster,
     warnings,
     maxSignals: args.maxSignals,
   });

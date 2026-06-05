@@ -25,12 +25,13 @@ import { loadOpenClawGrowthSecrets } from './openclaw-growth-env.mjs';
 
 const DEFAULT_CONFIG_PATH = 'data/openclaw-growth-engineer/config.json';
 const SELF_UPDATE_INTERVAL_MS = 24 * 60 * 60 * 1000;
+const SELF_UPDATE_SKILL_SLUG_CANDIDATES = ['growth-engineer', 'openclaw-growth-engineer'];
 const ENABLE_ISOLATED_SECRET_RUNNER_WIZARD = false;
 const DEFAULT_GROWTH_INTERVAL_MINUTES = 90;
 const DEFAULT_CONNECTOR_HEALTH_INTERVAL_MINUTES = 360;
 const DEFAULT_SCHEDULER_PROOF_PATH = 'data/openclaw-growth-engineer/runtime/scheduler-proof.jsonl';
 const GROWTH_ENGINEER_PACKAGE_SPEC =
-  process.env.OPENCLAW_GROWTH_ENGINEER_PACKAGE || '@analyticscli/growth-engineer@preview';
+  process.env.OPENCLAW_GROWTH_ENGINEER_PACKAGE || 'Wotaso/growth-engineer-cli#main';
 const RUNTIME_DIR = path.dirname(fileURLToPath(import.meta.url));
 const ACCOUNT_SIGNAL_CONNECTOR_KEYS = [
   'stripe',
@@ -136,9 +137,9 @@ const CONNECTOR_DEFINITIONS: ConnectorDefinition[] = [
   },
   {
     key: 'seo',
-    label: 'SEO / GSC / DataForSEO',
-    summary: 'Read organic search demand, GSC clicks/impressions/CTR/position, and optional capped DataForSEO keyword ideas.',
-    needs: 'A GSC property plus an access token/service-account credential. DataForSEO credentials are optional and paid.',
+    label: 'SEO / GSC / Bing / DataForSEO',
+    summary: 'Read organic search demand, GSC clicks/impressions/CTR/position, Bing Webmaster sitemap/indexing status, and optional capped DataForSEO keyword ideas.',
+    needs: 'A GSC property plus an access token/service-account credential. Bing Webmaster API and DataForSEO credentials are optional.',
   },
   {
     key: 'sentry',
@@ -910,9 +911,9 @@ function printHelpAndExit(exitCode, reason = null) {
 OpenClaw Growth Setup Wizard
 
 Usage:
-  npx -y @analyticscli/growth-engineer@preview wizard [--out <config-path>]
-  npx -y @analyticscli/growth-engineer@preview wizard --connectors [${CONNECTOR_KEYS.join(',')}]
-  npx -y @analyticscli/growth-engineer@preview wizard --recover-connectors [${CONNECTOR_KEYS.join(',')}]
+  npx -y Wotaso/growth-engineer-cli#main wizard [--out <config-path>]
+  npx -y Wotaso/growth-engineer-cli#main wizard --connectors [${CONNECTOR_KEYS.join(',')}]
+  npx -y Wotaso/growth-engineer-cli#main wizard --recover-connectors [${CONNECTOR_KEYS.join(',')}]
 
 Compatibility note:
   --connectors is the full setup path. --recover-connectors first retests existing config/secrets and only asks for credentials when the connector still fails.
@@ -935,6 +936,7 @@ function resolveRuntimeScriptPath(scriptName) {
   const candidates = [
     path.join(RUNTIME_DIR, scriptName),
     path.resolve('scripts', scriptName),
+    path.resolve('skills/growth-engineer/scripts', scriptName),
     path.resolve('skills/openclaw-growth-engineer/scripts', scriptName),
   ];
   return candidates.find((candidate) => existsSync(candidate)) || path.join(RUNTIME_DIR, scriptName);
@@ -959,7 +961,7 @@ function getWizardDefaultSourceCommand(sourceName) {
   if (normalized === 'paddle') {
     return nodeRuntimeScriptCommand('export-paddle-summary.mjs');
   }
-  if (['seo', 'gsc', 'google-search-console', 'search-console', 'dataforseo'].includes(normalized)) {
+  if (['seo', 'gsc', 'google-search-console', 'search-console', 'dataforseo', 'bing', 'bing-webmaster', 'bing-webmaster-tools'].includes(normalized)) {
     return nodeRuntimeScriptCommand('export-seo-summary.mjs');
   }
   if (normalized === 'sentry' || normalized === 'glitchtip') {
@@ -1064,7 +1066,7 @@ function normalizeConnectorKey(value): ConnectorKey | 'all' | null {
   if (['github', 'gh', 'github-code', 'codebase', 'code-access'].includes(normalized)) return 'github';
   if (['revenuecat', 'revenue-cat', 'rc', 'revenuecat-mcp'].includes(normalized)) return 'revenuecat';
   if (['paddle', 'paddle-billing', 'billing-metrics', 'web-revenue'].includes(normalized)) return 'paddle';
-  if (['seo', 'gsc', 'google-search-console', 'search-console', 'dataforseo', 'organic-search'].includes(normalized)) return 'seo';
+  if (['seo', 'gsc', 'google-search-console', 'search-console', 'dataforseo', 'bing', 'bing-webmaster', 'bing-webmaster-tools', 'organic-search'].includes(normalized)) return 'seo';
   if (['sentry', 'sentry-api', 'sentry-mcp', 'crashes', 'errors', 'crash-reporting'].includes(normalized)) return 'sentry';
   if (['coolify', 'coolify-api', 'deployment', 'deployments', 'hosting', 'infra', 'infrastructure'].includes(normalized)) return 'coolify';
   if (['asc', 'asc-cli', 'app-store-connect', 'appstoreconnect', 'app-store'].includes(normalized)) return 'asc';
@@ -1119,7 +1121,8 @@ function isConnectorLocallyConfigured(key: ConnectorKey) {
       process.env.GOOGLE_SEARCH_CONSOLE_ACCESS_TOKEN?.trim() ||
         process.env.GSC_ACCESS_TOKEN?.trim() ||
         process.env.GOOGLE_APPLICATION_CREDENTIALS?.trim() ||
-        process.env.GSC_SERVICE_ACCOUNT_JSON?.trim(),
+        process.env.GSC_SERVICE_ACCOUNT_JSON?.trim() ||
+        process.env.BING_WEBMASTER_API_KEY?.trim(),
     );
   }
   if (key === 'sentry') return Boolean(process.env.SENTRY_AUTH_TOKEN?.trim());
@@ -1184,8 +1187,6 @@ async function askConnectorSelectionByText(
     for (const connector of group.connectors) {
       const number = CONNECTOR_DEFINITIONS.findIndex((entry) => entry.key === connector.key) + 1;
       process.stdout.write(`  ${number}) ${connector.label}\n`);
-      writeWrapped(formatConnectorHealthText(connector.key, healthByConnector), '     ', ANSI.dim);
-      writeWrapped(connector.summary, '     ');
     }
     process.stdout.write('\n');
   }
@@ -1574,7 +1575,7 @@ function normalizeConnectorProgressKey(key): ConnectorKey | null {
   if (normalized === 'github') return 'github';
   if (normalized === 'revenuecat') return 'revenuecat';
   if (normalized === 'paddle') return 'paddle';
-  if (normalized === 'seo' || normalized === 'gsc' || normalized === 'google-search-console') return 'seo';
+  if (normalized === 'seo' || normalized === 'gsc' || normalized === 'google-search-console' || normalized === 'bing' || normalized === 'bing-webmaster') return 'seo';
   if (normalized === 'sentry') return 'sentry';
   if (normalized === 'coolify') return 'coolify';
   if (normalized === 'asc' || normalized === 'appstoreconnect' || normalized === 'app-store-connect') return 'asc';
@@ -1666,13 +1667,14 @@ function connectorStatusLabel(key: ConnectorKey, healthByConnector: Record<strin
   const health = getConnectorHealth(key, healthByConnector);
   const configured = isConnectorLocallyConfigured(key);
   if (health.status === 'connected') return configured ? 'configured, healthy' : 'healthy via local tool auth';
-  if (!configured) return 'not configured';
+  if (!configured) return '';
   return `configured, ${connectorHealthLabel(health.status)}`;
 }
 
 function formatConnectorHealthText(key: ConnectorKey, healthByConnector: Record<string, any> = {}) {
   const health = getConnectorHealth(key, healthByConnector);
   const label = connectorStatusLabel(key, healthByConnector);
+  if (!label) return '';
   const detail = health.detail ? ` - ${health.detail}` : '';
   return `Status: ${label}${detail}`;
 }
@@ -1842,11 +1844,9 @@ function renderConnectorPicker(
       const label = `${connector.label}${suffix}`;
       const title = active ? `${ANSI.bold}${label}${ANSI.reset}` : label;
       process.stdout.write(`${pointer} ${box} ${title}\n`);
-      writeWrapped(connector.summary, '    ');
-      writeWrapped(formatConnectorHealthText(connector.key, healthByConnector), '    ', ANSI.dim);
-      process.stdout.write('\n');
       index += 1;
     }
+    process.stdout.write('\n');
   }
 
   if (warning) {
@@ -2335,8 +2335,7 @@ async function askListSelection(rl, label, entries, options: Record<string, any>
   const includeManual = Boolean(options.includeManual);
   const includeDefer = Boolean(options.includeDefer);
   entries.forEach((entry, index) => {
-    const description = entry.description ? ` - ${entry.description}` : '';
-    process.stdout.write(`  ${index + 1}) ${entry.label}${description}\n`);
+    process.stdout.write(`  ${index + 1}) ${entry.label}\n`);
   });
   const manualIndex = includeManual ? entries.length + 1 : null;
   const deferIndex = includeDefer ? entries.length + (includeManual ? 2 : 1) : null;
@@ -2393,7 +2392,7 @@ function connectorFromCheckName(name) {
   if (value.includes('github') || value.includes('GITHUB')) return 'github';
   if (value.includes('revenuecat') || value.includes('REVENUECAT')) return 'revenuecat';
   if (value.includes('paddle') || value.includes('PADDLE')) return 'paddle';
-  if (value.includes('seo') || value.includes('GSC') || value.includes('GOOGLE_SEARCH_CONSOLE')) return 'seo';
+  if (value.includes('seo') || value.includes('GSC') || value.includes('GOOGLE_SEARCH_CONSOLE') || value.includes('BING_WEBMASTER')) return 'seo';
   if (value.includes('sentry') || value.includes('SENTRY') || value.includes('GLITCHTIP')) return 'sentry';
   if (value.includes('coolify') || value.includes('COOLIFY')) return 'coolify';
   for (const key of ACCOUNT_SIGNAL_CONNECTOR_KEYS) {
@@ -2542,7 +2541,7 @@ function buildSetupTestProgressPlan(selected: ConnectorKey[]) {
     items.push({ key: 'paddle', label: 'Paddle', detail: 'waiting for metrics API auth + revenue read', status: 'pending' });
   }
   if (selectedSet.has('seo')) {
-    items.push({ key: 'seo', label: 'SEO / GSC', detail: 'waiting for Search Console auth or CSV/DataForSEO config', status: 'pending' });
+    items.push({ key: 'seo', label: 'SEO / GSC / Bing', detail: 'waiting for Search Console, Bing Webmaster, CSV, or DataForSEO config', status: 'pending' });
   }
   if (selectedSet.has('coolify')) {
     items.push({ key: 'coolify', label: 'Coolify', detail: 'waiting for API key auth + deployment/resource read', status: 'pending' });
@@ -3701,16 +3700,18 @@ async function guidePaddleConnector(rl, secrets: Record<string, string>) {
 }
 
 async function guideSeoConnector(rl, secrets: Record<string, string>) {
-  printSection('SEO / Google Search Console / DataForSEO', [
-    'Use this when OpenClaw should read organic search demand, GSC clicks/impressions/CTR/position, and optional paid keyword ideas.',
+  printSection('SEO / Google Search Console / Bing Webmaster / DataForSEO', [
+    'Use this when OpenClaw should read organic search demand, GSC clicks/impressions/CTR/position, Bing sitemap/indexing status, and optional paid keyword ideas.',
   ]);
-  process.stdout.write('\nGoogle Search Console:\n  https://search.google.com/search-console\nGoogle Cloud service accounts:\n  https://console.cloud.google.com/iam-admin/serviceaccounts\nDataForSEO API dashboard:\n  https://app.dataforseo.com/api-dashboard\n\n');
+  process.stdout.write('\nGoogle Search Console:\n  https://search.google.com/search-console\nGoogle Cloud service accounts:\n  https://console.cloud.google.com/iam-admin/serviceaccounts\nBing Webmaster Tools API:\n  https://www.bing.com/webmasters/\nDataForSEO API dashboard:\n  https://app.dataforseo.com/api-dashboard\n\n');
   printBullets([
     'Preferred: give the token/service account access to all Search Console properties you want analyzed.',
     'Leave the property URL empty to let the exporter list and query all verified GSC properties in the account.',
     'Enter a property URL only when you intentionally want to restrict analysis to one site.',
     'For OAuth token mode, paste a read-only Search Console token with `webmasters.readonly` scope.',
     'For service-account mode, add the service account email as a restricted/full user in Search Console, then set GOOGLE_APPLICATION_CREDENTIALS or GSC_SERVICE_ACCOUNT_JSON outside this wizard.',
+    'Bing Webmaster API is optional and supplements GSC with sitemap/feed status and URL-submission quota. It does not replace GSC query performance.',
+    'Generate the Bing API key in Bing Webmaster Tools -> Settings -> API Access. Paste it only in this local terminal.',
     'DataForSEO is optional and paid. The exporter refuses paid calls unless the source command includes --confirm-paid and a small --max-paid-requests cap.',
     'CSV-only mode is also supported with --gsc-csv or --csv in sources.seo.command.',
   ]);
@@ -3722,6 +3723,13 @@ async function guideSeoConnector(rl, secrets: Record<string, string>) {
     'GOOGLE_SEARCH_CONSOLE_ACCESS_TOKEN',
   );
   if (gscToken) secrets.GOOGLE_SEARCH_CONSOLE_ACCESS_TOKEN = gscToken;
+  const useBingWebmaster = await askYesNo(rl, 'Also store Bing Webmaster API access for sitemap/indexing status?', false);
+  if (useBingWebmaster) {
+    const bingSiteUrl = await ask(rl, 'Optional Bing verified site URL', process.env.BING_WEBMASTER_SITE_URL || siteUrl.trim() || '');
+    if (bingSiteUrl.trim()) secrets.BING_WEBMASTER_SITE_URL = bingSiteUrl.trim();
+    const bingApiKey = await maybePromptSecret(rl, 'Paste BING_WEBMASTER_API_KEY into this local terminal', 'BING_WEBMASTER_API_KEY');
+    if (bingApiKey) secrets.BING_WEBMASTER_API_KEY = bingApiKey;
+  }
   const useDataForSeo = await askYesNo(rl, 'Also store DataForSEO credentials for optional paid keyword research?', false);
   if (useDataForSeo) {
     const login = await maybePromptSecret(rl, 'Paste DATAFORSEO_LOGIN into this local terminal', 'DATAFORSEO_LOGIN');
@@ -4053,6 +4061,25 @@ async function filesHaveSameContent(leftPath, rightPath) {
   }
 }
 
+function getSelfUpdateSkillCandidates(workspaceRoot) {
+  const explicit = String(process.env.OPENCLAW_GROWTH_SKILL_SLUG || '').trim();
+  const uniqueSlugs = [...new Set([explicit, ...SELF_UPDATE_SKILL_SLUG_CANDIDATES].filter(Boolean))];
+  return uniqueSlugs.map((slug) => {
+    const skillRoot = path.join(workspaceRoot, 'skills', slug);
+    return {
+      slug,
+      skillRoot,
+      originPath: path.join(skillRoot, '.clawhub/origin.json'),
+      wizardPath: path.join(skillRoot, 'scripts/openclaw-growth-wizard.mjs'),
+      bootstrapPath: path.join(skillRoot, 'scripts/bootstrap-openclaw-workspace.sh'),
+    };
+  });
+}
+
+function resolveInstalledSelfUpdateSkill(workspaceRoot) {
+  return getSelfUpdateSkillCandidates(workspaceRoot).find((candidate) => existsSync(candidate.originPath)) || null;
+}
+
 async function maybeSelfUpdateFromClawHub(args) {
   if (args.noSelfUpdate) return false;
   if (isTruthyEnv(process.env.OPENCLAW_GROWTH_SKIP_SELF_UPDATE)) return false;
@@ -4060,30 +4087,31 @@ async function maybeSelfUpdateFromClawHub(args) {
   if (isFalseyEnv(process.env.OPENCLAW_GROWTH_SELF_UPDATE)) return false;
 
   const workspaceRoot = process.cwd();
-  const skillOriginPath = path.join(workspaceRoot, 'skills/openclaw-growth-engineer/.clawhub/origin.json');
-  if (!(await fileExists(skillOriginPath))) return false;
+  const installedSkill = resolveInstalledSelfUpdateSkill(workspaceRoot);
+  if (!installedSkill) return false;
   if (!(await commandExists('npx'))) return false;
 
-  const force = String(process.env.OPENCLAW_GROWTH_SELF_UPDATE || '').trim().toLowerCase() === 'always';
+  const force = args.connectorWizard || String(process.env.OPENCLAW_GROWTH_SELF_UPDATE || '').trim().toLowerCase() === 'always';
   if (!(await shouldRunSelfUpdate(workspaceRoot, force))) return false;
 
-  const beforeOrigin = await readJsonIfPresent(skillOriginPath).catch(() => null);
+  const beforeOrigin = await readJsonIfPresent(installedSkill.originPath).catch(() => null);
   const beforeVersion = String(beforeOrigin?.installedVersion || '');
-  process.stdout.write('Checking for OpenClaw Growth Engineer skill updates...\n');
+  process.stdout.write(`Checking for Growth Engineer skill updates (${installedSkill.slug})...\n`);
 
   const updateResult = await runCommandCaptureWithTimeout(
-    'npx -y clawhub --no-input --dir skills update openclaw-growth-engineer --force',
+    `npx -y clawhub --no-input --dir skills update ${quote(installedSkill.slug)} --force`,
     { timeoutMs: 120_000 },
   );
-  const afterOrigin = await readJsonIfPresent(skillOriginPath).catch(() => null);
+  const afterOrigin = await readJsonIfPresent(installedSkill.originPath).catch(() => null);
   const afterVersion = String(afterOrigin?.installedVersion || beforeVersion || '');
   const workspaceWizardPath = path.resolve(process.argv[1] || 'scripts/openclaw-growth-wizard.mjs');
-  const skillWizardPath = path.join(workspaceRoot, 'skills/openclaw-growth-engineer/scripts/openclaw-growth-wizard.mjs');
-  const runtimeOutdated = !(await filesHaveSameContent(workspaceWizardPath, skillWizardPath));
+  const runtimeOutdated = !(await filesHaveSameContent(workspaceWizardPath, installedSkill.wizardPath));
 
   await writeSelfUpdateState(workspaceRoot, {
     lastCheckedAt: new Date().toISOString(),
     ok: updateResult.ok,
+    skillSlug: installedSkill.slug,
+    skillRoot: installedSkill.skillRoot,
     previousVersion: beforeVersion || null,
     installedVersion: afterVersion || null,
   }).catch(() => {});
@@ -4103,7 +4131,7 @@ async function maybeSelfUpdateFromClawHub(args) {
     process.stdout.write('Refreshing workspace runtime from the installed OpenClaw Growth Engineer skill...\n');
   }
   const bootstrapResult = await runCommandCaptureWithTimeout(
-    'bash skills/openclaw-growth-engineer/scripts/bootstrap-openclaw-workspace.sh',
+    `bash ${quote(installedSkill.bootstrapPath)}`,
     { timeoutMs: 60_000 },
   );
   if (!bootstrapResult.ok) {
@@ -4349,7 +4377,7 @@ async function runConnectorSetupSteps({
 
 function buildGrowthEngineerWizardCommand(flag, args, selected: ConnectorKey[]) {
   const configArg = args.config && args.config !== DEFAULT_CONFIG_PATH ? ` --config ${quote(args.config)}` : '';
-  return `npx -y ${quote(GROWTH_ENGINEER_PACKAGE_SPEC)} wizard${configArg} ${flag} ${quote(selected.join(','))}`;
+  return `${nodeRuntimeScriptCommand('openclaw-growth-wizard.mjs')}${configArg} ${flag} ${quote(selected.join(','))}`;
 }
 
 async function runConnectorRecoverySteps({ rl, args, selected, healthByConnector }) {
@@ -4362,7 +4390,6 @@ async function runConnectorRecoverySteps({ rl, args, selected, healthByConnector
   process.stdout.write(`${ANSI.bold}Recovering connectors${ANSI.reset}\n`);
   for (const key of selected) {
     process.stdout.write(`  - ${connectorLabel(key)}\n`);
-    writeWrapped(formatConnectorHealthText(key, healthByConnector), '    ', ANSI.dim);
   }
   process.stdout.write('\n');
 
@@ -4701,6 +4728,11 @@ async function buildDefaultWizardConfig(configPath = null) {
         mode: 'command',
         command: getWizardDefaultSourceCommand('seo'),
         siteUrl: process.env.GSC_SITE_URL || '',
+        bingWebmaster: {
+          enabled: Boolean(process.env.BING_WEBMASTER_API_KEY),
+          siteUrl: process.env.BING_WEBMASTER_SITE_URL || '',
+          feeds: [],
+        },
         paidProvider: {
           dataforseo: {
             enabled: false,
@@ -4839,6 +4871,8 @@ async function buildDefaultWizardConfig(configPath = null) {
       paddleTokenRef: { source: 'env', provider: 'default', id: 'PADDLE_API_KEY' },
       gscTokenEnv: 'GOOGLE_SEARCH_CONSOLE_ACCESS_TOKEN',
       gscTokenRef: { source: 'env', provider: 'default', id: 'GOOGLE_SEARCH_CONSOLE_ACCESS_TOKEN' },
+      bingWebmasterApiKeyEnv: 'BING_WEBMASTER_API_KEY',
+      bingWebmasterApiKeyRef: { source: 'env', provider: 'default', id: 'BING_WEBMASTER_API_KEY' },
       dataforseoLoginEnv: 'DATAFORSEO_LOGIN',
       dataforseoLoginRef: { source: 'env', provider: 'default', id: 'DATAFORSEO_LOGIN' },
       dataforseoPasswordEnv: 'DATAFORSEO_PASSWORD',
@@ -4874,6 +4908,11 @@ function buildRecommendedSourceConfig(configPath = null) {
       mode: 'command',
       command: getWizardDefaultSourceCommand('seo'),
       siteUrl: process.env.GSC_SITE_URL || '',
+      bingWebmaster: {
+        enabled: Boolean(process.env.BING_WEBMASTER_API_KEY),
+        siteUrl: process.env.BING_WEBMASTER_SITE_URL || '',
+        feeds: [],
+      },
       paidProvider: {
         dataforseo: {
           enabled: false,
@@ -5494,7 +5533,7 @@ async function writeOpenClawJobManifest(configPath, config) {
       openClawCanEditOutputDelivery: true,
       openClawCanEditConnectors: true,
       openClawCanEditConnectorSecrets: false,
-      connectorChanges: 'OpenClaw may read and modify non-secret connector config such as enabled flags, source commands, project/app mappings, and source priorities. Use `npx -y @analyticscli/growth-engineer@preview wizard --connectors` for API keys or other connector secrets; never write secret values into config files, manifests, issues, PRs, or chat output.',
+      connectorChanges: 'OpenClaw may read and modify non-secret connector config such as enabled flags, source commands, project/app mappings, and source priorities. Use `npx -y Wotaso/growth-engineer-cli#main wizard --connectors` for API keys or other connector secrets; never write secret values into config files, manifests, issues, PRs, or chat output.',
       secretAccessMode: config?.security?.connectorSecrets?.mode || 'local-user-file',
       secretPolicy: config?.security?.connectorSecrets?.mode === 'isolated-runner'
         ? 'OpenClaw must use the allowlisted sudo wrapper commands and must not read the persisted secret file.'

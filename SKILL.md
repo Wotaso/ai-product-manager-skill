@@ -3,7 +3,7 @@ name: growth-engineer
 description: Growth Engineer for mobile apps and agent runtimes including OpenClaw and Hermes. Correlate analytics, crashes, billing, feedback, store signals, and repo context into proposal drafts that can flow into agent chat, GitHub issues, or draft pull requests.
 license: MIT
 homepage: https://github.com/Wotaso/growth-engineer-skill
-metadata: {"author":"wotaso","version":"1.0.135","analyticscli-target":"@analyticscli/cli","analyticscli-supported-range":">=0.1.2-preview.0 <0.2.0","openclaw":{"emoji":"🚀","homepage":"https://github.com/Wotaso/growth-engineer-skill","requires":{"bins":["node","analyticscli"]},"install":[{"id":"analyticscli-cli","kind":"node","package":"@analyticscli/cli@preview","bins":["analyticscli"],"label":"Install/update AnalyticsCLI CLI (npm package @analyticscli/cli@preview)"}]},"hermes":{"tags":["Growth","Analytics","Mobile","Product","OpenClaw","Hermes"],"homepage":"https://github.com/Wotaso/growth-engineer-skill","requires":{"bins":["node","analyticscli"]},"install":[{"id":"growth-engineer","kind":"skill","package":"Wotaso/growth-engineer-skill","label":"Install the shared Growth Engineer for Hermes"}]}}
+metadata: {"author":"wotaso","version":"1.0.144","analyticscli-target":"@analyticscli/cli","analyticscli-supported-range":">=0.1.2-preview.0 <0.2.0","openclaw":{"emoji":"🚀","homepage":"https://github.com/Wotaso/growth-engineer-skill","requires":{"bins":["node","analyticscli"]},"install":[{"id":"analyticscli-cli","kind":"node","package":"@analyticscli/cli@preview","bins":["analyticscli"],"label":"Install/update AnalyticsCLI CLI (npm package @analyticscli/cli@preview)"}]},"hermes":{"tags":["Growth","Analytics","Mobile","Product","OpenClaw","Hermes"],"homepage":"https://github.com/Wotaso/growth-engineer-skill","requires":{"bins":["node","analyticscli"]},"install":[{"id":"growth-engineer","kind":"skill","package":"Wotaso/growth-engineer-skill","label":"Install the shared Growth Engineer for Hermes"}]}}
 ---
 
 # Growth Engineer
@@ -38,10 +38,10 @@ Use this minimal reply shape:
 Use this command block for OpenClaw, Hermes, VPS, Linux, and macOS hosts:
 
 ```bash
-npx -y @analyticscli/growth-engineer@preview wizard --connectors
+npx -y Wotaso/growth-engineer-cli#main wizard --connectors
 ```
 
-If npm/npx is unavailable, install Node/npm on the host first. Do not instruct users to open the setup wizard through workspace-copied runtime scripts.
+Run this from the OpenClaw/Hermes workspace. Connector setup should route through the npm preview wizard so hosts get the latest wizard fixes without manual bootstrap commands.
 
 ## Post-Setup Reply Contract
 
@@ -53,7 +53,7 @@ After the VPS/host wizard finishes successfully, OpenClaw or Hermes should not a
 4. Provide exactly one next command for a manual verification run:
 
 ```bash
-npx -y @analyticscli/growth-engineer@preview run --config ~/data/openclaw-growth-engineer/config.json
+npx -y Wotaso/growth-engineer-cli#main run --config ~/data/openclaw-growth-engineer/config.json
 ```
 
 Do not ask for project/repo scoping after successful setup. Do not claim a connector is broken unless `growth-engineer status --config ...` or the wizard result says it is blocked/partial.
@@ -69,7 +69,7 @@ When Hermes is running from chat/Discord or any non-interactive agent terminal, 
 Use this exact command block in the reply after skill installation:
 
 ```bash
-npx -y @analyticscli/growth-engineer@preview wizard --connectors
+npx -y Wotaso/growth-engineer-cli#main wizard --connectors
 ```
 
 Then add exactly one short instruction sentence: "Run this in your VPS/host shell and paste secrets only there."
@@ -79,7 +79,7 @@ If AnalyticsCLI auth is missing or invalid, the next action is still the wizard 
 ## Use This Skill When
 
 - you want an agent to turn product signals into execution-ready backlog work
-- you need one workflow across AnalyticsCLI product analytics/feedback, RevenueCat or Paddle monetization, SEO/GSC/DataForSEO acquisition, Sentry-compatible crash monitoring including GlitchTip, ASC/App Store Connect, app reviews, and repo context
+- you need one workflow across AnalyticsCLI product analytics/feedback, RevenueCat or Paddle monetization, SEO/GSC/Bing Webmaster/DataForSEO acquisition, Sentry-compatible crash monitoring including GlitchTip, ASC/App Store Connect, app reviews, and repo context
 - you want the deterministic work to live in a standalone CLI and the host agent to stay the AI/chat layer
 - you want proposal delivery to be configurable between agent chat handoff, GitHub issues, and draft pull requests
 
@@ -199,7 +199,7 @@ AnalyticsCLI product feedback:
 Growth operating plan:
 
 - Goal: increase durable product value and business output by reducing churn, increasing MRR/LTV, improving acquisition quality, optimizing funnels/paywalls/onboarding/activation, and creating, changing, or deleting features only when the data supports it.
-- Data-first rule: gather all connected sources before recommendations whenever feasible: AnalyticsCLI events/funnels/retention, RevenueCat subscriptions/churn/revenue, Paddle billing metrics, SEO/GSC/DataForSEO acquisition signals, Sentry crashes/performance, App Store Connect store/reviews/builds, GitHub code/release context, feedback, and any configured social/marketing sources.
+- Data-first rule: gather all connected sources before recommendations whenever feasible: AnalyticsCLI events/funnels/retention, RevenueCat subscriptions/churn/revenue, Paddle billing metrics, SEO/GSC/Bing Webmaster/DataForSEO acquisition signals, Sentry crashes/performance, App Store Connect store/reviews/builds, GitHub code/release context, feedback, and any configured social/marketing sources.
 - Long analysis rule: prefer a longer cross-source investigation over fast generic advice. Look for correlations across connectors, for example Sentry regressions after a release, RevenueCat churn after a paywall change, App Store review themes matching funnel drop-offs, or marketing traffic that brings low-retention users.
 - Usage-choice rule: setup must ask how the user wants to use the tool before scheduling it. At minimum offer production autopilot, advisory-only summaries, and manual reports. Then ask whether the default cadence plan is acceptable; if not, collect/edit what should happen daily, weekly, monthly, every 3 months, every 6 months, and yearly.
 - GitHub production-version rule: always determine which code version is production before mapping data to files. Check repo default branch, release branches/tags, app version/build metadata, deployment workflows, App Store Connect build/version, Sentry release tags, and AnalyticsCLI appVersion. If they disagree, state the uncertainty and avoid overconfident file blame.
@@ -257,7 +257,7 @@ Run the wizard from the active agent workspace:
 ```
 
 ```bash
-npx -y @analyticscli/growth-engineer@preview wizard --connectors
+npx -y Wotaso/growth-engineer-cli#main wizard --connectors
 ```
 
 Then add only: "Select the connectors in the wizard. Secrets stay in the terminal."
@@ -280,7 +280,7 @@ Run the wizard from the active agent workspace:
 ```
 
 ```bash
-npx -y @analyticscli/growth-engineer@preview wizard --connectors
+npx -y Wotaso/growth-engineer-cli#main wizard --connectors
 ```
 
 Then add one sentence: "The wizard will ask for the selected connectors and any secrets in the local terminal only."
@@ -290,18 +290,18 @@ If the user asks which connectors exist, list only the connector names and one s
 If the user already names specific connectors, still prefer the checkbox wizard unless they explicitly ask for a non-interactive command. For explicit connector setup, use one copy-paste command from the active agent workspace:
 
 ```bash
-npx -y @analyticscli/growth-engineer@preview wizard --connectors analytics,github,revenuecat,paddle,seo,sentry,coolify,asc
+npx -y Wotaso/growth-engineer-cli#main wizard --connectors analytics,github,revenuecat,paddle,seo,sentry,coolify,asc
 ```
 
 Use only the connectors the user accepted. The wizard owns provider-specific instructions, local-terminal secret prompts, helper setup, and smoke tests. Chat should only summarize results after the wizard finishes or when the user asks.
 
 Do not ask for `ASC_APP_ID` during initial setup. ASC summaries default to all accessible App Store Connect apps. A single app ID is only an optional explicit filter later.
 
-Connection setup requests are not satisfied by a successful product-manager run. If the user asks to set up `asc`, App Store Connect, RevenueCat, Paddle, SEO/GSC/DataForSEO, Sentry, Coolify, GitHub, or codebase access, point them to the wizard command above and keep any extra explanation out of chat unless requested.
+Connection setup requests are not satisfied by a successful product-manager run. If the user asks to set up `asc`, App Store Connect, RevenueCat, Paddle, SEO/GSC/Bing Webmaster/DataForSEO, Sentry, Coolify, GitHub, or codebase access, point them to the wizard command above and keep any extra explanation out of chat unless requested.
 
 For Paddle setup, the wizard must explain the account-level metrics model: do not ask for or hard-code one Paddle product/project. The user should create a live API key at `https://vendors.paddle.com/authentication` with `metrics.read` only.
 
-For SEO setup, the wizard must not hard-code one Search Console property by default. Leave `GSC_SITE_URL` empty to query all verified properties visible to the account; set it only when the user explicitly wants to restrict analysis. Explain Search Console (`https://search.google.com/search-console`), service-account setup (`https://console.cloud.google.com/iam-admin/serviceaccounts`), and optional paid DataForSEO (`https://app.dataforseo.com/api-dashboard`) step by step.
+For SEO setup, the wizard must not hard-code one Search Console property by default. Leave `GSC_SITE_URL` empty to query all verified properties visible to the account; set it only when the user explicitly wants to restrict analysis. Bing Webmaster is optional supplemental indexing/sitemap evidence; store `BING_WEBMASTER_API_KEY` and `BING_WEBMASTER_SITE_URL` only in the host terminal/secret file. Explain Search Console (`https://search.google.com/search-console`), service-account setup (`https://console.cloud.google.com/iam-admin/serviceaccounts`), Bing Webmaster API (`https://www.bing.com/webmasters/`), and optional paid DataForSEO (`https://app.dataforseo.com/api-dashboard`) step by step.
 
 Reference URLs for the wizard or for explicit follow-up questions:
 
@@ -555,10 +555,10 @@ Sentry setup guidance:
 
 Coolify setup guidance:
 
-- Use the direct Coolify API exporter through the standalone CLI as the canonical deployment/hosting source: `npx -y @analyticscli/growth-engineer@preview exporters coolify-summary`.
+- Use the direct Coolify API exporter through the standalone CLI as the canonical deployment/hosting source: `npx -y Wotaso/growth-engineer-cli#main exporters coolify-summary`.
 - Ask for the Coolify base URL and token only in the local terminal wizard. For Wotaso-hosted Coolify, the token page is `https://coolify.wotaso.com/security/api-tokens`.
 - Tell the user to open the Coolify dashboard, choose `Keys & Tokens` in the sidebar, open `API tokens`, and create an API key/token with read-only permissions.
-- Persist non-secret config in `sources.coolify` with `enabled=true`, `mode=command`, `command=npx -y @analyticscli/growth-engineer@preview exporters coolify-summary --config <config>`, `baseUrl`, and `tokenEnv`.
+- Persist non-secret config in `sources.coolify` with `enabled=true`, `mode=command`, `command=npx -y Wotaso/growth-engineer-cli#main exporters coolify-summary --config <config>`, `baseUrl`, and `tokenEnv`.
 - Persist the secret only as `COOLIFY_API_TOKEN`; keep `COOLIFY_BASE_URL` non-secret but allow it in the local secrets file for convenience.
 - The daily guardrail must read Coolify when configured and correlate failed deploys, unhealthy resources, disabled/missing health checks, and server/resource anomalies with Sentry errors, AnalyticsCLI traffic/conversion drops, and recent code changes.
 - Mark Coolify connected only after the auth check and exporter smoke test pass. Do not infer Coolify access from a token being present.
@@ -603,7 +603,7 @@ When the user says "start", "run", or "kick off" the skill:
    - In Hermes chat/Discord/non-interactive terminals, do not run the wizard yourself. Show the full command below and tell the user to paste it into the VPS/host shell.
    - Only run this command yourself when you are already operating inside an interactive user terminal that can safely receive secret input outside chat.
    ```bash
-   npx -y @analyticscli/growth-engineer@preview wizard --connectors
+   npx -y Wotaso/growth-engineer-cli#main wizard --connectors
    ```
    Do not tell the user to run `analyticscli login` as the next step; the wizard owns AnalyticsCLI token collection and retesting.
 3. Prefer the CLI entrypoint after the wizard/config exists:

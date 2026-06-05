@@ -204,3 +204,58 @@ Rules:
 - set one `tokenEnv` per account when Sentry Cloud and GlitchTip use different credentials
 - use `projects[]` for all projects in that account that can affect the same product/app
 - the exporter emits one combined `sentry:multiple` summary when more than one account/project is configured
+
+## SEO Bing Webmaster Payloads
+
+The built-in SEO exporter can attach Bing Webmaster Tools API context under `meta.bingWebmaster`.
+Use it for Bing discovery/indexing diagnostics, sitemap/feed status, and URL-submission quota, not as a replacement for Google Search Console query performance.
+
+Expected shape:
+
+```json
+{
+  "project": "seo:https://example.com/",
+  "window": "2026-03-03_2026-06-01",
+  "signals": [
+    {
+      "id": "seo_bing_webmaster_status",
+      "title": "Bing Webmaster sitemap/feed status needs monitoring",
+      "area": "marketing",
+      "priority": "low",
+      "metric": "bing_webmaster_sites",
+      "evidence": [
+        "https://example.com/ feed https://example.com/sitemap.xml: status=Pending, type=Sitemap, urlCount=120",
+        "https://example.com/: Bing URL submission quota daily=99, monthly=2899"
+      ],
+      "keywords": ["seo", "bing", "bing-webmaster", "sitemap", "indexing"]
+    }
+  ],
+  "meta": {
+    "source": "seo",
+    "bingWebmaster": {
+      "source": "bing-webmaster-api",
+      "sites": [
+        {
+          "siteUrl": "https://example.com/",
+          "quota": { "DailyQuota": 99, "MonthlyQuota": 2899 },
+          "feeds": [
+            {
+              "url": "https://example.com/sitemap.xml",
+              "status": "Pending",
+              "type": "Sitemap",
+              "urlCount": 120
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
+```
+
+Rules:
+
+- store `BING_WEBMASTER_API_KEY` in the host env/secret file, not in config or chat
+- set `BING_WEBMASTER_SITE_URL` or pass `--bing-site`; the exporter cannot infer Bing properties from GSC domain properties
+- treat `Pending` as a processing state unless it persists or URL Inspection shows crawl/indexing errors
+- keep URL submissions and IndexNow batches limited to canonical changed URLs

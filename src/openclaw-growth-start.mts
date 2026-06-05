@@ -214,7 +214,7 @@ function normalizeConnectorKey(value) {
   if (['asc', 'asc-cli', 'app-store-connect', 'appstoreconnect', 'app-store'].includes(normalized)) return 'asc';
   if (['revenuecat', 'revenue-cat', 'rc', 'revenuecat-mcp'].includes(normalized)) return 'revenuecat';
   if (['paddle', 'paddle-billing', 'billing-metrics', 'web-revenue'].includes(normalized)) return 'paddle';
-  if (['seo', 'gsc', 'google-search-console', 'search-console', 'dataforseo', 'organic-search'].includes(normalized)) return 'seo';
+  if (['seo', 'gsc', 'google-search-console', 'search-console', 'dataforseo', 'bing', 'bing-webmaster', 'bing-webmaster-tools', 'organic-search'].includes(normalized)) return 'seo';
   if (['sentry', 'sentry-api', 'sentry-mcp', 'crashes', 'errors', 'crash-reporting'].includes(normalized)) return 'sentry';
   if (['coolify', 'coolify-api', 'deployment', 'deployments', 'hosting', 'infra', 'infrastructure'].includes(normalized)) return 'coolify';
   if (['stripe', 'stripe-billing', 'stripe-payments'].includes(normalized)) return 'stripe';
@@ -271,6 +271,7 @@ function resolveRuntimeScriptPath(scriptName) {
   const candidates = [
     path.join(RUNTIME_DIR, scriptName),
     path.resolve('scripts', scriptName),
+    path.resolve('skills/growth-engineer/scripts', scriptName),
     path.resolve('skills/openclaw-growth-engineer/scripts', scriptName),
   ];
   return candidates.find((candidate) => existsSync(candidate)) || path.join(RUNTIME_DIR, scriptName);
@@ -291,7 +292,7 @@ function getRuntimeSourceCommand(sourceName) {
   if (normalized === 'paddle') {
     return nodeRuntimeScriptCommand('export-paddle-summary.mjs');
   }
-  if (['seo', 'gsc', 'google-search-console', 'search-console', 'dataforseo'].includes(normalized)) {
+  if (['seo', 'gsc', 'google-search-console', 'search-console', 'dataforseo', 'bing', 'bing-webmaster', 'bing-webmaster-tools'].includes(normalized)) {
     return nodeRuntimeScriptCommand('export-seo-summary.mjs');
   }
   if (normalized === 'sentry' || normalized === 'glitchtip') {
@@ -719,7 +720,7 @@ function renderHeartbeatBlock(configPath, config) {
   const displayConfigPath = relativeWorkspacePath(configPath);
   const displayStatePath = deriveStatePathFromConfigPath(displayConfigPath);
   const runnerCommand = buildGrowthRunnerCommand(displayConfigPath, displayStatePath);
-  const wizardCommand = 'npx -y @analyticscli/growth-engineer@preview wizard --connectors';
+  const wizardCommand = 'npx -y Wotaso/growth-engineer-cli#main wizard --connectors';
   return `${HEARTBEAT_MARKER_START}
 tasks:
 
@@ -2038,7 +2039,7 @@ function remediationForCheck(checkName, configPath) {
     return 'Write `data/openclaw-growth-engineer/analytics_summary.json` via your analytics refresh step (API-key based source command/file generation).';
   }
   if (checkName === 'connection:analytics') {
-    return 'Run `npx -y @analyticscli/growth-engineer@preview wizard --connectors analytics` and paste a fresh AnalyticsCLI readonly CLI token into the local terminal wizard.';
+    return 'Run `npx -y Wotaso/growth-engineer-cli#main wizard --connectors analytics` and paste a fresh AnalyticsCLI readonly CLI token into the local terminal wizard.';
   }
   if (checkName === 'connection:github') {
     return 'Verify `GITHUB_TOKEN` and repo access to `/repos/<owner>/<repo>` + issues API.';

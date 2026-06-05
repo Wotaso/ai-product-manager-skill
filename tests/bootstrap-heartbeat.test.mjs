@@ -14,10 +14,34 @@ function runBootstrap(workspace) {
       ...process.env,
       OPENCLAW_GROWTH_WORKSPACE: workspace,
       OPENCLAW_GROWTH_BOOTSTRAP_SKIP_UPDATE: '1',
+      OPENCLAW_GROWTH_SKIP_ANALYTICSCLI_UPDATE: '1',
     },
     encoding: 'utf8',
   });
 }
+
+test('bootstrap can refresh runtime and hand off to the local wizard in one command', () => {
+  const workspace = mkdtempSync(join(tmpdir(), 'openclaw-bootstrap-wizard-'));
+
+  try {
+    const result = spawnSync('bash', [bootstrap, '--wizard', '--help'], {
+      env: {
+        ...process.env,
+        OPENCLAW_GROWTH_WORKSPACE: workspace,
+        OPENCLAW_GROWTH_BOOTSTRAP_SKIP_UPDATE: '1',
+        OPENCLAW_GROWTH_SKIP_ANALYTICSCLI_UPDATE: '1',
+      },
+      encoding: 'utf8',
+    });
+    assert.equal(result.status, 0, `${result.stderr}\n${result.stdout}`);
+    assert.match(result.stdout, /Copied openclaw-growth-engineer runtime into workspace/);
+    assert.match(result.stdout, /Starting Growth Engineer wizard/);
+    assert.match(result.stdout, /OpenClaw Growth Setup Wizard/);
+    assert.match(result.stdout, /npx -y Wotaso\/growth-engineer-cli#main wizard --connectors/);
+  } finally {
+    rmSync(workspace, { recursive: true, force: true });
+  }
+});
 
 test('bootstrap writes an actionable OpenClaw heartbeat task for empty workspaces', () => {
   const workspace = mkdtempSync(join(tmpdir(), 'openclaw-heartbeat-'));
@@ -99,6 +123,7 @@ test('bootstrap supports canonical ClawHub growth-engineer install slug', () => 
       env: {
         ...process.env,
         OPENCLAW_GROWTH_BOOTSTRAP_SKIP_UPDATE: '1',
+        OPENCLAW_GROWTH_SKIP_ANALYTICSCLI_UPDATE: '1',
       },
       encoding: 'utf8',
     });
@@ -131,6 +156,7 @@ test('bootstrap points heartbeat at legacy home config when workspace config is 
         HOME: home,
         OPENCLAW_GROWTH_WORKSPACE: workspace,
         OPENCLAW_GROWTH_BOOTSTRAP_SKIP_UPDATE: '1',
+        OPENCLAW_GROWTH_SKIP_ANALYTICSCLI_UPDATE: '1',
       },
       encoding: 'utf8',
     });
@@ -166,6 +192,7 @@ test('bootstrap prefers legacy home config with state over workspace config', ()
         HOME: home,
         OPENCLAW_GROWTH_WORKSPACE: workspace,
         OPENCLAW_GROWTH_BOOTSTRAP_SKIP_UPDATE: '1',
+        OPENCLAW_GROWTH_SKIP_ANALYTICSCLI_UPDATE: '1',
       },
       encoding: 'utf8',
     });
@@ -178,4 +205,13 @@ test('bootstrap prefers legacy home config with state over workspace config', ()
     rmSync(workspace, { recursive: true, force: true });
     rmSync(home, { recursive: true, force: true });
   }
+});
+
+test('bootstrap updates AnalyticsCLI when feedback summary support is missing', () => {
+  const source = readFileSync(bootstrap, 'utf8');
+
+  assert.match(source, /OPENCLAW_GROWTH_SKIP_ANALYTICSCLI_UPDATE/);
+  assert.match(source, /analyticscli feedback summary --help/);
+  assert.match(source, /install-analyticscli-cli\.sh/);
+  assert.match(source, /Ensuring AnalyticsCLI CLI supports feedback summaries/);
 });

@@ -57,7 +57,7 @@
     "coolify": {
       "enabled": false,
       "mode": "command",
-      "command": "npx -y @analyticscli/growth-engineer@preview exporters coolify-summary --config data/openclaw-growth-engineer/config.json",
+      "command": "npx -y Wotaso/growth-engineer-cli#main exporters coolify-summary --config data/openclaw-growth-engineer/config.json",
       "baseUrl": "https://coolify.example.com",
       "tokenEnv": "COOLIFY_API_TOKEN"
     },
@@ -90,6 +90,11 @@
       "mode": "command",
       "command": "node scripts/export-seo-summary.mjs",
       "siteUrl": "",
+      "bingWebmaster": {
+        "enabled": false,
+        "siteUrl": "",
+        "feeds": []
+      },
       "paidProvider": {
         "dataforseo": {
           "enabled": false,
@@ -398,6 +403,12 @@
       "source": "env",
       "provider": "default",
       "id": "GOOGLE_SEARCH_CONSOLE_ACCESS_TOKEN"
+    },
+    "bingWebmasterApiKeyEnv": "BING_WEBMASTER_API_KEY",
+    "bingWebmasterApiKeyRef": {
+      "source": "env",
+      "provider": "default",
+      "id": "BING_WEBMASTER_API_KEY"
     },
     "dataforseoLoginEnv": "DATAFORSEO_LOGIN",
     "dataforseoLoginRef": {
