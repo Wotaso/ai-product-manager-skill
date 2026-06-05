@@ -3,7 +3,7 @@ name: growth-engineer
 description: Growth Engineer for mobile apps and agent runtimes including OpenClaw and Hermes. Correlate analytics, crashes, billing, feedback, store signals, and repo context into proposal drafts that can flow into agent chat, GitHub issues, or draft pull requests.
 license: MIT
 homepage: https://github.com/Wotaso/growth-engineer-skill
-metadata: {"author":"wotaso","version":"1.0.144","analyticscli-target":"@analyticscli/cli","analyticscli-supported-range":">=0.1.2-preview.0 <0.2.0","openclaw":{"emoji":"🚀","homepage":"https://github.com/Wotaso/growth-engineer-skill","requires":{"bins":["node","analyticscli"]},"install":[{"id":"analyticscli-cli","kind":"node","package":"@analyticscli/cli@preview","bins":["analyticscli"],"label":"Install/update AnalyticsCLI CLI (npm package @analyticscli/cli@preview)"}]},"hermes":{"tags":["Growth","Analytics","Mobile","Product","OpenClaw","Hermes"],"homepage":"https://github.com/Wotaso/growth-engineer-skill","requires":{"bins":["node","analyticscli"]},"install":[{"id":"growth-engineer","kind":"skill","package":"Wotaso/growth-engineer-skill","label":"Install the shared Growth Engineer for Hermes"}]}}
+metadata: {"author":"wotaso","version":"1.0.145","analyticscli-target":"@analyticscli/cli","analyticscli-supported-range":">=0.1.2-preview.0 <0.2.0","openclaw":{"emoji":"🚀","homepage":"https://github.com/Wotaso/growth-engineer-skill","requires":{"bins":["node","analyticscli"]},"install":[{"id":"analyticscli-cli","kind":"node","package":"@analyticscli/cli@preview","bins":["analyticscli"],"label":"Install/update AnalyticsCLI CLI (npm package @analyticscli/cli@preview)"}]},"hermes":{"tags":["Growth","Analytics","Mobile","Product","OpenClaw","Hermes"],"homepage":"https://github.com/Wotaso/growth-engineer-skill","requires":{"bins":["node","analyticscli"]},"install":[{"id":"growth-engineer","kind":"skill","package":"Wotaso/growth-engineer-skill","label":"Install the shared Growth Engineer for Hermes"}]}}
 ---
 
 # Growth Engineer
@@ -41,7 +41,7 @@ Use this command block for OpenClaw, Hermes, VPS, Linux, and macOS hosts:
 npx -y Wotaso/growth-engineer-cli#main wizard --connectors
 ```
 
-Run this from the OpenClaw/Hermes workspace. Connector setup should route through the npm preview wizard so hosts get the latest wizard fixes without manual bootstrap commands.
+Run this from the OpenClaw/Hermes workspace. Do not use `npx -y @analyticscli/growth-engineer@preview wizard` for connector setup right now; npm preview is still pinned to an old package and will show the long legacy connector menu. Use the GitHub `npx` command above until the npm scope publisher is fixed.
 
 ## Post-Setup Reply Contract
 
