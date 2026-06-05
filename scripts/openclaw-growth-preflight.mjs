@@ -241,7 +241,7 @@ function commandIsBuiltinExporter(command) {
     return /(?:^|\s)(?:node\s+)?(?:\S*\/)?(?:export-analytics-summary|export-revenuecat-summary|export-paddle-summary|export-seo-summary|export-sentry-summary|export-coolify-summary|export-asc-summary)\.mjs(?:\s|$)/.test(String(command || ''));
 }
 function commandSupportsActiveConfig(command) {
-    return /(?:^|\s)(?:node\s+)?(?:\S*\/)?(?:export-sentry-summary|export-coolify-summary)\.mjs(?:\s|$)/.test(String(command || ''));
+    return /(?:^|\s)(?:node\s+)?(?:\S*\/)?(?:export-paddle-summary|export-sentry-summary|export-coolify-summary)\.mjs(?:\s|$)/.test(String(command || ''));
 }
 function withActiveConfigArg(command, configPath) {
     const trimmed = String(command || '').trim();
@@ -704,7 +704,7 @@ async function testRevenueCatConnection(revenuecatToken, timeoutMs) {
         };
     }
 }
-async function testPaddleConnection(paddleToken, timeoutMs) {
+async function testPaddleConnection(paddleToken, timeoutMs, environment = 'live') {
     if (!paddleToken) {
         return {
             ok: false,
@@ -716,7 +716,10 @@ async function testPaddleConnection(paddleToken, timeoutMs) {
     fromDate.setUTCDate(fromDate.getUTCDate() - 2);
     const from = fromDate.toISOString().slice(0, 10);
     try {
-        const response = await fetchWithTimeout(`https://api.paddle.com/metrics/revenue?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`, {
+        const baseUrl = String(environment || 'live').toLowerCase() === 'sandbox'
+            ? 'https://sandbox-api.paddle.com'
+            : 'https://api.paddle.com';
+        const response = await fetchWithTimeout(`${baseUrl}/metrics/revenue?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`, {
             method: 'GET',
             headers: {
                 Accept: 'application/json',
@@ -866,6 +869,28 @@ function normalizeSentryAccounts(config, sentryTokenEnv) {
             org: String(process.env.SENTRY_ORG || '').trim(),
             projects: String(process.env.SENTRY_PROJECT || '').trim() ? [String(process.env.SENTRY_PROJECT).trim()] : [],
             environment: String(process.env.SENTRY_ENVIRONMENT || 'production').trim(),
+        },
+    ];
+}
+function normalizePaddleAccounts(config, paddleTokenEnv) {
+    const paddleSource = config?.sources?.paddle;
+    const accounts = Array.isArray(paddleSource?.accounts) ? paddleSource.accounts : [];
+    if (accounts.length > 0) {
+        return accounts.map((account, index) => ({
+            key: String(account?.id || account?.key || account?.label || `paddle_${index + 1}`)
+                .trim()
+                .replace(/[^a-zA-Z0-9._-]+/g, '_'),
+            label: String(account?.label || account?.name || account?.id || `Paddle ${index + 1}`).trim(),
+            tokenEnv: String(account?.tokenEnv || account?.token_env || account?.secretEnv || (index === 0 ? paddleTokenEnv : `PADDLE_API_KEY_${index + 1}`)).trim(),
+            environment: String(account?.environment || paddleSource?.environment || 'live').trim().toLowerCase() || 'live',
+        }));
+    }
+    return [
+        {
+            key: 'paddle',
+            label: 'Paddle',
+            tokenEnv: String(paddleSource?.tokenEnv || paddleTokenEnv).trim(),
+            environment: String(paddleSource?.environment || 'live').trim().toLowerCase() || 'live',
         },
     ];
 }
@@ -1067,15 +1092,18 @@ async function runConnectionChecks({ checks, config, configPath, timeoutMs, prog
             detail: 'metrics API auth + revenue read',
             run: async (groupChecks) => {
                 if (sourceEnabled(config, 'paddle')) {
-                    const token = process.env[paddleTokenEnv] || '';
-                    if (!token) {
-                        addCheck(groupChecks, 'connection:paddle', false, `${paddleTokenEnv} missing (required for live Paddle metrics API test)`, paddleSource?.mode === 'command' ? 'fail' : 'warn');
-                    }
-                    else {
-                        const paddleConnection = await testPaddleConnection(token, timeoutMs);
-                        addCheck(groupChecks, 'connection:paddle', paddleConnection.ok, paddleConnection.ok
-                            ? `Paddle metrics auth check passed (${paddleConnection.detail})`
-                            : `Paddle metrics auth check failed (${paddleConnection.detail})`);
+                    const paddleAccounts = normalizePaddleAccounts(config, paddleTokenEnv);
+                    for (const account of paddleAccounts) {
+                        const token = process.env[account.tokenEnv] || '';
+                        const checkName = paddleAccounts.length > 1 ? `connection:paddle:${account.key}` : 'connection:paddle';
+                        if (!token) {
+                            addCheck(groupChecks, checkName, false, `${account.tokenEnv} missing for ${account.label} (required for Paddle metrics API test)`, paddleSource?.mode === 'command' ? 'fail' : 'warn');
+                            continue;
+                        }
+                        const paddleConnection = await testPaddleConnection(token, timeoutMs, account.environment);
+                        addCheck(groupChecks, checkName, paddleConnection.ok, paddleConnection.ok
+                            ? `Paddle metrics auth check passed for ${account.label} (${paddleConnection.detail})`
+                            : `Paddle metrics auth check failed for ${account.label} (${paddleConnection.detail})`);
                     }
                     if (paddleSource?.mode === 'command') {
                         const command = withActiveConfigArg(replaceLegacyRuntimeScriptCommand(String(paddleSource.command || '').trim()), configPath);
@@ -1422,9 +1450,13 @@ async function main() {
                     addCheck(checks, `secret:${revenuecatTokenEnv}`, hasRevenuecatToken, hasRevenuecatToken ? 'set (required for RevenueCat command mode)' : 'missing (required for RevenueCat command mode)');
                 }
                 if (sourceName === 'paddle') {
-                    const paddleTokenEnv = getSecretName(config, 'paddleTokenEnv', 'PADDLE_API_KEY');
-                    const hasPaddleToken = Boolean(process.env[paddleTokenEnv]);
-                    addCheck(checks, `secret:${paddleTokenEnv}`, hasPaddleToken, hasPaddleToken ? 'set (required for Paddle command mode)' : 'missing (required for Paddle command mode)');
+                    const paddleAccounts = normalizePaddleAccounts(config, getSecretName(config, 'paddleTokenEnv', 'PADDLE_API_KEY'));
+                    for (const account of paddleAccounts) {
+                        const hasPaddleToken = Boolean(process.env[account.tokenEnv]);
+                        addCheck(checks, `secret:${account.tokenEnv}`, hasPaddleToken, hasPaddleToken
+                            ? `set (required for Paddle command mode: ${account.label})`
+                            : `missing (required for Paddle command mode: ${account.label})`);
+                    }
                 }
                 if (sourceName === 'seo') {
                     const gscTokenEnv = getSecretName(config, 'gscTokenEnv', 'GOOGLE_SEARCH_CONSOLE_ACCESS_TOKEN');

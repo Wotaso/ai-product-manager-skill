@@ -169,7 +169,7 @@ function commandIsBuiltinExporter(command) {
     return /(?:^|\s)(?:node\s+)?(?:\S*\/)?(?:export-analytics-summary|export-revenuecat-summary|export-paddle-summary|export-seo-summary|export-sentry-summary|export-coolify-summary|export-asc-summary)\.mjs(?:\s|$)/.test(String(command || ''));
 }
 function commandSupportsActiveConfig(command) {
-    return /(?:^|\s)(?:node\s+)?(?:\S*\/)?(?:export-sentry-summary|export-coolify-summary)\.mjs(?:\s|$)/.test(String(command || ''));
+    return /(?:^|\s)(?:node\s+)?(?:\S*\/)?(?:export-paddle-summary|export-sentry-summary|export-coolify-summary)\.mjs(?:\s|$)/.test(String(command || ''));
 }
 function withActiveConfigArg(command, configPath) {
     const trimmed = String(command || '').trim();
