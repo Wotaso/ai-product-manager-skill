@@ -3968,7 +3968,7 @@ async function guideAscConnector(rl, secrets) {
         'Key ID from the API key row or from the downloaded file name: AuthKey_<KEY_ID>.p8.',
         'Download the .p8 file, open it, then paste the full file content into this terminal.',
         'If the .p8 is already on this host, leave the content prompt empty and paste the file path instead.',
-        'Vendor Number from App Store Connect Sales and Trends > Reports, needed for Sales and Trends/App Units reports.',
+        'Vendor Number from App Store Connect Sales and Trends > Reports. Required for healthy ASC status because Sales and Trends/App Units depend on it.',
     ]);
     const keyId = await ask(rl, 'ASC_KEY_ID (leave empty to skip)', process.env.ASC_KEY_ID || '');
     const issuerId = await ask(rl, 'ASC_ISSUER_ID (leave empty to skip)', process.env.ASC_ISSUER_ID || '');
@@ -3990,7 +3990,7 @@ async function guideAscConnector(rl, secrets) {
         if (privateKeyPath.trim())
             secrets.ASC_PRIVATE_KEY_PATH = privateKeyPath.trim();
     }
-    const vendorNumber = await ask(rl, 'ASC_VENDOR_NUMBER for Sales and Trends/App Units (leave empty to skip)', process.env.ASC_VENDOR_NUMBER || process.env.ASC_ANALYTICS_VENDOR_NUMBER || '');
+    const vendorNumber = await ask(rl, 'ASC_VENDOR_NUMBER for Sales and Trends/App Units (required for healthy ASC status)', process.env.ASC_VENDOR_NUMBER || process.env.ASC_ANALYTICS_VENDOR_NUMBER || '');
     if (vendorNumber.trim())
         secrets.ASC_VENDOR_NUMBER = vendorNumber.trim();
 }

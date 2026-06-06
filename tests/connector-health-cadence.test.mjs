@@ -560,6 +560,7 @@ test('agent-facing wizard guidance uses the npx Growth Engineer wizard', () => {
 test('ASC wizard requests the report-creation role and vendor number', () => {
   const wizard = readFileSync(join(skillRoot, 'scripts/openclaw-growth-wizard.mjs'), 'utf8');
   const start = readFileSync(join(skillRoot, 'scripts/openclaw-growth-start.mjs'), 'utf8');
+  const status = readFileSync(join(skillRoot, 'scripts/openclaw-growth-status.mjs'), 'utf8');
   const exportAsc = readFileSync(join(skillRoot, 'scripts/export-asc-summary.mjs'), 'utf8');
 
   assert.match(wizard, /Required for first setup: Admin/);
@@ -567,7 +568,14 @@ test('ASC wizard requests the report-creation role and vendor number', () => {
   assert.match(wizard, /Sales and Reports/);
   assert.match(wizard, /Growth Engineer automatically creates an ongoing App Analytics report request/);
   assert.match(wizard, /ASC_VENDOR_NUMBER for Sales and Trends\/App Units/);
+  assert.match(wizard, /required for healthy ASC status/i);
   assert.match(wizard, /process\.env\.ASC_ANALYTICS_VENDOR_NUMBER/);
+  assert.match(status, /checkAscAnalyticsReadiness/);
+  assert.match(status, /asc analytics requests --app/);
+  assert.match(status, /ASC App Analytics has no report requests/);
+  assert.match(status, /ASC_VENDOR_NUMBER is missing/);
+  assert.match(status, /appAnalyticsReports: 'required'/);
+  assert.doesNotMatch(status, /ASC API-key exporter smoke test passed for accessible apps/);
   assert.match(start, /configureAscAllApps/);
   assert.match(start, /removeAscAppFlag/);
   assert.match(start, /delete process\.env\.ASC_APP_ID/);
