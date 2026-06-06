@@ -66,12 +66,19 @@ test('discord deliveries use embeds and hide successful message ids from state d
   assert.match(shared, /Never mention successful delivery metadata/);
 });
 
-test('agent prompts treat ASC_ANALYTICS_VENDOR_NUMBER as an alias only', () => {
-  const shared = readFileSync(join(skillRoot, 'scripts/openclaw-growth-shared.mjs'), 'utf8');
+test('ASC vendor setup uses only ASC_VENDOR_NUMBER', () => {
+  const removedVendorAlias = ['ASC', 'ANALYTICS', 'VENDOR', 'NUMBER'].join('_');
+  const files = [
+    'scripts/openclaw-growth-status.mjs',
+    'scripts/openclaw-growth-wizard.mjs',
+    'scripts/export-asc-summary.mjs',
+    'scripts/openclaw-growth-shared.mjs',
+  ];
 
-  assert.match(shared, /ASC_VENDOR_NUMBER is the canonical required variable/);
-  assert.match(shared, /ASC_ANALYTICS_VENDOR_NUMBER is only a backward-compatible alias/);
-  assert.match(shared, /never list it as a separate missing requirement/);
+  for (const file of files) {
+    const source = readFileSync(join(skillRoot, file), 'utf8');
+    assert.doesNotMatch(source, new RegExp(removedVendorAlias));
+  }
 });
 
 test('connector picker honors active runner health incidents', () => {
@@ -577,7 +584,7 @@ test('ASC wizard requests the report-creation role and vendor number', () => {
   assert.match(wizard, /Growth Engineer automatically creates an ongoing App Analytics report request/);
   assert.match(wizard, /ASC_VENDOR_NUMBER for Sales and Trends\/App Units/);
   assert.match(wizard, /required for healthy ASC status/i);
-  assert.match(wizard, /process\.env\.ASC_ANALYTICS_VENDOR_NUMBER/);
+  assert.doesNotMatch(wizard, new RegExp(['ASC', 'ANALYTICS', 'VENDOR', 'NUMBER'].join('_')));
   assert.match(status, /checkAscAnalyticsReadiness/);
   assert.match(status, /asc analytics requests --app/);
   assert.match(status, /ASC App Analytics has no report requests/);
