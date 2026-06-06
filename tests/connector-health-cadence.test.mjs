@@ -49,6 +49,23 @@ test('notification delivery fallbacks are merged with explicit channels', () => 
   assert.doesNotMatch(wizard, /discord-openclaw-bridge/);
 });
 
+test('discord deliveries use embeds and hide successful message ids from state details', () => {
+  const runner = readFileSync(join(skillRoot, 'scripts/openclaw-growth-runner.mjs'), 'utf8');
+  const bridge = readFileSync(resolve(skillRoot, '../../scripts/discord-openclaw-bridge.mjs'), 'utf8');
+  const skillBridge = readFileSync(join(skillRoot, 'scripts/discord-openclaw-bridge.mjs'), 'utf8');
+  const shared = readFileSync(join(skillRoot, 'scripts/openclaw-growth-shared.mjs'), 'utf8');
+
+  assert.match(runner, /type: 'discord'/);
+  assert.match(runner, /buildDiscordConnectorHealthPayload/);
+  assert.match(runner, /buildDiscordGrowthRunPayload/);
+  assert.match(runner, /OPENCLAW_DISCORD_DELIVERY_FORMAT: 'embed'/);
+  assert.match(runner, /detail: result\.ok \? 'sent'/);
+  assert.match(bridge, /normalizeEmbedPayload/);
+  assert.match(bridge, /embeds: payload\.embeds/);
+  assert.match(skillBridge, /normalizeEmbedPayload/);
+  assert.match(shared, /Never mention successful delivery metadata/);
+});
+
 test('due growth cadences still run and log, but suppress social delivery when findings are unchanged', () => {
   const runner = readFileSync(join(skillRoot, 'scripts/openclaw-growth-runner.mjs'), 'utf8');
 
