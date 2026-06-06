@@ -66,6 +66,20 @@ test('discord deliveries use embeds and hide successful message ids from state d
   assert.match(shared, /Never mention successful delivery metadata/);
 });
 
+test('connector picker honors active runner health incidents', () => {
+  const wizard = readFileSync(join(skillRoot, 'scripts/openclaw-growth-wizard.mjs'), 'utf8');
+
+  assert.match(wizard, /function readActiveConnectorIncidents/);
+  assert.match(wizard, /state\?\.connectorHealth/);
+  assert.match(wizard, /activeIncidentFingerprint/);
+  assert.match(wizard, /lastAlertJsonPath/);
+  assert.match(wizard, /function mergeActiveConnectorIncidents/);
+  assert.match(wizard, /Live wizard check passed, but the runner still has an active/);
+  assert.match(wizard, /connectorKeyFromRunnerHealthKey/);
+  assert.match(wizard, /if \(normalized === 'appStoreConnect'\)\s+return 'asc'/);
+  assert.match(wizard, /return mergeActiveConnectorIncidents\(liveHealth, activeIncidents\)/);
+});
+
 test('due growth cadences still run and log, but suppress social delivery when findings are unchanged', () => {
   const runner = readFileSync(join(skillRoot, 'scripts/openclaw-growth-runner.mjs'), 'utf8');
 
