@@ -61,11 +61,14 @@ test('discord deliveries use embeds and hide successful message ids from state d
   assert.match(runner, /OPENCLAW_DISCORD_DELIVERY_FORMAT: 'embed'/);
   assert.match(runner, /detail: result\.ok \? 'sent'/);
   assert.match(bridge, /normalizeEmbedPayload/);
-  assert.match(bridge, /plainTextToEmbedPayload/);
-  assert.match(bridge, /return plainTextToEmbedPayload\(raw\)/);
+  assert.match(bridge, /structuredTextToEmbedPayload/);
+  assert.match(bridge, /buildStructuredOpenClawDailyPayload/);
+  assert.match(bridge, /buildStructuredConnectorPayload/);
+  assert.match(bridge, /return structuredTextToEmbedPayload\(raw\)/);
+  assert.match(bridge, /chunkMessage\(content\)/);
   assert.match(bridge, /embeds: payload\.embeds/);
   assert.match(skillBridge, /normalizeEmbedPayload/);
-  assert.match(skillBridge, /plainTextToEmbedPayload/);
+  assert.match(skillBridge, /structuredTextToEmbedPayload/);
   assert.match(shared, /Never mention successful delivery metadata/);
 });
 
