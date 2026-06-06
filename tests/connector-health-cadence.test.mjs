@@ -66,6 +66,14 @@ test('discord deliveries use embeds and hide successful message ids from state d
   assert.match(shared, /Never mention successful delivery metadata/);
 });
 
+test('agent prompts treat ASC_ANALYTICS_VENDOR_NUMBER as an alias only', () => {
+  const shared = readFileSync(join(skillRoot, 'scripts/openclaw-growth-shared.mjs'), 'utf8');
+
+  assert.match(shared, /ASC_VENDOR_NUMBER is the canonical required variable/);
+  assert.match(shared, /ASC_ANALYTICS_VENDOR_NUMBER is only a backward-compatible alias/);
+  assert.match(shared, /never list it as a separate missing requirement/);
+});
+
 test('connector picker honors active runner health incidents', () => {
   const wizard = readFileSync(join(skillRoot, 'scripts/openclaw-growth-wizard.mjs'), 'utf8');
 
