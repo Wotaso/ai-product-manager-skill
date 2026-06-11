@@ -135,8 +135,8 @@ Expected fields:
       "totalCrashes": 3,
       "crashBreakdown": [{ "label": "1.0.0 (iOS)", "value": 3 }],
       "sourceBreakdown": [
-        { "title": "App Store Search", "pageViewUnique": 90 },
-        { "title": "Web Referrer", "pageViewUnique": 10 }
+        { "title": "App Store Search", "pageViewUnique": 90, "units": 12 },
+        { "title": "Web Referrer", "impressions": 110, "pageViewUnique": 10 }
       ],
       "overviewMetricCatalog": [
         {
@@ -157,9 +157,9 @@ Rules for recommendations:
 
 - alert daily on non-zero production total crashes
 - compare ASC crash totals with Sentry production issues/events/users when Sentry is connected
-- if API-key ASC batch reports are missing, tell the user to verify `ASC_KEY_ID`, `ASC_ISSUER_ID`, `ASC_PRIVATE_KEY_PATH`, and `ASC_VENDOR_NUMBER` where Sales and Trends data is needed; do not ask for `asc web auth` unless a specific required metric has no API-report path
+- if API-key ASC batch reports are missing, tell the user to verify `ASC_KEY_ID`, `ASC_ISSUER_ID`, `ASC_PRIVATE_KEY_PATH`, and `ASC_VENDOR_NUMBER` where Sales and Trends data is needed; do not ask for browser or web-session login
 - inspect `overviewMetricCatalog` and parsed batch-report metrics so recommendations use all available ASC metrics, not only units/conversion/source traffic
-- treat ASC sources as unique product page views by source, not download units by source
+- treat ASC sources according to the report instance fields available for that row: impressions, product page views, downloads, purchases, or proceeds
 - turn source mix into Handlungsempfehlungen only after comparing units/downloads and conversion
 
 ## Multiple Sentry-Compatible Accounts

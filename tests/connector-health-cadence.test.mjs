@@ -552,8 +552,8 @@ test('connector health alerts include direct repair commands without broad menu 
   assert.match(runner, /npx -y @analyticscli\/growth-engineer@preview wizard/);
   assert.match(runner, /--connectors \$\{quote\(connector\)\}/);
   assert.doesNotMatch(runner, /nodeRuntimeScriptCommand\('openclaw-growth-wizard\.mjs'\)/);
-  assert.match(runner, /ASC web-auth only/);
-  assert.match(runner, /asc web auth login --apple-id "\$ASC_WEB_APPLE_ID"/);
+  assert.doesNotMatch(runner, /ASC web-auth only/);
+  assert.doesNotMatch(runner, /asc web auth login/);
   assert.match(runner, /Secrets stay in the host terminal or secret store/);
   assert.match(wizard, /requestedConnectors\.length > 0\s+\? orderConnectors\(requestedConnectors\)/);
   assert.doesNotMatch(wizard, /requestedConnectors\.length > 0\s+\? orderConnectors\(\[\.\.\.new Set\(\[\.\.\.requestedConnectors, \.\.\.existingFixes\]\)\]\)/);
@@ -588,6 +588,7 @@ test('ASC wizard requests the report-creation role and vendor number', () => {
   assert.match(wizard, /create the initial Analytics Report Request/);
   assert.match(wizard, /Sales and Reports/);
   assert.match(wizard, /Growth Engineer automatically creates an ongoing App Analytics report request/);
+  assert.match(wizard, /API-key reports only/);
   assert.match(wizard, /ASC_VENDOR_NUMBER for Sales and Trends\/App Units/);
   assert.match(wizard, /required for healthy ASC status/i);
   assert.doesNotMatch(wizard, new RegExp(['ASC', 'ANALYTICS', 'VENDOR', 'NUMBER'].join('_')));

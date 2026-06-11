@@ -186,6 +186,50 @@ test('buildAscSummary emits ASC analytics crashes, units, conversion, and source
   assert(summary.signals.some((signal) => signal.id === 'asc_overview_metric_movements_detected'));
 });
 
+test('buildAscSummary normalizes API-key ASC batch report usage and commerce metrics', () => {
+  const summary = buildAscSummary({
+    appId: '123456789',
+    batchAnalyticsPayload: {
+      results: [
+        { measure: 'impressions', total: 1200, data: [{ date: '2026-06-09', value: 1200 }] },
+        { measure: 'pageViewUnique', total: 240, data: [{ date: '2026-06-09', value: 240 }] },
+        { measure: 'units', total: 48, data: [{ date: '2026-06-09', value: 48 }] },
+        { measure: 'sessions', total: 310, data: [{ date: '2026-06-09', value: 310 }] },
+        { measure: 'activeDevices', total: 92, data: [{ date: '2026-06-09', value: 92 }] },
+        { measure: 'purchases', total: 7, data: [{ date: '2026-06-09', value: 7 }] },
+        { measure: 'proceeds', total: 42.5, data: [{ date: '2026-06-09', value: 42.5 }] },
+        { measure: 'crashes', total: 2, data: [{ date: '2026-06-09', value: 2 }] },
+      ],
+      sourceBreakdown: [
+        { key: 'APP_STORE_SEARCH', title: 'App Store Search', impressions: 900, pageViewUnique: 180, units: 36, purchases: 5 },
+        { key: 'WEB_REFERRER', title: 'Web Referrer', impressions: 300, pageViewUnique: 60, units: 12, purchases: 2 },
+      ],
+      crashBreakdown: [{ label: '2.0.0 (iPhone)', value: 2 }],
+      overviewMetricCatalog: [
+        { section: 'batchReports', measure: 'sessions', total: 310, previousTotal: null, percentChange: null, type: 'COUNT' },
+      ],
+    },
+    batchReports: [
+      { label: 'ASC App Analytics batch report abc', outputPath: 'asc-cache/123456789/2026-06-09/analytics-abc.txt', rowCount: 4, cacheStatus: 'downloaded' },
+    ],
+    analyticsWindow: { start: '2026-05-11', end: '2026-06-09' },
+    maxSignals: 8,
+  });
+
+  assert.equal(summary.meta.analyticsAvailability, 'available');
+  assert.equal(summary.meta.analytics.impressions.total, 1200);
+  assert.equal(summary.meta.analytics.sessions.total, 310);
+  assert.equal(summary.meta.analytics.purchases.total, 7);
+  assert.equal(summary.meta.analytics.proceeds.total, 42.5);
+  assert.equal(summary.meta.analytics.totalCrashes, 2);
+  assert.equal(summary.meta.analytics.sourceBreakdown[0].title, 'App Store Search');
+  assert.equal(summary.meta.batchReports[0].cacheStatus, 'downloaded');
+  assert(summary.signals.some((signal) => signal.id === 'asc_source_mix_available'));
+  assert(summary.signals.some((signal) => signal.id === 'asc_commerce_metrics_available'));
+  assert(summary.signals.some((signal) => signal.id === 'asc_usage_metrics_available'));
+  assert(summary.signals.some((signal) => signal.id === 'asc_production_crashes_detected'));
+});
+
 test('buildRevenueCatSummary emits live metrics and catalog signals', () => {
   const summary = buildRevenueCatSummary({
     project: { id: 'proj_123', name: 'Flashes' },
