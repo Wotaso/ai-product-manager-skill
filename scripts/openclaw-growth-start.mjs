@@ -401,6 +401,7 @@ function runShellCommand(command, timeoutMs = 120_000, options = {}) {
             stdio: ['ignore', 'pipe', 'pipe'],
             env: {
                 ...process.env,
+                ...(options.env || {}),
                 DEBIAN_FRONTEND: 'noninteractive',
                 SUDO_ASKPASS: '/bin/false',
                 SUDO_PROMPT: '',
@@ -1761,6 +1762,53 @@ async function listAscAnalyticsRequests(appId, state = '') {
     }
     return { ok: true, ids: extractAscAnalyticsRequestIds(parseJsonFromStdout(result.stdout)), error: null };
 }
+function getAscBootstrapAdminEnv() {
+    const keyId = normalizeString(process.env.ASC_BOOTSTRAP_KEY_ID);
+    const issuerId = normalizeString(process.env.ASC_BOOTSTRAP_ISSUER_ID);
+    const privateKeyPath = normalizeString(process.env.ASC_BOOTSTRAP_PRIVATE_KEY_PATH);
+    const privateKey = normalizeString(process.env.ASC_BOOTSTRAP_PRIVATE_KEY);
+    const privateKeyB64 = normalizeString(process.env.ASC_BOOTSTRAP_PRIVATE_KEY_B64);
+    if (!keyId || !issuerId || (!privateKeyPath && !privateKey && !privateKeyB64))
+        return null;
+    return {
+        ASC_KEY_ID: keyId,
+        ASC_ISSUER_ID: issuerId,
+        ...(privateKeyPath ? { ASC_PRIVATE_KEY_PATH: privateKeyPath } : {}),
+        ...(privateKey ? { ASC_PRIVATE_KEY: privateKey } : {}),
+        ...(privateKeyB64 ? { ASC_PRIVATE_KEY_B64: privateKeyB64 } : {}),
+    };
+}
+async function removeTemporaryAscBootstrapPrivateKey() {
+    const shouldDelete = normalizeString(process.env.ASC_BOOTSTRAP_PRIVATE_KEY_DELETE_AFTER_USE);
+    const privateKeyPath = normalizeString(process.env.ASC_BOOTSTRAP_PRIVATE_KEY_PATH);
+    if (!privateKeyPath || !['1', 'true', 'yes'].includes(shouldDelete.toLowerCase()))
+        return null;
+    if (privateKeyPath === normalizeString(process.env.ASC_PRIVATE_KEY_PATH)) {
+        return {
+            deleted: false,
+            detail: 'temporary Admin .p8 path matches ASC_PRIVATE_KEY_PATH; left it in place',
+        };
+    }
+    try {
+        await fs.unlink(privateKeyPath);
+        return {
+            deleted: true,
+            detail: `deleted temporary Admin .p8 from ${privateKeyPath}`,
+        };
+    }
+    catch (error) {
+        if (error?.code === 'ENOENT') {
+            return {
+                deleted: false,
+                detail: `temporary Admin .p8 was already absent at ${privateKeyPath}`,
+            };
+        }
+        return {
+            deleted: false,
+            detail: `could not delete temporary Admin .p8 at ${privateKeyPath}: ${error instanceof Error ? error.message : String(error)}`,
+        };
+    }
+}
 async function ensureAscAnalyticsRequest(appId) {
     const normalizedAppId = normalizeString(appId);
     if (!normalizedAppId) {
@@ -1781,17 +1829,27 @@ async function ensureAscAnalyticsRequest(appId) {
         return { ok: true, status: 'pending', requestId: existingRequests.ids[0], detail: `existing request ${existingRequests.ids[0]} is not completed yet` };
     }
     const created = await runShellCommand(`asc analytics request --app ${quote(normalizedAppId)} --access-type ONGOING --output json`, 60_000);
+    let finalCreated = created;
+    let usedBootstrapAdmin = false;
     if (!created.ok) {
-        return { ok: false, status: 'create_failed', requestId: null, error: created.stderr || `exit ${created.code}` };
+        const bootstrapEnv = getAscBootstrapAdminEnv();
+        if (bootstrapEnv) {
+            finalCreated = await runShellCommand(`asc analytics request --app ${quote(normalizedAppId)} --access-type ONGOING --output json`, 60_000, { env: bootstrapEnv });
+            usedBootstrapAdmin = finalCreated.ok;
+        }
     }
-    const requestId = extractAscAnalyticsRequestId(parseJsonFromStdout(created.stdout));
+    if (!finalCreated.ok) {
+        return { ok: false, status: 'create_failed', requestId: null, error: finalCreated.stderr || `exit ${finalCreated.code}` };
+    }
+    const requestId = extractAscAnalyticsRequestId(parseJsonFromStdout(finalCreated.stdout));
     return {
         ok: true,
         status: 'created',
         requestId,
         detail: requestId
-            ? `created ongoing request ${requestId}; report instances will appear after Apple processing`
-            : 'created ongoing request; report instances will appear after Apple processing',
+            ? `created ongoing request ${requestId}${usedBootstrapAdmin ? ' with temporary Admin key' : ''}; report instances will appear after Apple processing`
+            : `created ongoing request${usedBootstrapAdmin ? ' with temporary Admin key' : ''}; report instances will appear after Apple processing`,
+        usedBootstrapAdmin,
     };
 }
 async function ensureAscAnalyticsRequestsForAppScope(ascAppSetup) {
@@ -2225,6 +2283,17 @@ async function main() {
             detail: 'checking ongoing Analytics Report Request',
         });
         ascAnalyticsRequestSetup = await ensureAscAnalyticsRequestsForAppScope(ascAppSetup);
+        const temporaryAscBootstrapKeyCleanup = await removeTemporaryAscBootstrapPrivateKey();
+        if (temporaryAscBootstrapKeyCleanup?.detail) {
+            emitProgress(args.progressJson, {
+                phase: 'finish',
+                key: 'ascBootstrapAdminKeyCleanup',
+                label: 'ASC temporary Admin key',
+                detail: temporaryAscBootstrapKeyCleanup.detail,
+                status: temporaryAscBootstrapKeyCleanup.deleted ? 'pass' : 'warn',
+            });
+            process.stderr.write(`${temporaryAscBootstrapKeyCleanup.detail}. You can also revoke the temporary Admin API key in App Store Connect.\n`);
+        }
         emitProgress(args.progressJson, {
             phase: 'finish',
             key: 'ascAnalyticsRequest',
@@ -2256,7 +2325,7 @@ async function main() {
                     {
                         check: 'connection:asc_analytics_request',
                         detail: `Could not ensure App Store Connect Analytics Report Request: ${truncate(ascAnalyticsRequestSetup.error, 800)}`,
-                        remediation: 'Use an ASC API key with Admin for first setup so Growth Engineer can create the ongoing Analytics Report Request. After the request exists, rotate to Sales and Reports for steady-state downloads.',
+                        remediation: 'Create the ongoing Analytics Report Request once with a temporary ASC Admin key. After the request exists, remove or revoke the Admin key and keep Growth Engineer configured with Sales and Reports or Finance for daily downloads.',
                     },
                 ],
             }, null, 2)}\n`);
