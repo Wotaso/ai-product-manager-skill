@@ -24,6 +24,14 @@ Use this same skill for OpenClaw and Hermes. Do not create a duplicate Hermes-sp
 - All agents should use the same bundled `scripts/`, `references/`, and `data/` files.
 - macOS hosts, including Mac mini machines, are supported as normal local hosts. Use the same terminal wizard from the app workspace. For recurring unattended runs on macOS, use OpenClaw heartbeats, `openclaw run --loop`, or a host scheduler such as `launchd`; keep secrets in the host terminal/env/secret file, not in chat.
 
+## Local AnalyticsCLI Operator Notes
+
+These notes apply when this skill is used from the local `Wotaso/analyticscli-monorepo` workspace.
+
+- Coolify resources, projects, or deployments named `prodinfos` are AnalyticsCLI production infrastructure, not a separate customer app. Treat failed `prodinfos` deployments as AnalyticsCLI production deployment-health signals.
+- For this workspace, Coolify monitoring is configured through `openclaw.config.json` with `https://coolify.wotaso.com`; read access requires `COOLIFY_API_TOKEN` in the local host environment or Growth Engineer secret store.
+- Do not send OpenClaw/Hermes GitHub PR or branch links for these deployment failures. Tell them to update from ClawHub/npm after a published fix, or handle local production remediation directly from the repo and Coolify logs.
+
 ## Post-Install Reply Contract
 
 After installing this skill from ClawHub, OpenClaw or Hermes must not stop at "installed and ready" when setup is not complete. The next reply should be short and should immediately route the user to connector setup.
