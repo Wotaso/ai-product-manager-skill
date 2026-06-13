@@ -388,6 +388,8 @@ Host update boundary:
 
 - OpenClaw and Hermes host instances must update the Growth Engineer runtime from the installed skill distribution only.
 - Do not tell OpenClaw or Hermes hosts to `git fetch`, `git checkout`, `git pull`, or copy runtime files from private monorepo/app branches as an upgrade path.
+- Never send OpenClaw or Hermes a GitHub PR/branch link as something to pull, test, or use for runtime upgrade. PR links are for human review only.
+- When notifying OpenClaw or Hermes about an unreleased fix, say only that they should wait for the ClawHub/npm publication and then update automatically from that distribution.
 - Private repo branches may be used to develop and validate a new Growth Engineer release, but the host-facing update instruction must be to publish/refresh the canonical skill distribution first, then update via ClawHub for OpenClaw or the shared Growth Engineer skill install path for Hermes.
 - If a previous host instruction used a private repo branch or manual runtime copy, correct it by reverting that host-side override and refreshing from the canonical skill source.
 
