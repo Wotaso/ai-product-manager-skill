@@ -593,6 +593,14 @@ test('ASC wizard requests the report-creation role and vendor number', () => {
   assert.match(wizard, /Reports \.p8 path \(AuthKey_<KEY_ID>\.p8, empty = paste\)/);
   assert.match(wizard, /Inferred ASC_KEY_ID=/);
   assert.match(wizard, /Do not rename it/);
+  assert.match(wizard, /DELETE_SECRET/);
+  assert.match(wizard, /secrets\.ASC_PRIVATE_KEY = DELETE_SECRET/);
+  assert.match(wizard, /secrets\.ASC_PRIVATE_KEY_B64 = DELETE_SECRET/);
+  assert.match(wizard, /applySecretsToProcessEnv/);
+  assert.doesNotMatch(wizard, /Checks complete/);
+  assert.match(wizard, /ASC auth failed: the \.p8 key could not be parsed/);
+  assert.match(start, /ASC auth failed: the \.p8 key could not be parsed/);
+  assert.match(start, /removes old pasted ASC_PRIVATE_KEY values/);
   assert.match(wizard, /ASC_ISSUER_ID \(same for both keys, empty = skip\)/);
   assert.match(wizard, /Same value for both keys/);
   assert.match(wizard, /Paste the full \.p8 file content for \$\{keyLabel\}/);
