@@ -9,6 +9,7 @@ import { gunzip } from 'node:zlib';
 import { buildAscSummary, writeJsonOutput } from './openclaw-exporters-lib.mjs';
 import { loadOpenClawGrowthSecrets } from './openclaw-growth-env.mjs';
 const gunzipAsync = promisify(gunzip);
+const DEFAULT_ASC_TIMEOUT_SECONDS = '120';
 function printHelpAndExit(exitCode, reason = null) {
     if (reason) {
         process.stderr.write(`${reason}\n\n`);
@@ -138,11 +139,17 @@ function parseDate(value) {
 function formatDate(date) {
     return date.toISOString().slice(0, 10);
 }
+function ascCommandEnv() {
+    return {
+        ...process.env,
+        ASC_TIMEOUT_SECONDS: normalizeString(process.env.ASC_TIMEOUT_SECONDS) || DEFAULT_ASC_TIMEOUT_SECONDS,
+    };
+}
 function runJsonCommand(command, commandArgs) {
     return new Promise((resolve, reject) => {
         const child = spawn(command, commandArgs, {
             stdio: ['ignore', 'pipe', 'pipe'],
-            env: process.env,
+            env: ascCommandEnv(),
         });
         let stdout = '';
         let stderr = '';
@@ -586,41 +593,25 @@ async function downloadBatchAnalyticsReports(appId, args, warnings) {
         'requests',
         '--app',
         appId,
-        '--state',
-        'COMPLETED',
         '--output',
         'json',
     ], warnings);
     let requestId = extractItems(requestsPayload).map(extractId).find(Boolean);
     if (!requestId) {
-        const anyRequestsPayload = await runBestEffortAscQuery('ASC analytics all requests query', [
+        const createdRequest = await runBestEffortAscQuery('ASC analytics ongoing request creation', [
             'analytics',
-            'requests',
+            'request',
             '--app',
             appId,
+            '--access-type',
+            'ONGOING',
             '--output',
             'json',
         ], warnings);
-        const existingRequestId = extractItems(anyRequestsPayload).map(extractId).find(Boolean);
-        if (!existingRequestId) {
-            const createdRequest = await runBestEffortAscQuery('ASC analytics ongoing request creation', [
-                'analytics',
-                'request',
-                '--app',
-                appId,
-                '--access-type',
-                'ONGOING',
-                '--output',
-                'json',
-            ], warnings);
-            const createdRequestId = extractId(createdRequest) || extractItems(createdRequest).map(extractId).find(Boolean);
-            warnings.push(createdRequestId
-                ? `ASC App Analytics batch report: created ongoing analytics request ${createdRequestId}; report instances will be available after Apple finishes processing`
-                : 'ASC App Analytics batch report: requested ongoing analytics access; report instances will be available after Apple finishes processing');
-            return reports.length > 0 ? reports : loadLatestCachedReports(appCacheRoot, args.end, warnings);
-        }
-        requestId = existingRequestId;
-        warnings.push(`ASC App Analytics batch report: request ${requestId} is not completed yet; using other ASC API-key surfaces for this run`);
+        const createdRequestId = extractId(createdRequest) || extractItems(createdRequest).map(extractId).find(Boolean);
+        warnings.push(createdRequestId
+            ? `ASC App Analytics batch report: created ongoing analytics request ${createdRequestId}; report instances will be available after Apple finishes processing`
+            : 'ASC App Analytics batch report: requested ongoing analytics access; report instances will be available after Apple finishes processing');
         return reports.length > 0 ? reports : loadLatestCachedReports(appCacheRoot, args.end, warnings);
     }
     const viewPayload = await runBestEffortAscQuery('ASC analytics reports view query', [

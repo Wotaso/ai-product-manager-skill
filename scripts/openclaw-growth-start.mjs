@@ -16,6 +16,7 @@ const ANALYTICSCLI_PACKAGE_SPEC = process.env.ANALYTICSCLI_CLI_PACKAGE || '@anal
 const ANALYTICSCLI_NPM_PREFIX = process.env.ANALYTICSCLI_NPM_PREFIX ||
     (process.env.HOME ? path.join(process.env.HOME, '.local') : path.join(process.cwd(), '.analyticscli-npm'));
 const RUNTIME_DIR = path.dirname(fileURLToPath(import.meta.url));
+const DEFAULT_ASC_TIMEOUT_SECONDS = '120';
 const ACCOUNT_SIGNAL_CONNECTORS = [
     'stripe',
     'lemonsqueezy',
@@ -464,6 +465,7 @@ function runShellCommand(command, timeoutMs = 120_000, options = {}) {
 function ascIsolatedEnv(overrides = {}) {
     const env = {
         ASC_BYPASS_KEYCHAIN: '1',
+        ASC_TIMEOUT_SECONDS: normalizeString(process.env.ASC_TIMEOUT_SECONDS) || DEFAULT_ASC_TIMEOUT_SECONDS,
         ASC_CONFIG_PATH: process.env.OPENCLAW_GROWTH_ASC_CONFIG_PATH ||
             path.join(process.env.TMPDIR || '/tmp', `openclaw-growth-asc-env-${process.pid}.json`),
         ...overrides,

@@ -87,6 +87,15 @@ test('ASC vendor setup uses only ASC_VENDOR_NUMBER', () => {
   }
 });
 
+test('ASC analytics commands avoid state filter and use a longer default timeout', () => {
+  const start = readFileSync(join(skillRoot, 'scripts/openclaw-growth-start.mjs'), 'utf8');
+  const exporter = readFileSync(join(skillRoot, 'scripts/export-asc-summary.mjs'), 'utf8');
+
+  assert.match(start, /ASC_TIMEOUT_SECONDS: normalizeString\(process\.env\.ASC_TIMEOUT_SECONDS\) \|\| DEFAULT_ASC_TIMEOUT_SECONDS/);
+  assert.match(exporter, /ASC_TIMEOUT_SECONDS: normalizeString\(process\.env\.ASC_TIMEOUT_SECONDS\) \|\| DEFAULT_ASC_TIMEOUT_SECONDS/);
+  assert.doesNotMatch(exporter, /'--state',\s*'COMPLETED'/);
+});
+
 test('connector picker honors active runner health incidents', () => {
   const wizard = readFileSync(join(skillRoot, 'scripts/openclaw-growth-wizard.mjs'), 'utf8');
 
