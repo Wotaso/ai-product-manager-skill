@@ -604,6 +604,9 @@ test('ASC wizard requests the report-creation role and vendor number', () => {
   assert.match(wizard, /connector === 'asc'/);
   assert.match(wizard, /selected\.includes\('asc'\)/);
   assert.match(wizard, /delete env\[key\]/);
+  assert.match(wizard, /extractFirstJsonValue/);
+  assert.match(wizard, /stripProgressOutput/);
+  assert.doesNotMatch(wizard, /Run manually for full output/);
   assert.match(wizard, /could not be parsed\|failed to parse\|asn1/);
   assert.doesNotMatch(wizard, /Checks complete/);
   assert.match(wizard, /ASC auth failed: the \.p8 key could not be parsed/);
