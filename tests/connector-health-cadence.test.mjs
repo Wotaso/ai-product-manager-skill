@@ -658,6 +658,9 @@ test('ASC wizard requests the report-creation role and vendor number', () => {
   assert.match(start, /delete process\.env\.ASC_APP_ID/);
   assert.match(start, /ensureAscAnalyticsRequestsForAppScope/);
   assert.match(start, /asc analytics request --app/);
+  assert.match(start, /extractAscAnalyticsRequests/);
+  assert.doesNotMatch(start, /asc analytics requests --app \$\{quote\(appId\)\}\$\{stateArg\}/);
+  assert.doesNotMatch(start, /listAscAnalyticsRequests\(normalizedAppId, 'COMPLETED'\)/);
   assert.match(start, /--access-type ONGOING/);
   assert.match(start, /phase: 'asc_analytics_request_setup'/);
   assert.match(start, /ASC_BOOTSTRAP_PRIVATE_KEY_DELETE_AFTER_USE/);
