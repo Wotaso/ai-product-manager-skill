@@ -464,6 +464,8 @@ function runShellCommand(command, timeoutMs = 120_000, options = {}) {
 function ascIsolatedEnv(overrides = {}) {
     const env = {
         ASC_BYPASS_KEYCHAIN: '1',
+        ASC_CONFIG_PATH: process.env.OPENCLAW_GROWTH_ASC_CONFIG_PATH ||
+            path.join(process.env.TMPDIR || '/tmp', `openclaw-growth-asc-env-${process.pid}.json`),
         ...overrides,
     };
     const hasPrivateKeyPath = normalizeString(env.ASC_PRIVATE_KEY_PATH || process.env.ASC_PRIVATE_KEY_PATH);
@@ -1784,9 +1786,7 @@ async function listAscAnalyticsRequests(appId, state = '') {
         return {
             ok: false,
             ids: [],
-            error: isInvalidAscPrivateKeyError(error)
-                ? `ASC Reports key auth failed: the .p8 key could not be parsed. ${error}`
-                : error,
+            error: describeAscPrivateKeyAuthFailure('Reports', error) || error,
         };
     }
     return { ok: true, ids: extractAscAnalyticsRequestIds(parseJsonFromStdout(result.stdout)), error: null };
@@ -1871,15 +1871,12 @@ async function ensureAscAnalyticsRequest(appId) {
     }
     if (!finalCreated.ok) {
         const error = finalCreated.stderr || `exit ${finalCreated.code}`;
+        const role = attemptedBootstrapAdmin ? 'Setup Admin' : 'Reports';
         return {
             ok: false,
             status: 'create_failed',
             requestId: null,
-            error: isInvalidAscPrivateKeyError(error)
-                ? attemptedBootstrapAdmin
-                    ? `ASC Setup Admin key auth failed: the .p8 key could not be parsed. ${error}`
-                    : `ASC Reports key auth failed: the .p8 key could not be parsed. ${error}`
-                : error,
+            error: describeAscPrivateKeyAuthFailure(role, error) || error,
         };
     }
     const requestId = extractAscAnalyticsRequestId(parseJsonFromStdout(finalCreated.stdout));
@@ -2052,15 +2049,33 @@ function remediationForCheck(checkName, configPath) {
 function isInvalidAscPrivateKeyError(error) {
     return /invalid private key|failed to parse|asn1|sequence truncated|malformed/i.test(String(error || ''));
 }
+function isAscPrivateKeyPermissionError(error) {
+    return /too permissive|chmod 600/i.test(String(error || ''));
+}
+function describeAscPrivateKeyAuthFailure(role, error) {
+    if (isAscPrivateKeyPermissionError(error)) {
+        return `ASC ${role} key auth failed: the .p8 file permissions are too open. ${error}`;
+    }
+    if (isInvalidAscPrivateKeyError(error)) {
+        return `ASC ${role} key auth failed: the .p8 key could not be parsed. ${error}`;
+    }
+    return null;
+}
 function describeAscAppSetupFailure(error) {
+    if (isAscPrivateKeyPermissionError(error)) {
+        return 'ASC Reports key auth failed: the .p8 file permissions are too open.';
+    }
     if (isInvalidAscPrivateKeyError(error)) {
         return 'ASC Reports key auth failed: the .p8 key could not be parsed.';
     }
     return `Could not list App Store Connect apps (${error || 'unknown error'})`;
 }
 function remediateAscAppSetupFailure(error) {
+    if (isAscPrivateKeyPermissionError(error)) {
+        return 'Rerun ASC setup. The wizard copies AuthKey_<KEY_ID>.p8 into a secure local file with chmod 600 before testing asc.';
+    }
     if (isInvalidAscPrivateKeyError(error)) {
-        return 'Use the original downloaded AuthKey_<KEY_ID>.p8 file for the Reports key. The wizard now bypasses old asc keychain credentials during setup.';
+        return 'Use the original downloaded AuthKey_<KEY_ID>.p8 file for the Reports key. The wizard bypasses old asc keychain/config credentials during setup.';
     }
     return 'Verify ASC credentials, key role access, and `asc apps list --output json`.';
 }
