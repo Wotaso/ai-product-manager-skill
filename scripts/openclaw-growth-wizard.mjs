@@ -2183,7 +2183,7 @@ function summarizeFailureFix(connector, blockers) {
         return 'Paste a Coolify base URL and read-only API token from Keys & Tokens / API tokens, then rerun setup.';
     }
     if (connector === 'asc') {
-        if (/invalid|truncated|malformed|private key/i.test(combined)) {
+        if (/invalid|truncated|malformed|private key|could not be parsed|failed to parse|asn1/i.test(combined)) {
             return 'Use the original downloaded AuthKey_<KEY_ID>.p8 for the Reports key. Old pasted ASC_PRIVATE_KEY values are removed when you choose a file path.';
         }
         return 'Rerun ASC setup and verify ASC credentials, key role access, and `asc apps list --output json`.';
@@ -2583,11 +2583,7 @@ async function runImmediateConnectorHealthCheck({ rl, configPath, connector, sec
         await upsertPaddleAccountsConfig(configPath, paddleAccounts);
     }
     await saveSecretsImmediately(secrets);
-    const env = {
-        ...process.env,
-        ...secrets,
-        ...runtimeEnv,
-    };
+    const env = mergeRuntimeEnv(secrets, runtimeEnv);
     const command = `${nodeRuntimeScriptCommand('openclaw-growth-start.mjs')} --config ${quote(configPath)} --setup-only --connectors ${quote(connector)} --only-connectors ${quote(connector)}`;
     let result = await runSetupCommandWithProgress(command, env, [connector], `Checking ${connectorLabel(connector)} immediately after setup...`);
     let payload = parseJsonFromStdout(result.stdout);
@@ -2789,6 +2785,20 @@ function applySecretsToProcessEnv(nextValues) {
         if (value.trim())
             process.env[key] = value.trim();
     }
+}
+function mergeRuntimeEnv(...sources) {
+    const env = { ...process.env };
+    for (const source of sources) {
+        for (const [key, value] of Object.entries(source || {})) {
+            if (value === DELETE_SECRET) {
+                delete env[key];
+                continue;
+            }
+            if (String(value || '').trim())
+                env[key] = String(value).trim();
+        }
+    }
+    return env;
 }
 function renderBashSingleQuoted(value) {
     return `'${String(value).replace(/'/g, `'\\''`)}'`;
@@ -4378,10 +4388,7 @@ async function runConnectorSetupSteps({ rl, args, selected, healthByConnector, a
     if (coolifyConfig?.baseUrl && await upsertCoolifyConfig(args.config, coolifyConfig)) {
         process.stdout.write(`Configured Coolify monitoring for ${coolifyConfig.baseUrl} in ${args.config}.\n`);
     }
-    const env = {
-        ...process.env,
-        ...secrets,
-    };
+    const env = mergeRuntimeEnv(secrets);
     const command = `${nodeRuntimeScriptCommand('openclaw-growth-start.mjs')} --config ${quote(args.config)} --setup-only --connectors ${quote(selected.join(','))} --only-connectors ${quote(selected.join(','))}`;
     let setupResult = await runSetupCommandWithProgress(command, env, selected, 'Testing connector setup...');
     let setupPayload = parseJsonFromStdout(setupResult.stdout);

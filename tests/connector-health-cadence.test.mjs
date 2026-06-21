@@ -597,6 +597,10 @@ test('ASC wizard requests the report-creation role and vendor number', () => {
   assert.match(wizard, /secrets\.ASC_PRIVATE_KEY = DELETE_SECRET/);
   assert.match(wizard, /secrets\.ASC_PRIVATE_KEY_B64 = DELETE_SECRET/);
   assert.match(wizard, /applySecretsToProcessEnv/);
+  assert.match(wizard, /mergeRuntimeEnv\(secrets, runtimeEnv\)/);
+  assert.match(wizard, /mergeRuntimeEnv\(secrets\)/);
+  assert.match(wizard, /delete env\[key\]/);
+  assert.match(wizard, /could not be parsed\|failed to parse\|asn1/);
   assert.doesNotMatch(wizard, /Checks complete/);
   assert.match(wizard, /ASC auth failed: the \.p8 key could not be parsed/);
   assert.match(start, /ASC auth failed: the \.p8 key could not be parsed/);
