@@ -589,7 +589,10 @@ test('ASC wizard requests the report-creation role and vendor number', () => {
   assert.match(wizard, /Step 1 - normal key, saved for Growth Engineer/);
   assert.match(wizard, /Create an API key named "Growth Engineer Reports"/);
   assert.match(wizard, /Role: Sales and Reports/);
-  assert.match(wizard, /ASC_KEY_ID for normal reporting key/);
+  assert.match(wizard, /inferAscKeyIdFromPrivateKeyPath/);
+  assert.match(wizard, /ASC_PRIVATE_KEY_PATH for normal reporting key/);
+  assert.match(wizard, /Inferred ASC_KEY_ID=/);
+  assert.match(wizard, /Do not rename the \.p8 file/);
   assert.match(wizard, /ASC_ISSUER_ID for normal reporting key/);
   assert.match(wizard, /Paste the full \.p8 file content for \$\{keyLabel\}/);
   assert.match(wizard, /keyLabel: 'the normal reporting key'/);
@@ -599,7 +602,9 @@ test('ASC wizard requests the report-creation role and vendor number', () => {
   assert.match(wizard, /Apple requires Admin once/);
   assert.match(wizard, /ASC_BOOTSTRAP_KEY_ID/);
   assert.match(wizard, /Step 3 - temporary Admin key for first ASC setup/);
-  assert.match(wizard, /ASC_BOOTSTRAP_KEY_ID for temporary Admin key \(required\)/);
+  assert.match(wizard, /ASC_BOOTSTRAP_PRIVATE_KEY_PATH for temporary Admin key/);
+  assert.match(wizard, /Inferred ASC_BOOTSTRAP_KEY_ID=/);
+  assert.match(wizard, /ASC_BOOTSTRAP_KEY_ID for temporary Admin key \(from AuthKey_<KEY_ID>\.p8, required\)/);
   assert.match(wizard, /The wizard does not save ASC_BOOTSTRAP_\* to secrets\.env/);
   assert.match(wizard, /keyLabel: 'the temporary Admin key'/);
   assert.match(wizard, /Deleted temporary Admin \.p8/);

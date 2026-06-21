@@ -162,7 +162,7 @@ Setup should feel guided for a developer, not like a silent preflight dump.
 - After each setup phase, summarize only the result and the next concrete action.
 - Keep secrets out of prompts, repo files, logs, and command arguments; prefer host-agent secret storage or environment injection.
 - Never ask the user to paste API keys, GitHub tokens, or App Store Connect `.p8` private-key contents into Discord, OpenClaw chat, Hermes chat, GitHub issues, PRs, or any shared transcript. Chat is not an appropriate secret transport.
-- For secrets, give a secure host-terminal path: set env vars in the runtime shell, an agent secret store, a password manager injection flow, or the wizard-managed `~/.config/openclaw-growth/secrets.env` with `chmod 600`. Growth commands must load that env file automatically. For `.p8`, the terminal wizard must validate pasted file content cryptographically before writing it to `~/.config/openclaw-growth/AuthKey_<KEY_ID>.p8` with `chmod 600`; store only `ASC_PRIVATE_KEY_PATH` and never echo the private key back.
+- For secrets, give a secure host-terminal path: set env vars in the runtime shell, an agent secret store, a password manager injection flow, or the wizard-managed `~/.config/openclaw-growth/secrets.env` with `chmod 600`. Growth commands must load that env file automatically. For ASC `.p8`, prefer asking for the local file path to Apple's original downloaded file name `AuthKey_<KEY_ID>.p8`; do not rename the file because the wizard derives the key id from that name. Pasted `.p8` content is only a fallback. Store only `ASC_PRIVATE_KEY_PATH` and never echo the private key back.
 - When SDK instrumentation is missing or weak, guide the developer through the `analyticscli-ts-sdk` setup path so analytics events become useful for later growth analysis.
 - If AnalyticsCLI has no default project and multiple projects are visible, do not report that as a hard error. List the available projects, ask the user which one to use, persist the choice with `openclaw start --config openclaw.config.json --project <project_id>` or `analyticscli projects select <project_id>`, and then retry the setup/run.
 
@@ -341,7 +341,7 @@ Safe secret handoff rules:
   # ASC_PRIVATE_KEY_PATH=/home/lo/.config/openclaw-growth/AuthKey_XXXX.p8
   chmod 600 ~/.config/openclaw-growth/secrets.env
   ```
-- Good `.p8` pattern: paste the full downloaded App Store Connect private key content into the local terminal wizard so it can validate and save `~/.config/openclaw-growth/AuthKey_<KEY_ID>.p8` with `chmod 600`, or save the file yourself and share only `ASC_PRIVATE_KEY_PATH`.
+- Good `.p8` pattern: keep Apple's original downloaded file name `AuthKey_<KEY_ID>.p8`, then paste only that local file path into the terminal wizard. Do not rename the file; the wizard derives `ASC_KEY_ID` / `ASC_BOOTSTRAP_KEY_ID` from the file name. Pasting the full `.p8` content is only a fallback when the file is not available on the host.
 - OpenClaw Growth commands load the wizard-managed env file automatically; never put secrets in command-line args.
 
 ## Mandatory Baseline
@@ -539,8 +539,8 @@ ASC setup guidance:
 - Ask: "Soll ASC CLI fuer App Store Connect verbunden werden?"
 - Send the user to exactly this page to create the key: https://appstoreconnect.apple.com/access/integrations/api.
 - Say the main role is `Sales`, required for App Analytics, Sales and Trends, downloads, revenue, and conversion context. Add `Customer Support` for App Store ratings/review text, `Developer` for builds/TestFlight/delivery status, and `App Manager` only when app metadata, pricing, or release settings are needed. Avoid `Admin` unless a one-off App Store Connect permission requires it.
-- Tell the user to copy `ASC_ISSUER_ID` from the API keys page, copy `ASC_KEY_ID` from the key row or downloaded `AuthKey_<KEY_ID>.p8` file name, download the `.p8`, open it, and paste the full file content into the local terminal wizard.
-- Store only env vars/secrets: `ASC_KEY_ID`, `ASC_ISSUER_ID`, and `ASC_PRIVATE_KEY_PATH`; the wizard can create the `.p8` file from validated pasted terminal content. Never commit the `.p8` private key.
+- Tell the user to copy `ASC_ISSUER_ID` from the API keys page, download the `.p8`, keep Apple's original `AuthKey_<KEY_ID>.p8` file name, and paste the local file path into the terminal wizard. Do not tell them to rename the `.p8`; the wizard derives `ASC_KEY_ID` from the file name.
+- Store only env vars/secrets: `ASC_KEY_ID`, `ASC_ISSUER_ID`, and `ASC_PRIVATE_KEY_PATH`; the wizard can still create the `.p8` file from validated pasted terminal content as a fallback. Never commit the `.p8` private key.
 - Do not ask for `ASC_APP_ID` upfront. After auth succeeds, ASC should use all accessible apps by default. Store an app filter only if the user explicitly asks to scope ASC to one app.
 - After the key is present, run one read-only API-key `asc` smoke test before marking ASC connected. Do not check `asc web auth` and do not force a target app selection; default ASC analysis covers all accessible apps.
 - Prefer `asc auth login` when the local `asc` CLI supports keychain storage; otherwise use runtime env injection.
