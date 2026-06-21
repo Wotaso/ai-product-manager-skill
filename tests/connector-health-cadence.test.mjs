@@ -593,12 +593,15 @@ test('ASC wizard requests the report-creation role and vendor number', () => {
   assert.match(wizard, /Reports \.p8 path \(AuthKey_<KEY_ID>\.p8, empty = paste\)/);
   assert.match(wizard, /Inferred ASC_KEY_ID=/);
   assert.match(wizard, /Do not rename it/);
-  assert.match(wizard, /ASC_ISSUER_ID \(reports key, empty = skip\)/);
+  assert.match(wizard, /ASC_ISSUER_ID \(same for both keys, empty = skip\)/);
+  assert.match(wizard, /Same value for both keys/);
   assert.match(wizard, /Paste the full \.p8 file content for \$\{keyLabel\}/);
   assert.match(wizard, /keyLabel: 'the normal reporting key'/);
   assert.match(wizard, /role \$\{bold\('Admin'\)\}/);
   assert.match(wizard, /Role must be Admin/);
   assert.match(wizard, /ASC_BOOTSTRAP_KEY_ID/);
+  assert.match(wizard, /ASC_ISSUER_ID \(same API keys page\)/);
+  assert.doesNotMatch(wizard, /ask\(rl, 'ASC_BOOTSTRAP_ISSUER_ID'/);
   assert.match(wizard, /Enter the Setup Admin key/);
   assert.match(wizard, /Setup Admin \.p8 path \(AuthKey_<KEY_ID>\.p8, empty = paste\)/);
   assert.match(wizard, /Inferred ASC_BOOTSTRAP_KEY_ID=/);
