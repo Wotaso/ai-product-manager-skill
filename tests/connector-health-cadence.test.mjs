@@ -606,6 +606,9 @@ test('ASC wizard requests the report-creation role and vendor number', () => {
   assert.match(wizard, /ASC auth failed: the \.p8 key could not be parsed/);
   assert.match(start, /ascIsolatedEnv/);
   assert.match(start, /ASC_BYPASS_KEYCHAIN: '1'/);
+  assert.match(start, /if \(value === undefined\)\s+delete childEnv\[key\]/);
+  assert.match(start, /env\.ASC_PRIVATE_KEY = undefined/);
+  assert.doesNotMatch(start, /env\.ASC_PRIVATE_KEY = ''/);
   assert.match(start, /ASC Reports key auth failed: the \.p8 key could not be parsed/);
   assert.match(start, /ASC Setup Admin key auth failed: the \.p8 key could not be parsed/);
   assert.match(start, /bypasses old asc keychain credentials/);
