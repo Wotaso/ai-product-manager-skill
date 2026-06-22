@@ -139,7 +139,8 @@ test('connector picker honors active runner health incidents', () => {
   assert.match(wizard, /activeIncidentFingerprint/);
   assert.match(wizard, /lastAlertJsonPath/);
   assert.match(wizard, /function mergeActiveConnectorIncidents/);
-  assert.match(wizard, /Live wizard check passed, but the runner still has an active/);
+  assert.match(wizard, /if \(liveHealth\.status === 'connected'\)\s*\{\s*return \[key, liveHealth\]/);
+  assert.doesNotMatch(wizard, /Live wizard check passed, but the runner still has an active/);
   assert.match(wizard, /connectorKeyFromRunnerHealthKey/);
   assert.match(wizard, /if \(normalized === 'appStoreConnect'\)\s+return 'asc'/);
   assert.match(wizard, /return mergeActiveConnectorIncidents\(liveHealth, activeIncidents\)/);
