@@ -51,12 +51,12 @@ test('wizard supports back navigation in menus and connector setup', () => {
   const wizard = readFileSync(join(skillRoot, 'scripts/openclaw-growth-wizard.mjs'), 'utf8');
 
   assert.match(wizard, /class WizardBackError extends Error/);
-  assert.match(wizard, /Use Esc\/B\/← in menus or type :back in text prompts to return/);
-  assert.match(wizard, /Esc\/B\/← back\. Q cancels/);
+  assert.match(wizard, /Use Esc\/← in menus or type :back in text prompts to return/);
+  assert.match(wizard, /Esc\/← back\. Ctrl\+C cancels/);
   assert.match(wizard, /function isBackAnswer/);
-  assert.match(wizard, /return \[':back', 'esc', 'escape', '\\x1b'\]\.includes\(normalized\)/);
+  assert.match(wizard, /return \[':back', '\\x1b'\]\.includes\(normalized\)/);
   assert.match(wizard, /if \(isBackAnswer\(answer\)\)\s+throw new WizardBackError/);
-  assert.match(wizard, /if \(key\?\.name === 'escape' \|\| key\?\.name === 'left' \|\| key\?\.name === 'b'\)/);
+  assert.match(wizard, /if \(key\?\.name === 'escape' \|\| key\?\.name === 'left'\)/);
   assert.match(wizard, /while \(true\)\s*\{\s*clearTerminal\(\);\s*printConnectorIntro/);
   assert.match(wizard, /if \(error instanceof WizardBackError\)\s+continue/);
   assert.match(wizard, /const result = await runConnectorSetupWizard/);
@@ -795,7 +795,7 @@ test('wizard exposes connector and output interval setup paths', () => {
   assert.match(wizard, /scheduler-proof\.jsonl/);
   assert.match(wizard, /Default growth cadence/);
   assert.match(wizard, /What it decides/);
-  assert.match(wizard, /Space toggles, A toggles all optional items, Enter continues/);
+  assert.match(wizard, /Space toggles, Enter continues/);
   assert.match(wizard, /Customize GitHub issue\/PR limits, labels, or chart attachment settings/);
 });
 
