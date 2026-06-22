@@ -591,6 +591,7 @@ test('ASC wizard requests the report-creation role and vendor number', () => {
   const wizard = readFileSync(join(skillRoot, 'scripts/openclaw-growth-wizard.mjs'), 'utf8');
   const start = readFileSync(join(skillRoot, 'scripts/openclaw-growth-start.mjs'), 'utf8');
   const status = readFileSync(join(skillRoot, 'scripts/openclaw-growth-status.mjs'), 'utf8');
+  const preflight = readFileSync(join(skillRoot, 'scripts/openclaw-growth-preflight.mjs'), 'utf8');
   const exportAsc = readFileSync(join(skillRoot, 'scripts/export-asc-summary.mjs'), 'utf8');
 
   assert.match(wizard, /Create 2 API keys/);
@@ -671,9 +672,16 @@ test('ASC wizard requests the report-creation role and vendor number', () => {
   assert.match(start, /ensureAscAnalyticsRequestsForAppScope/);
   assert.match(start, /asc analytics request --app/);
   assert.match(start, /extractAscAnalyticsRequests/);
+  assert.match(start, /normalizeString\(request\.state\)\?\.toUpperCase\(\) === 'COMPLETED'/);
+  assert.doesNotMatch(start, /request\.state\.toUpperCase\(\)/);
+  assert.match(start, /report instances may still be processing/);
   assert.doesNotMatch(start, /asc analytics requests --app \$\{quote\(appId\)\}\$\{stateArg\}/);
   assert.doesNotMatch(start, /listAscAnalyticsRequests\(normalizedAppId, 'COMPLETED'\)/);
   assert.match(start, /--access-type ONGOING/);
+  assert.match(preflight, /ASC_COMMAND_SMOKE_TIMEOUT_MS = 120_000/);
+  assert.match(preflight, /--analytics-instance-limit 1/);
+  assert.match(preflight, /testAscCliAppsList/);
+  assert.match(preflight, /asc apps list --output json/);
   assert.match(start, /phase: 'asc_analytics_request_setup'/);
   assert.match(start, /ASC_BOOTSTRAP_PRIVATE_KEY_DELETE_AFTER_USE/);
   assert.match(start, /removeTemporaryAscBootstrapPrivateKey/);

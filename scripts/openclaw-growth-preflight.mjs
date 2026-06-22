@@ -8,6 +8,7 @@ import { classifyServiceKind, getActionMode, getAllSourceEntries, getDefaultSour
 import { applyOpenClawSecretRefs, loadOpenClawGrowthSecrets } from './openclaw-growth-env.mjs';
 const DEFAULT_CONFIG_PATH = 'data/openclaw-growth-engineer/config.json';
 const DEFAULT_CONNECTION_TIMEOUT_MS = 15_000;
+const ASC_COMMAND_SMOKE_TIMEOUT_MS = 120_000;
 const RUNTIME_DIR = path.dirname(fileURLToPath(import.meta.url));
 const ANALYTICSCLI_PACKAGE_SPEC = process.env.ANALYTICSCLI_CLI_PACKAGE || '@analyticscli/cli@preview';
 const ANALYTICSCLI_NPM_PREFIX = process.env.ANALYTICSCLI_NPM_PREFIX ||
@@ -979,13 +980,13 @@ function getProjectCommandCwd(config) {
     const repoRoot = String(config?.project?.repoRoot || '').trim();
     return repoRoot ? path.resolve(repoRoot) : process.cwd();
 }
-async function testCommandSourceJson(command, cwd = process.cwd()) {
-    let result = await runShell(command, { cwd });
+async function testCommandSourceJson(command, cwd = process.cwd(), options = {}) {
+    let result = await runShell(command, { cwd, timeoutMs: options.timeoutMs });
     let retried = false;
     if (!result.ok && isTransientNetworkFailure(result.stderr || result.stdout)) {
         retried = true;
         await sleep(1_500);
-        result = await runShell(command, { cwd });
+        result = await runShell(command, { cwd, timeoutMs: options.timeoutMs });
     }
     if (!result.ok) {
         return {
@@ -1006,6 +1007,35 @@ async function testCommandSourceJson(command, cwd = process.cwd()) {
         ok: true,
         detail: retried ? 'command returned JSON after retry' : 'command returned JSON',
     };
+}
+async function testAscCliAppsList(timeoutMs) {
+    const result = await runShell('asc apps list --output json', {
+        timeoutMs: Math.max(timeoutMs, ASC_COMMAND_SMOKE_TIMEOUT_MS),
+        env: {
+            ASC_BYPASS_KEYCHAIN: process.env.ASC_BYPASS_KEYCHAIN || '1',
+            ASC_TIMEOUT_SECONDS: process.env.ASC_TIMEOUT_SECONDS || '120',
+        },
+    });
+    if (!result.ok) {
+        return {
+            ok: false,
+            detail: truncate(result.stderr || `exit ${result.code}`),
+        };
+    }
+    try {
+        const payload = JSON.parse(result.stdout);
+        const count = Array.isArray(payload?.data) ? payload.data.length : Array.isArray(payload) ? payload.length : 0;
+        return {
+            ok: true,
+            detail: `asc apps list returned JSON${count ? ` (${count} app${count === 1 ? '' : 's'})` : ''}`,
+        };
+    }
+    catch {
+        return {
+            ok: false,
+            detail: 'asc apps list succeeded but returned non-JSON output',
+        };
+    }
 }
 function onlyAllows(onlyConnectors, connector) {
     return !Array.isArray(onlyConnectors) || onlyConnectors.length === 0 || onlyConnectors.includes(connector);
@@ -1317,9 +1347,11 @@ async function runConnectionChecks({ checks, config, configPath, timeoutMs, prog
                 continue;
             }
             const smokeCommand = connectorKind === 'asc' && command.includes('export-asc-summary')
-                ? `${command} --reviews-limit 1 --feedback-limit 1 --max-signals 1`
+                ? `${command} --reviews-limit 1 --feedback-limit 1 --analytics-instance-limit 1 --max-signals 1`
                 : command;
-            const commandCheck = await testCommandSourceJson(smokeCommand, commandCwd);
+            const commandCheck = connectorKind === 'asc' && command.includes('export-asc-summary')
+                ? await testAscCliAppsList(timeoutMs)
+                : await testCommandSourceJson(smokeCommand, commandCwd);
             addCheck(checks, checkName, commandCheck.ok, commandCheck.ok
                 ? `${extraSource.key} command smoke test passed`
                 : `${extraSource.key} command smoke test failed (${commandCheck.detail})`);
