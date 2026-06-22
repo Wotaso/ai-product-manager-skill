@@ -26,25 +26,39 @@ test('ASC access answers come from Growth Engineer status, not loaded chat tools
   const bootstrap = readFileSync(join(skillRoot, 'scripts/bootstrap-openclaw-workspace.sh'), 'utf8');
 
   assert.match(skill, /Growth Engineer connectors are local CLI\/secrets-backed sources, not chat\/MCP tools/);
-  assert.match(skill, /do not inspect loaded tools/);
-  assert.match(skill, /node scripts\/openclaw-growth-status\.mjs --config <config> --json/);
+  assert.match(skill, /ASC\/App Store Connect is not expected to appear as a loaded chat tool/);
+  assert.match(skill, /never inspect loaded tools/);
+  assert.match(skill, /node scripts\/openclaw-growth-status\.mjs --config <config> --json --only-connectors asc/);
   assert.match(skill, /ASC analytics is connected through the local `asc` CLI\/API-key setup/);
-  assert.match(start, /If asked whether ASC\/App Store Connect analytics access is available, do not inspect loaded tools/);
-  assert.match(start, /ASC is a local CLI\/secrets-backed source/);
-  assert.match(bootstrap, /If asked whether ASC\/App Store Connect analytics access is available, do not inspect loaded tools/);
+  assert.match(start, /If asked whether ASC\/App Store Connect analytics access is available, never inspect loaded chat\/MCP tools/);
+  assert.match(start, /ASC is not expected to appear as a chat tool/);
+  assert.match(start, /openclaw-growth-status\.mjs --config .* --json --only-connectors asc/);
+  assert.match(bootstrap, /If asked whether ASC\/App Store Connect analytics access is available, never inspect loaded chat\/MCP tools/);
 });
 
 test('connector wizard can refresh OpenClaw session instructions after setup changes', () => {
   const wizard = readFileSync(join(skillRoot, 'scripts/openclaw-growth-wizard.mjs'), 'utf8');
 
-  assert.match(wizard, /Refresh OpenClaw session instructions now/);
+  assert.match(wizard, /Update OpenClaw runtime and heartbeat files now/);
   assert.match(wizard, /maybeRefreshOpenClawSessionInstructions\(rl, args\.config\)/);
   assert.match(wizard, /refreshWorkspaceRuntimeFromCurrentWizard/);
   assert.match(wizard, /writeOpenClawHeartbeat/);
-  assert.match(wizard, /OpenClaw refresh written/);
+  assert.match(wizard, /writeOpenClawSessionNote/);
+  assert.match(wizard, /OpenClaw files updated/);
+  assert.match(wizard, /ASC will not appear as a chat tool/);
   assert.match(wizard, /OPENCLAW_GROWTH_REFRESH_OPENCLAW_SESSION/);
   assert.match(wizard, /HEARTBEAT_MARKER_START/);
-  assert.match(wizard, /do not inspect loaded tools/);
+  assert.match(wizard, /never inspect loaded chat\/MCP tools/);
+});
+
+test('connector wizard does not recheck unrelated connectors after focused setup', () => {
+  const wizard = readFileSync(join(skillRoot, 'scripts/openclaw-growth-wizard.mjs'), 'utf8');
+
+  assert.match(wizard, /const requestedConnectors = args\.connectors \? parseConnectorList\(args\.connectors\) : \[\]/);
+  assert.match(wizard, /requestedConnectors\.length > 0\s*\?\s*orderConnectors\(requestedConnectors\)\s*:\s*await connectorKeysForHealthCheck\(args\.config\)/);
+  assert.match(wizard, /setupOk = await runConnectorSetupSteps/);
+  assert.match(wizard, /if \(!setupOk\)\s+return 'done'/);
+  assert.match(wizard, /return 'done'/);
 });
 
 test('wizard supports back navigation in menus and connector setup', () => {
