@@ -34,6 +34,19 @@ test('ASC access answers come from Growth Engineer status, not loaded chat tools
   assert.match(bootstrap, /If asked whether ASC\/App Store Connect analytics access is available, do not inspect loaded tools/);
 });
 
+test('connector wizard can refresh OpenClaw session instructions after setup changes', () => {
+  const wizard = readFileSync(join(skillRoot, 'scripts/openclaw-growth-wizard.mjs'), 'utf8');
+
+  assert.match(wizard, /Refresh OpenClaw session instructions now/);
+  assert.match(wizard, /maybeRefreshOpenClawSessionInstructions\(rl, args\.config\)/);
+  assert.match(wizard, /refreshWorkspaceRuntimeFromCurrentWizard/);
+  assert.match(wizard, /writeOpenClawHeartbeat/);
+  assert.match(wizard, /OpenClaw refresh written/);
+  assert.match(wizard, /OPENCLAW_GROWTH_REFRESH_OPENCLAW_SESSION/);
+  assert.match(wizard, /HEARTBEAT_MARKER_START/);
+  assert.match(wizard, /do not inspect loaded tools/);
+});
+
 test('unchanged unhealthy connectors are retried until an external alert is delivered', () => {
   const runner = readFileSync(join(skillRoot, 'scripts/openclaw-growth-runner.mjs'), 'utf8');
 
