@@ -657,7 +657,10 @@ test('ASC wizard requests the report-creation role and vendor number', () => {
   assert.match(wizard, /Not saved/);
   assert.match(wizard, /keyLabel: 'the temporary Admin key'/);
   assert.match(wizard, /Deleted temporary Admin \.p8/);
-  assert.match(wizard, /revoke the temporary Admin API key/);
+  assert.match(wizard, /function printAscBootstrapAdminRevokeNotice/);
+  assert.match(wizard, /Revoke \$\{keyLabel\} in App Store Connect now/);
+  assert.match(wizard, /https:\/\/appstoreconnect\.apple\.com\/access\/integrations\/api/);
+  assert.match(wizard, /printAscBootstrapAdminRevokeNotice\(bootstrapEnv\)/);
   assert.doesNotMatch(wizard, /Delete this temporary Admin \.p8 file from this host/);
   assert.doesNotMatch(wizard, /Provide a temporary Admin API key now/);
   assert.doesNotMatch(wizard, /payloadNeedsAscAnalyticsBootstrap/);

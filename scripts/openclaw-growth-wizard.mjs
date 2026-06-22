@@ -4182,7 +4182,6 @@ async function cleanupTemporaryAscBootstrapPrivateKey(bootstrapEnv = {}) {
         return;
     if (privateKeyPath === String(bootstrapEnv.ASC_PRIVATE_KEY_PATH || process.env.ASC_PRIVATE_KEY_PATH || '').trim()) {
         process.stdout.write('Temporary Admin .p8 path matches the steady-state ASC_PRIVATE_KEY_PATH; leaving it in place.\n');
-        process.stdout.write('You can also revoke the temporary Admin API key in App Store Connect.\n');
         return;
     }
     try {
@@ -4192,12 +4191,16 @@ async function cleanupTemporaryAscBootstrapPrivateKey(bootstrapEnv = {}) {
     catch (error) {
         if (error?.code === 'ENOENT') {
             process.stdout.write(`Temporary Admin .p8 was already absent at ${privateKeyPath}.\n`);
-            process.stdout.write('You can also revoke the temporary Admin API key in App Store Connect.\n');
             return;
         }
         process.stdout.write(`Could not delete temporary Admin .p8 at ${privateKeyPath}: ${error instanceof Error ? error.message : String(error)}\n`);
     }
-    process.stdout.write('You can also revoke the temporary Admin API key in App Store Connect.\n');
+}
+function printAscBootstrapAdminRevokeNotice(bootstrapEnv = {}) {
+    const keyId = String(bootstrapEnv.ASC_BOOTSTRAP_KEY_ID || '').trim();
+    const keyLabel = keyId ? `Admin key ${keyId}` : 'the temporary Admin key';
+    process.stdout.write(`\n${bold(`Revoke ${keyLabel} in App Store Connect now.`)}\n`);
+    process.stdout.write('https://appstoreconnect.apple.com/access/integrations/api\n');
 }
 async function shouldRunSelfUpdate(workspaceRoot, force) {
     if (force)
@@ -4441,6 +4444,9 @@ async function runConnectorSetupSteps({ rl, args, selected, healthByConnector, a
                 runtimeEnv: bootstrapEnv,
             });
             await cleanupTemporaryAscBootstrapPrivateKey(bootstrapEnv);
+            if (check.ok) {
+                printAscBootstrapAdminRevokeNotice(bootstrapEnv);
+            }
             if (!check.retry)
                 break;
         }
