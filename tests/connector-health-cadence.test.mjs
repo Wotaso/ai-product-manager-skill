@@ -46,6 +46,7 @@ test('connector wizard can refresh OpenClaw session instructions after setup cha
   assert.match(wizard, /writeOpenClawSessionNote/);
   assert.match(wizard, /OpenClaw files updated/);
   assert.match(wizard, /ASC will not appear as a chat tool/);
+  assert.match(wizard, /Existing OpenClaw chat sessions may need a restart/);
   assert.match(wizard, /OPENCLAW_GROWTH_REFRESH_OPENCLAW_SESSION/);
   assert.match(wizard, /HEARTBEAT_MARKER_START/);
   assert.match(wizard, /never inspect loaded chat\/MCP tools/);
@@ -717,7 +718,9 @@ test('ASC wizard requests the report-creation role and vendor number', () => {
   assert.match(wizard, /ASC_BOOTSTRAP_KEY_ID \(from AuthKey_<KEY_ID>\.p8\)/);
   assert.match(wizard, /Not saved/);
   assert.match(wizard, /keyLabel: 'the temporary Admin key'/);
-  assert.match(wizard, /Deleted temporary Admin \.p8/);
+  assert.match(wizard, /Kept temporary Admin \.p8 copy/);
+  assert.doesNotMatch(wizard, /Deleted temporary Admin \.p8/);
+  assert.doesNotMatch(wizard, /fs\.unlink\(privateKeyPath\)/);
   assert.match(wizard, /function printAscBootstrapAdminRevokeNotice/);
   assert.match(wizard, /Revoke \$\{keyLabel\} in App Store Connect now/);
   assert.match(wizard, /https:\/\/appstoreconnect\.apple\.com\/access\/integrations\/api/);
@@ -756,6 +759,8 @@ test('ASC wizard requests the report-creation role and vendor number', () => {
   assert.match(preflight, /asc apps list --output json/);
   assert.match(start, /phase: 'asc_analytics_request_setup'/);
   assert.match(start, /ASC_BOOTSTRAP_PRIVATE_KEY_DELETE_AFTER_USE/);
+  assert.match(start, /kept temporary Admin \.p8 copy/);
+  assert.doesNotMatch(start, /await fs\.unlink\(privateKeyPath\)/);
   assert.match(start, /removeTemporaryAscBootstrapPrivateKey/);
   assert.match(start, /temporary ASC Admin key/);
   assert.match(start, /Sales and Reports or Finance for daily downloads/);
