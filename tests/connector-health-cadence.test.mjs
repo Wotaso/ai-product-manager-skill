@@ -47,6 +47,21 @@ test('connector wizard can refresh OpenClaw session instructions after setup cha
   assert.match(wizard, /do not inspect loaded tools/);
 });
 
+test('wizard supports back navigation in menus and connector setup', () => {
+  const wizard = readFileSync(join(skillRoot, 'scripts/openclaw-growth-wizard.mjs'), 'utf8');
+
+  assert.match(wizard, /class WizardBackError extends Error/);
+  assert.match(wizard, /Use B\/← in menus or type :back in text prompts to return/);
+  assert.match(wizard, /B\/← back\. Esc\/Q cancels/);
+  assert.match(wizard, /function isBackAnswer/);
+  assert.match(wizard, /if \(isBackAnswer\(answer\)\)\s+throw new WizardBackError/);
+  assert.match(wizard, /if \(key\?\.name === 'left' \|\| key\?\.name === 'b'\)/);
+  assert.match(wizard, /while \(true\)\s*\{\s*clearTerminal\(\);\s*printConnectorIntro/);
+  assert.match(wizard, /if \(error instanceof WizardBackError\)\s+continue/);
+  assert.match(wizard, /const result = await runConnectorSetupWizard/);
+  assert.match(wizard, /if \(result === 'back'\)\s+continue/);
+});
+
 test('unchanged unhealthy connectors are retried until an external alert is delivered', () => {
   const runner = readFileSync(join(skillRoot, 'scripts/openclaw-growth-runner.mjs'), 'utf8');
 

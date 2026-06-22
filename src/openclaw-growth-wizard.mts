@@ -113,6 +113,13 @@ class WizardAbortError extends Error {
   }
 }
 
+class WizardBackError extends Error {
+  constructor(message = 'Go back') {
+    super(message);
+    this.name = 'WizardBackError';
+  }
+}
+
 const CONNECTOR_DEFINITIONS: ConnectorDefinition[] = [
   {
     key: 'analytics',
@@ -1264,6 +1271,7 @@ async function askMenuChoice<T extends string>(
     });
     const defaultIndex = Math.max(0, options.findIndex((option) => option.value === defaultValue));
     const answer = await ask(rl, `Setup area (1-${options.length})`, String(defaultIndex + 1));
+    if (isBackAnswer(answer)) throw new WizardBackError();
     const selected = options[Number(answer.trim()) - 1] || options[defaultIndex];
     return selected.value;
   }
@@ -1411,7 +1419,13 @@ async function askMultiChoiceByKeys<T extends string>({
         process.stdout.write(`${pointer} ${checkbox} ${index + 1}) ${ANSI.bold}${option.label}${ANSI.reset}${requiredLabel}\n`);
         writeWrapped(option.detail, '      ', ANSI.dim);
       }
-      process.stdout.write(`\n${ANSI.dim}Esc/Q cancels. Space toggles, A toggles all optional items, Enter continues. Number keys 1-${options.length} toggle items.${ANSI.reset}\n`);
+      process.stdout.write(`\n${ANSI.dim}B/← back. Esc/Q cancels. Space toggles, A toggles all optional items, Enter continues. Number keys 1-${options.length} toggle items.${ANSI.reset}\n`);
+    };
+
+    const back = () => {
+      cleanup();
+      process.stdout.write('\n');
+      reject(new WizardBackError());
     };
 
     const cancel = () => {
@@ -1453,6 +1467,10 @@ async function askMultiChoiceByKeys<T extends string>({
       }
       if (key?.name === 'escape' || key?.name === 'q') {
         cancel();
+        return;
+      }
+      if (key?.name === 'left' || key?.name === 'b') {
+        back();
         return;
       }
       if (key?.name === 'up' || key?.name === 'k') {
@@ -1530,7 +1548,13 @@ async function askMenuChoiceByKeys<T extends string>({
         process.stdout.write(`${pointer} ${number} ${ANSI.bold}${option.label}${ANSI.reset}\n`);
         writeWrapped(option.detail, '     ', ANSI.dim);
       }
-      process.stdout.write(`\n${ANSI.dim}Esc/Q cancels. Number keys 1-${options.length} select directly.${ANSI.reset}\n`);
+      process.stdout.write(`\n${ANSI.dim}B/← back. Esc/Q cancels. Number keys 1-${options.length} select directly.${ANSI.reset}\n`);
+    };
+
+    const back = () => {
+      cleanup();
+      process.stdout.write('\n');
+      reject(new WizardBackError());
     };
 
     const cancel = () => {
@@ -1552,6 +1576,10 @@ async function askMenuChoiceByKeys<T extends string>({
       }
       if (key?.name === 'escape' || key?.name === 'q') {
         cancel();
+        return;
+      }
+      if (key?.name === 'left' || key?.name === 'b') {
+        back();
         return;
       }
       if (key?.name === 'up' || key?.name === 'k') {
@@ -1941,7 +1969,7 @@ function renderConnectorPicker(
   if (warning) {
     process.stdout.write(`${ANSI.bold}${warning}${ANSI.reset}\n\n`);
   }
-  process.stdout.write(`${ANSI.dim}Esc/Q cancels. Number keys 1-${CONNECTOR_DEFINITIONS.length} also toggle connectors.${ANSI.reset}\n`);
+  process.stdout.write(`${ANSI.dim}B/← back. Esc/Q cancels. Number keys 1-${CONNECTOR_DEFINITIONS.length} also toggle connectors.${ANSI.reset}\n`);
 }
 
 async function askConnectorSelectionByKeys(
@@ -1996,6 +2024,12 @@ async function askConnectorSelectionByKeys(
       reject(new WizardAbortError('Connector setup cancelled.'));
     };
 
+    const back = () => {
+      cleanup();
+      process.stdout.write('\n');
+      reject(new WizardBackError());
+    };
+
     const toggleCurrent = () => {
       const connector = selectedDisplayConnector();
       if (!connector) return;
@@ -2026,6 +2060,10 @@ async function askConnectorSelectionByKeys(
       }
       if (key?.name === 'escape' || key?.name === 'q') {
         cancel();
+        return;
+      }
+      if (key?.name === 'left' || key?.name === 'b') {
+        back();
         return;
       }
       if (key?.name === 'up' || key?.name === 'k') {
@@ -4949,32 +4987,49 @@ async function runConnectorSetupWizard(args) {
 
   const rl = createInterface({ input: process.stdin, output: process.stdout });
   try {
-    clearTerminal();
-    printConnectorIntro();
-    await migrateRuntimeSourceCommandsFile(args.config);
-    const healthCheckConnectors = await connectorKeysForHealthCheck(args.config);
-    const healthByConnector = await withConnectorHealthLoading((onProgress) =>
-      getConnectorPickerHealth(args.config, onProgress, healthCheckConnectors),
-      healthCheckConnectors,
-    );
-    const existingFixes = connectorKeysNeedingAttention(healthByConnector);
-    const requestedConnectors = args.connectors ? parseConnectorList(args.connectors) : [];
-    const chosenConnectors =
-      requestedConnectors.length > 0
-        ? orderConnectors(requestedConnectors)
-        : await askConnectorSelectionWithHealth(rl, healthByConnector, existingFixes);
-    const selected =
-      requestedConnectors.length > 0 || args.connectorRecovery
-        ? orderConnectors(chosenConnectors)
-        : withMissingRequiredAnalyticsConnector(chosenConnectors);
-    if (selected.length === 0) {
-      throw new Error(`No supported connectors selected. Use ${CONNECTOR_KEYS.join(', ')}, or all.`);
-    }
+    const hasExplicitConnectors = Boolean(args.connectors);
+    while (true) {
+      clearTerminal();
+      printConnectorIntro({
+        introDetail: 'API keys stay in this host\'s local secrets file. Use B/← in menus or type :back in text prompts to return.',
+      });
+      await migrateRuntimeSourceCommandsFile(args.config);
+      const healthCheckConnectors = await connectorKeysForHealthCheck(args.config);
+      const healthByConnector = await withConnectorHealthLoading((onProgress) =>
+        getConnectorPickerHealth(args.config, onProgress, healthCheckConnectors),
+        healthCheckConnectors,
+      );
+      const existingFixes = connectorKeysNeedingAttention(healthByConnector);
+      const requestedConnectors = args.connectors ? parseConnectorList(args.connectors) : [];
+      let chosenConnectors: ConnectorKey[];
+      try {
+        chosenConnectors =
+          requestedConnectors.length > 0
+            ? orderConnectors(requestedConnectors)
+            : await askConnectorSelectionWithHealth(rl, healthByConnector, existingFixes);
+      } catch (error) {
+        if (error instanceof WizardBackError) return 'back';
+        throw error;
+      }
+      const selected =
+        requestedConnectors.length > 0 || args.connectorRecovery
+          ? orderConnectors(chosenConnectors)
+          : withMissingRequiredAnalyticsConnector(chosenConnectors);
+      if (selected.length === 0) {
+        throw new Error(`No supported connectors selected. Use ${CONNECTOR_KEYS.join(', ')}, or all.`);
+      }
 
-    if (args.connectorRecovery) {
-      await runConnectorRecoverySteps({ rl, args, selected, healthByConnector });
-    } else {
-      await runConnectorSetupSteps({ rl, args, selected, healthByConnector });
+      try {
+        if (args.connectorRecovery) {
+          await runConnectorRecoverySteps({ rl, args, selected, healthByConnector });
+        } else {
+          await runConnectorSetupSteps({ rl, args, selected, healthByConnector });
+        }
+      } catch (error) {
+        if (error instanceof WizardBackError) continue;
+        throw error;
+      }
+      if (hasExplicitConnectors) return 'done';
     }
   } finally {
     rl.close();
@@ -4989,10 +5044,15 @@ function clearPromptInput(rl) {
   }
 }
 
+function isBackAnswer(value) {
+  return String(value || '').trim().toLowerCase() === ':back';
+}
+
 async function ask(rl, label, defaultValue = '') {
   const suffix = defaultValue ? ` (${defaultValue})` : '';
   clearPromptInput(rl);
   const answer = (await rl.question(`${label}${suffix}: `)).trim();
+  if (isBackAnswer(answer)) throw new WizardBackError();
   return answer || defaultValue;
 }
 
@@ -5001,6 +5061,7 @@ async function askYesNo(rl, label, defaultYes = true) {
   while (true) {
     clearPromptInput(rl);
     const answer = (await rl.question(`${label} ${suffix} `)).trim().toLowerCase();
+    if (isBackAnswer(answer)) throw new WizardBackError();
     if (!answer) return defaultYes;
     if (answer === 'y' || answer === 'yes') return true;
     if (answer === 'n' || answer === 'no') return false;
@@ -5192,7 +5253,8 @@ async function askWizardGoal(rl) {
 
 function printWizardHeader() {
   process.stdout.write('OpenClaw Growth Engineer - Setup Wizard\n');
-  process.stdout.write('This wizard can configure connector secrets. Normal config is written to config JSON; API keys stay in the local chmod 600 secrets file.\n\n');
+  process.stdout.write('This wizard can configure connector secrets. Normal config is written to config JSON; API keys stay in the local chmod 600 secrets file.\n');
+  process.stdout.write(`${ANSI.dim}Use B/← in menus or type :back in text prompts to return.${ANSI.reset}\n\n`);
 }
 
 async function buildDefaultWizardConfig(configPath = null) {
@@ -6349,14 +6411,16 @@ async function main() {
     throw new Error('Wizard requires an interactive terminal.');
   }
 
-  const rl = createInterface({ input: process.stdin, output: process.stdout });
-  try {
+  while (true) {
+    const rl = createInterface({ input: process.stdin, output: process.stdout });
+    try {
     printWizardHeader();
 
     const goal = await askWizardGoal(rl);
     if (goal === 'connectors') {
       rl.close();
-      await runConnectorSetupWizard({ ...args, connectorWizard: true });
+      const result = await runConnectorSetupWizard({ ...args, connectorWizard: true });
+      if (result === 'back') continue;
       return;
     }
     if (goal === 'intervals') {
@@ -6431,8 +6495,16 @@ async function main() {
     process.stdout.write(`1) Set secrets in OpenClaw secret store (env var names in config.secrets)\n`);
     process.stdout.write(`2) Run once: ${growthEngineerPackageCommand(`run --config ${quote(configPath)}`)}\n`);
     process.stdout.write('3) Prefer OpenClaw Gateway cron for recurring VPS runs; use the interval loop only as a manual fallback.\n');
-  } finally {
-    rl.close();
+      return;
+    } catch (error) {
+      if (error instanceof WizardBackError) {
+        clearTerminal();
+        continue;
+      }
+      throw error;
+    } finally {
+      rl.close();
+    }
   }
 }
 
