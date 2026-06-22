@@ -134,7 +134,7 @@ tasks:
 
 - name: openclaw-growth-engineer-run
   interval: 6h
-  prompt: "Run `node scripts/openclaw-growth-runner.mjs --config __OPENCLAW_GROWTH_CONFIG_PATH__ --state __OPENCLAW_GROWTH_STATE_PATH__` from the workspace if the config and runtime files exist. The runner owns schedule.cadences, connectorHealthCheckIntervalMinutes, skipIfNoDataChange, and skipIfIssueSetUnchanged. If it reports connector-health alerts, production crashes, generated issues, or actionable growth findings, summarize only the action and evidence. If setup files are missing, tell the user to run `npx -y @analyticscli/growth-engineer@preview wizard --connectors --config __OPENCLAW_GROWTH_CONFIG_PATH__`. If there is no actionable output, reply HEARTBEAT_OK."
+  prompt: "Run `node scripts/openclaw-growth-runner.mjs --config __OPENCLAW_GROWTH_CONFIG_PATH__ --state __OPENCLAW_GROWTH_STATE_PATH__` from the workspace if the config and runtime files exist. The runner owns schedule.cadences, connectorHealthCheckIntervalMinutes, skipIfNoDataChange, and skipIfIssueSetUnchanged. If asked whether ASC/App Store Connect analytics access is available, do not inspect loaded tools; answer from Growth Engineer status/runner output because ASC is a local CLI/secrets-backed source. If it reports connector-health alerts, production crashes, generated issues, or actionable growth findings, summarize only the action and evidence. If setup files are missing, tell the user to run `npx -y @analyticscli/growth-engineer@preview wizard --connectors --config __OPENCLAW_GROWTH_CONFIG_PATH__`. If there is no actionable output, reply HEARTBEAT_OK."
 
 # Keep this section small. Do not put secrets in HEARTBEAT.md.
 <!-- openclaw-growth-engineer:end -->

@@ -20,6 +20,20 @@ test('connector health defaults to a 6 hour cadence', () => {
   assert.match(start, /Math\.min/);
 });
 
+test('ASC access answers come from Growth Engineer status, not loaded chat tools', () => {
+  const skill = readFileSync(join(skillRoot, 'SKILL.md'), 'utf8');
+  const start = readFileSync(join(skillRoot, 'scripts/openclaw-growth-start.mjs'), 'utf8');
+  const bootstrap = readFileSync(join(skillRoot, 'scripts/bootstrap-openclaw-workspace.sh'), 'utf8');
+
+  assert.match(skill, /Growth Engineer connectors are local CLI\/secrets-backed sources, not chat\/MCP tools/);
+  assert.match(skill, /do not inspect loaded tools/);
+  assert.match(skill, /node scripts\/openclaw-growth-status\.mjs --config <config> --json/);
+  assert.match(skill, /ASC analytics is connected through the local `asc` CLI\/API-key setup/);
+  assert.match(start, /If asked whether ASC\/App Store Connect analytics access is available, do not inspect loaded tools/);
+  assert.match(start, /ASC is a local CLI\/secrets-backed source/);
+  assert.match(bootstrap, /If asked whether ASC\/App Store Connect analytics access is available, do not inspect loaded tools/);
+});
+
 test('unchanged unhealthy connectors are retried until an external alert is delivered', () => {
   const runner = readFileSync(join(skillRoot, 'scripts/openclaw-growth-runner.mjs'), 'utf8');
 
