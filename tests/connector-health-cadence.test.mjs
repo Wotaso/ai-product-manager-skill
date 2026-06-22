@@ -96,6 +96,14 @@ test('ASC analytics commands avoid state filter and use a longer default timeout
   assert.doesNotMatch(exporter, /'--state',\s*'COMPLETED'/);
 });
 
+test('successful setup progress clears non-blocking preflight attention state', () => {
+  const wizard = readFileSync(join(skillRoot, 'scripts/openclaw-growth-wizard.mjs'), 'utf8');
+
+  assert.match(wizard, /function reconcileSuccessfulSetupProgress/);
+  assert.match(wizard, /passed with non-blocking checks/);
+  assert.match(wizard, /if \(result\.ok\)\s*\{\s*reconcileSuccessfulSetupProgress\(plan\)/);
+});
+
 test('connector picker honors active runner health incidents', () => {
   const wizard = readFileSync(join(skillRoot, 'scripts/openclaw-growth-wizard.mjs'), 'utf8');
 

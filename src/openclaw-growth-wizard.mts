@@ -2746,6 +2746,18 @@ function updateProgressItem(items, key, status, detail) {
   if (detail) item.detail = detail;
 }
 
+function reconcileSuccessfulSetupProgress(items) {
+  for (const item of items) {
+    if (item.key === 'finalize') continue;
+    if (['fail', 'warn'].includes(String(item.status || ''))) {
+      item.status = 'pass';
+      if (item.key === 'preflight') {
+        item.detail = 'passed with non-blocking checks';
+      }
+    }
+  }
+}
+
 async function runSetupCommandWithProgress(command, env, selected: ConnectorKey[], message) {
   const plan = buildSetupTestProgressPlan(selected);
   const spinnerFrames = ['-', '\\', '|', '/'];
@@ -2777,6 +2789,9 @@ async function runSetupCommandWithProgress(command, env, selected: ConnectorKey[
   if (Array.isArray(payload?.blockers) && payload.blockers.length > 0) {
     if (process.stdout.isTTY) clearTerminal();
     return result;
+  }
+  if (result.ok) {
+    reconcileSuccessfulSetupProgress(plan);
   }
   updateProgressItem(plan, 'finalize', 'pass', 'result received');
   renderHealthProgress(plan, 'Connector setup test finished.', 'Connector setup test', { final: true });
