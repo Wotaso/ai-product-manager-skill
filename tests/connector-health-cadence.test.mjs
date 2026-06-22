@@ -55,6 +55,9 @@ test('wizard supports back navigation in menus and connector setup', () => {
   assert.match(wizard, /Esc\/← back\. Ctrl\+C cancels/);
   assert.match(wizard, /function isBackAnswer/);
   assert.match(wizard, /return \[':back', '\\x1b'\]\.includes\(normalized\)/);
+  assert.match(wizard, /async function askQuestionWithEscBack/);
+  assert.match(wizard, /controller\.abort\(\)/);
+  assert.match(wizard, /await askQuestionWithEscBack\(rl,/);
   assert.match(wizard, /if \(isBackAnswer\(answer\)\)\s+throw new WizardBackError/);
   assert.match(wizard, /if \(key\?\.name === 'escape' \|\| key\?\.name === 'left'\)/);
   assert.match(wizard, /while \(true\)\s*\{\s*clearTerminal\(\);\s*printConnectorIntro/);
