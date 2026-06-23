@@ -160,7 +160,9 @@ test('ASC analytics commands avoid state filter and use a longer default timeout
   const exporter = readFileSync(join(skillRoot, 'scripts/export-asc-summary.mjs'), 'utf8');
 
   assert.match(start, /ASC_TIMEOUT_SECONDS: normalizeString\(process\.env\.ASC_TIMEOUT_SECONDS\) \|\| DEFAULT_ASC_TIMEOUT_SECONDS/);
-  assert.match(exporter, /ASC_TIMEOUT_SECONDS: normalizeString\(process\.env\.ASC_TIMEOUT_SECONDS\) \|\| DEFAULT_ASC_TIMEOUT_SECONDS/);
+  assert.match(exporter, /--command-timeout-ms <n>/);
+  assert.match(exporter, /delete env\.ASC_TIMEOUT_SECONDS/);
+  assert.match(exporter, /delete env\.ASC_VENDOR_NUMBER/);
   assert.doesNotMatch(exporter, /'--state',\s*'COMPLETED'/);
 });
 
