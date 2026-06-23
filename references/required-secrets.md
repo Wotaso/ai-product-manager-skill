@@ -8,7 +8,7 @@ Use this checklist before running autopilot mode.
 | --- | --- | --- | --- |
 | `GITHUB_TOKEN` | Repo/code access for analysis; optional GitHub issue/PR creation | Strongly recommended for code-aware analysis; required only for GitHub issue/PR creation | Prefer GitHub CLI auth when already available. Token fallback: fine-grained read-only `Contents: Read`, `Metadata: Read`; use all repos only for cross-repo analysis. Issue creation: add `Issues: Read/Write`. PR creation: add `Pull requests: Read/Write` and `Contents: Read/Write` |
 | `ANALYTICSCLI_ACCESS_TOKEN` | AnalyticsCLI command auth when no local login exists | Recommended | Read-only analytics access across the account |
-| `ASC_KEY_ID` / `ASC_ISSUER_ID` / `ASC_PRIVATE_KEY` | Optional App Store Connect Analytics reports via `asc` CLI | Optional, ask before setup | Analytics data only. Prefer Sales/Sales and Reports style access for generated analytics reports; use Admin only temporarily if a report type must be requested first |
+| `ASC_KEY_ID` / `ASC_ISSUER_ID` / `ASC_PRIVATE_KEY_PATH` | Optional App Store Connect Analytics reports via `asc` CLI | Optional, ask before setup | Ongoing Reports key should use `Sales and Reports` for downloads. `Finance` or `Admin` also works for report downloads. Use a separate temporary Setup key with `Admin` only to create the initial App Analytics report request, then revoke it |
 | `REVENUECAT_API_KEY` | Optional RevenueCat monetization/subscription refresh | Optional, ask before setup | Secret API key stored server-side only. Prefer v2 read permissions for charts/metrics and required project configuration; add customer/subscriber read only when needed |
 | `PADDLE_API_KEY` | Optional Paddle Billing metrics refresh | Optional, ask before setup | Live Paddle API key with `metrics.read` permission from `https://vendors.paddle.com/authentication-v2`; sandbox metrics are not production evidence |
 | `GOOGLE_SEARCH_CONSOLE_ACCESS_TOKEN` or `GOOGLE_APPLICATION_CREDENTIALS` | Optional Google Search Console SEO refresh | Optional, ask before setup | Search Console read-only access. Leave `GSC_SITE_URL` empty to scan all verified properties visible to the account; set it only to intentionally restrict to one property. CSV-only SEO mode does not require a live token |
@@ -26,8 +26,10 @@ Examples:
 - `GLITCHTIP_API_TOKEN`
 - `ASC_KEY_ID`
 - `ASC_ISSUER_ID`
-- `ASC_PRIVATE_KEY`
 - `ASC_PRIVATE_KEY_PATH`
+- `ASC_BOOTSTRAP_KEY_ID`
+- `ASC_BOOTSTRAP_ISSUER_ID`
+- `ASC_BOOTSTRAP_PRIVATE_KEY_PATH`
 - `PLAY_CONSOLE_SERVICE_ACCOUNT_JSON`
 
 ## Red Lines

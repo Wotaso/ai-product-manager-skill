@@ -125,12 +125,18 @@ SEO / Search Console / DataForSEO setup:
 
 For Apple-platform apps, ask whether to connect the `asc` CLI plus the App Store Connect agent skill for read-only App Store Connect reporting.
 When configured, use every available read-only ASC surface: App Analytics, Sales and Trends, downloads/units, redownloads, conversion, source traffic, app usage, purchases, subscriptions, ratings/reviews, build/TestFlight/release context, and crash totals. Do not describe ASC as partial or analytics-only once it is connected.
-Recommended least privilege: Sales for analytics/sales reports, Customer Support for review text, Developer for builds/TestFlight context, and App Manager only when app metadata or release settings are explicitly needed. Avoid Admin unless a one-off App Store Connect permission requires it.
+ASC setup uses two API keys:
+
+- Reports key: `Sales and Reports` for ongoing Growth Engineer downloads. `Finance` or `Admin` also works for report downloads, but prefer `Sales and Reports` after bootstrap.
+- Setup key: temporary `Admin`, used once to create the initial App Analytics report request, then revoked in App Store Connect.
+
+Optional extra roles on the Reports key: `Customer Support` for review text, `Developer` for builds/TestFlight context, and `App Manager` only when app metadata or release settings are explicitly needed.
 
 ASC key locations:
 
 - Team key: App Store Connect -> Users and Access -> Integrations -> App Store Connect API
 - Individual key: profile menu -> Edit Profile -> Individual API Key
+- Keep Apple's original `AuthKey_<KEY_ID>.p8` filenames. The wizard derives `ASC_KEY_ID` and `ASC_BOOTSTRAP_KEY_ID` from those names.
 
 RevenueCat setup:
 

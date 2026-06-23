@@ -3,7 +3,7 @@ name: growth-engineer
 description: Growth Engineer for mobile apps and agent runtimes including OpenClaw and Hermes. Correlate analytics, crashes, billing, feedback, store signals, and repo context into proposal drafts that can flow into agent chat, GitHub issues, or draft pull requests.
 license: MIT
 homepage: https://github.com/Wotaso/growth-engineer-skill
-metadata: {"author":"wotaso","version":"1.0.190","analyticscli-target":"@analyticscli/cli","analyticscli-supported-range":">=0.1.2-preview.0 <0.2.0","openclaw":{"emoji":"🚀","homepage":"https://github.com/Wotaso/growth-engineer-skill","requires":{"bins":["node","analyticscli"]},"install":[{"id":"analyticscli-cli","kind":"node","package":"@analyticscli/cli@preview","bins":["analyticscli"],"label":"Install/update AnalyticsCLI CLI (npm package @analyticscli/cli@preview)"}]},"hermes":{"tags":["Growth","Analytics","Mobile","Product","OpenClaw","Hermes"],"homepage":"https://github.com/Wotaso/growth-engineer-skill","requires":{"bins":["node","analyticscli"]},"install":[{"id":"growth-engineer","kind":"skill","package":"Wotaso/growth-engineer-skill","label":"Install the shared Growth Engineer for Hermes"}]}}
+metadata: {"author":"wotaso","version":"1.0.191","analyticscli-target":"@analyticscli/cli","analyticscli-supported-range":">=0.1.2-preview.0 <0.2.0","openclaw":{"emoji":"🚀","homepage":"https://github.com/Wotaso/growth-engineer-skill","requires":{"bins":["node","analyticscli"]},"install":[{"id":"analyticscli-cli","kind":"node","package":"@analyticscli/cli@preview","bins":["analyticscli"],"label":"Install/update AnalyticsCLI CLI (npm package @analyticscli/cli@preview)"}]},"hermes":{"tags":["Growth","Analytics","Mobile","Product","OpenClaw","Hermes"],"homepage":"https://github.com/Wotaso/growth-engineer-skill","requires":{"bins":["node","analyticscli"]},"install":[{"id":"growth-engineer","kind":"skill","package":"Wotaso/growth-engineer-skill","label":"Install the shared Growth Engineer for Hermes"}]}}
 ---
 
 # Growth Engineer
@@ -540,9 +540,10 @@ ASC setup guidance:
 
 - Ask: "Soll ASC CLI fuer App Store Connect verbunden werden?"
 - Send the user to exactly this page to create the key: https://appstoreconnect.apple.com/access/integrations/api.
-- Say the main role is `Sales`, required for App Analytics, Sales and Trends, downloads, revenue, and conversion context. Add `Customer Support` for App Store ratings/review text, `Developer` for builds/TestFlight/delivery status, and `App Manager` only when app metadata, pricing, or release settings are needed. Avoid `Admin` unless a one-off App Store Connect permission requires it.
-- Tell the user to copy `ASC_ISSUER_ID` from the API keys page, download the `.p8`, keep Apple's original `AuthKey_<KEY_ID>.p8` file name, and paste the local file path into the terminal wizard. Do not tell them to rename the `.p8`; the wizard derives `ASC_KEY_ID` from the file name.
+- Say ASC setup uses two API keys: a Reports key with `Sales and Reports` for ongoing Growth Engineer downloads, plus a temporary Setup key with `Admin` used once to create the initial App Analytics report request. `Finance` or `Admin` also works for ongoing report downloads, but prefer `Sales and Reports` after bootstrap. Add `Customer Support` for App Store ratings/review text, `Developer` for builds/TestFlight/delivery status, and `App Manager` only when app metadata, pricing, or release settings are needed.
+- Tell the user to copy `ASC_ISSUER_ID` from the API keys page, download both `.p8` files, keep Apple's original `AuthKey_<KEY_ID>.p8` file names, and paste the local file paths into the terminal wizard. Do not tell them to rename the `.p8`; the wizard derives `ASC_KEY_ID` and `ASC_BOOTSTRAP_KEY_ID` from the file names.
 - Store only env vars/secrets: `ASC_KEY_ID`, `ASC_ISSUER_ID`, and `ASC_PRIVATE_KEY_PATH`; the wizard can still create the `.p8` file from validated pasted terminal content as a fallback. Never commit the `.p8` private key.
+- The Setup Admin key is not saved to `secrets.env`. The wizard keeps the temporary secure `.p8` copy on the host and tells the user to revoke the Admin key in App Store Connect after setup.
 - Do not ask for `ASC_APP_ID` upfront. After auth succeeds, ASC should use all accessible apps by default. Store an app filter only if the user explicitly asks to scope ASC to one app.
 - After the key is present, run one read-only API-key `asc` smoke test before marking ASC connected. Do not check `asc web auth` and do not force a target app selection; default ASC analysis covers all accessible apps.
 - Prefer `asc auth login` when the local `asc` CLI supports keychain storage; otherwise use runtime env injection.
@@ -673,7 +674,9 @@ Use the legacy bootstrap-and-copy runtime only when the standalone CLI is unavai
 - `ASC_KEY_ID`, `ASC_ISSUER_ID`, `ASC_PRIVATE_KEY_PATH`
   - optional; ask before setup
   - App Store Connect analytics first, plus optional reviews, builds, TestFlight, and store context
-  - require Sales; add Customer Support for reviews, Developer for builds/TestFlight, and App Manager only for app metadata/pricing/release settings
+  - ongoing Reports key: prefer Sales and Reports; Finance or Admin also works for report downloads
+  - one-time Setup key: Admin, only to create the initial App Analytics report request; revoke after setup
+  - add Customer Support for reviews, Developer for builds/TestFlight, and App Manager only for app metadata/pricing/release settings
 - `ANALYTICSCLI_ACCESS_TOKEN`
   - recommended for CLI/agent auth when no local CLI login exists
   - do not ask for `ANALYTICSCLI_READONLY_TOKEN`; the readonly token is collected by the connector wizard and stored as `ANALYTICSCLI_ACCESS_TOKEN`
