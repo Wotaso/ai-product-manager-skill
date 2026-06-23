@@ -760,8 +760,9 @@ test('ASC wizard requests the report-creation role and vendor number', () => {
   assert.doesNotMatch(wizard, new RegExp(['ASC', 'ANALYTICS', 'VENDOR', 'NUMBER'].join('_')));
   assert.match(status, /checkAscAnalyticsReadiness/);
   assert.match(status, /asc analytics requests --app/);
-  assert.match(status, /ASC App Analytics has no report requests/);
-  assert.match(status, /temporary Admin key/);
+  assert.match(status, /isAscAnalyticsRequestCollectionUnsupported/);
+  assert.match(status, /does not allow 'get_collection'/);
+  assert.match(status, /create\/duplicate handling/);
   assert.match(status, /ASC_VENDOR_NUMBER is missing/);
   assert.match(status, /appAnalyticsReports: 'required'/);
   assert.doesNotMatch(status, /ASC API-key exporter smoke test passed for accessible apps/);
@@ -781,6 +782,9 @@ test('ASC wizard requests the report-creation role and vendor number', () => {
   assert.doesNotMatch(status, /source\?\.service === 'asc-cli' && source\.enabled !== false/);
   assert.match(start, /ensureAscAnalyticsRequestsForAppScope/);
   assert.match(start, /asc analytics request --app/);
+  assert.match(start, /isAscAnalyticsRequestAlreadyExists/);
+  assert.match(start, /already have such an entity/);
+  assert.match(start, /ongoing Analytics Report Request already exists/);
   assert.match(start, /extractAscAnalyticsRequests/);
   assert.match(start, /normalizeString\(request\.state\)\?\.toUpperCase\(\) === 'COMPLETED'/);
   assert.doesNotMatch(start, /request\.state\.toUpperCase\(\)/);

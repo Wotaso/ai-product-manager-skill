@@ -1807,6 +1807,10 @@ function extractAscAnalyticsRequestId(payload) {
     }
     return extractAscAnalyticsRequestIds(payload)[0] || null;
 }
+function isAscAnalyticsRequestAlreadyExists(error) {
+    const normalized = normalizeString(error).toLowerCase();
+    return normalized.includes('already have such an entity') || normalized.includes('state_error');
+}
 async function listAscAnalyticsRequests(appId) {
     const result = await runShellCommand(`asc analytics requests --app ${quote(appId)} --output json`, 60_000, {
         env: ascIsolatedEnv(),
@@ -1860,15 +1864,14 @@ async function ensureAscAnalyticsRequest(appId) {
         return { ok: true, status: 'skipped', requestId: null, detail: 'no single ASC app configured' };
     }
     const existingRequests = await listAscAnalyticsRequests(normalizedAppId);
-    if (!existingRequests.ok) {
-        return { ok: false, status: 'query_failed', requestId: null, error: existingRequests.error };
-    }
-    const completedRequest = existingRequests.requests.find((request) => normalizeString(request.state)?.toUpperCase() === 'COMPLETED');
-    if (completedRequest) {
-        return { ok: true, status: 'completed', requestId: completedRequest.id, detail: `completed request ${completedRequest.id}` };
-    }
-    if (existingRequests.ids.length > 0) {
-        return { ok: true, status: 'pending', requestId: existingRequests.ids[0], detail: `existing request ${existingRequests.ids[0]} found; report instances may still be processing` };
+    if (existingRequests.ok) {
+        const completedRequest = existingRequests.requests.find((request) => normalizeString(request.state)?.toUpperCase() === 'COMPLETED');
+        if (completedRequest) {
+            return { ok: true, status: 'completed', requestId: completedRequest.id, detail: `completed request ${completedRequest.id}` };
+        }
+        if (existingRequests.ids.length > 0) {
+            return { ok: true, status: 'pending', requestId: existingRequests.ids[0], detail: `existing request ${existingRequests.ids[0]} found; report instances may still be processing` };
+        }
     }
     const created = await runShellCommand(`asc analytics request --app ${quote(normalizedAppId)} --access-type ONGOING --output json`, 60_000, { env: ascIsolatedEnv() });
     let finalCreated = created;
@@ -1884,6 +1887,15 @@ async function ensureAscAnalyticsRequest(appId) {
     }
     if (!finalCreated.ok) {
         const error = finalCreated.stderr || `exit ${finalCreated.code}`;
+        if (isAscAnalyticsRequestAlreadyExists(error)) {
+            return {
+                ok: true,
+                status: 'existing',
+                requestId: null,
+                detail: 'ongoing Analytics Report Request already exists; Apple does not expose request IDs through app-scoped listing',
+                usedBootstrapAdmin,
+            };
+        }
         const role = attemptedBootstrapAdmin ? 'Setup Admin' : 'Reports';
         return {
             ok: false,
