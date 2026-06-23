@@ -4,6 +4,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { createSign } from 'node:crypto';
 import { classifyServiceKind, getActionMode, getAllSourceEntries, getDefaultSourceCommand, getGitHubActionNoun, getGitHubConnectionSummary, getGitHubRequirementText, shouldAutoCreateGitHubArtifact, } from './openclaw-growth-shared.mjs';
 import { applyOpenClawSecretRefs, loadOpenClawGrowthSecrets } from './openclaw-growth-env.mjs';
 const DEFAULT_CONFIG_PATH = 'data/openclaw-growth-engineer/config.json';
@@ -539,6 +540,70 @@ function truncate(value, max = 240) {
         return text;
     return `${text.slice(0, max)}…`;
 }
+function base64UrlJson(value) {
+    return Buffer.from(JSON.stringify(value)).toString('base64url');
+}
+async function buildAscApiJwt() {
+    const keyId = String(process.env.ASC_KEY_ID || '').trim();
+    const issuerId = String(process.env.ASC_ISSUER_ID || '').trim();
+    const privateKeyPath = String(process.env.ASC_PRIVATE_KEY_PATH || '').trim();
+    const privateKey = String(process.env.ASC_PRIVATE_KEY || '').trim() ||
+        (String(process.env.ASC_PRIVATE_KEY_B64 || '').trim()
+            ? Buffer.from(String(process.env.ASC_PRIVATE_KEY_B64 || '').trim(), 'base64').toString('utf8')
+            : privateKeyPath
+                ? await fs.readFile(privateKeyPath, 'utf8')
+                : '');
+    if (!keyId || !issuerId || !privateKey)
+        return null;
+    const now = Math.floor(Date.now() / 1000);
+    const signingInput = `${base64UrlJson({ alg: 'ES256', kid: keyId, typ: 'JWT' })}.${base64UrlJson({
+        iss: issuerId,
+        iat: now - 60,
+        exp: now + 15 * 60,
+        aud: 'appstoreconnect-v1',
+    })}`;
+    const signer = createSign('SHA256');
+    signer.update(signingInput);
+    signer.end();
+    const signature = signer.sign({ key: privateKey, dsaEncoding: 'ieee-p1363' });
+    return `${signingInput}.${signature.toString('base64url')}`;
+}
+async function testAscAppsListDirect(timeoutMs) {
+    const token = await buildAscApiJwt();
+    if (!token)
+        return { ok: false, detail: 'ASC API credentials are incomplete' };
+    try {
+        const response = await fetch('https://api.appstoreconnect.apple.com/v1/apps?limit=200', {
+            headers: {
+                Accept: 'application/json',
+                Authorization: `Bearer ${token}`,
+            },
+            signal: AbortSignal.timeout(timeoutMs),
+        });
+        const text = await response.text();
+        let payload = null;
+        try {
+            payload = text ? JSON.parse(text) : null;
+        }
+        catch {
+            payload = { raw: text };
+        }
+        if (!response.ok) {
+            const detail = Array.isArray(payload?.errors)
+                ? payload.errors.map((entry) => entry?.detail || entry?.title || entry?.code).filter(Boolean).join('; ')
+                : text;
+            return { ok: false, detail: truncate(`direct Apple API returned HTTP ${response.status}: ${detail}`) };
+        }
+        const count = Array.isArray(payload?.data) ? payload.data.length : 0;
+        return {
+            ok: true,
+            detail: `direct Apple API apps list returned JSON${count ? ` (${count} app${count === 1 ? '' : 's'})` : ''}`,
+        };
+    }
+    catch (error) {
+        return { ok: false, detail: truncate(error?.message || String(error)) };
+    }
+}
 function sleep(ms) {
     return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -1017,9 +1082,12 @@ async function testAscCliAppsList(timeoutMs) {
         },
     });
     if (!result.ok) {
+        const fallback = await testAscAppsListDirect(Math.max(timeoutMs, ASC_COMMAND_SMOKE_TIMEOUT_MS));
+        if (fallback.ok)
+            return fallback;
         return {
             ok: false,
-            detail: truncate(result.stderr || `exit ${result.code}`),
+            detail: truncate(`${result.stderr || `exit ${result.code}`} Direct Apple API fallback also failed: ${fallback.detail}`),
         };
     }
     try {

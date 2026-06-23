@@ -759,6 +759,10 @@ test('ASC wizard requests the report-creation role and vendor number', () => {
   assert.match(wizard, /ASC_VENDOR_NUMBER \(Sales and Trends > Reports\)/);
   assert.doesNotMatch(wizard, new RegExp(['ASC', 'ANALYTICS', 'VENDOR', 'NUMBER'].join('_')));
   assert.match(status, /checkAscAnalyticsReadiness/);
+  assert.match(status, /listAscAppIdsDirect/);
+  assert.match(status, /api\.appstoreconnect\.apple\.com/);
+  assert.match(status, /\/v1\/apps\?limit=200/);
+  assert.match(status, /could not list apps with asc CLI or direct Apple API/);
   assert.match(status, /asc analytics requests --app/);
   assert.match(status, /isAscAnalyticsRequestCollectionUnsupported/);
   assert.match(status, /does not allow 'get_collection'/);
@@ -767,6 +771,10 @@ test('ASC wizard requests the report-creation role and vendor number', () => {
   assert.match(status, /appAnalyticsReports: 'required'/);
   assert.doesNotMatch(status, /ASC API-key exporter smoke test passed for accessible apps/);
   assert.match(start, /configureAscAllApps/);
+  assert.match(start, /listAscAppsDirect/);
+  assert.match(start, /api\.appstoreconnect\.apple\.com/);
+  assert.match(start, /\/v1\/apps\?limit=200/);
+  assert.match(start, /Direct Apple API fallback also failed/);
   assert.match(start, /removeAscAppFlag/);
   assert.match(start, /delete process\.env\.ASC_APP_ID/);
   assert.match(start, /function isAscSource/);
@@ -795,6 +803,8 @@ test('ASC wizard requests the report-creation role and vendor number', () => {
   assert.match(preflight, /ASC_COMMAND_SMOKE_TIMEOUT_MS = 120_000/);
   assert.match(preflight, /--analytics-instance-limit 1/);
   assert.match(preflight, /testAscCliAppsList/);
+  assert.match(preflight, /testAscAppsListDirect/);
+  assert.match(preflight, /direct Apple API apps list returned JSON/);
   assert.match(preflight, /asc apps list --output json/);
   assert.match(start, /phase: 'asc_analytics_request_setup'/);
   assert.match(start, /ASC_BOOTSTRAP_PRIVATE_KEY_DELETE_AFTER_USE/);
