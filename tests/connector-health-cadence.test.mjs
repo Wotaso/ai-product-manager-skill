@@ -407,7 +407,9 @@ test('Sentry exporter keeps transient provider failures out of connector-health 
   assert.match(exporter, /partial: true/);
   assert.match(exporter, /failureCount: failures\.length/);
   assert.match(exporter, /await mapLimit\(accounts, sentryFetchConcurrency\(\)/);
-  assert.match(exporter, /const blockingFailures = failures\.filter\(\(failure\) => !failure\.retryable\)/);
+  assert.match(exporter, /eventsPerIssue: 0/);
+  assert.match(exporter, /default: 0/);
+  assert.match(exporter, /const blockingFailures = failures\.filter\(\(failure\) => !failure\.retryable && failure\.action !== 'issue_event_fetch'\)/);
   assert.match(exporter, /Sentry connector has non-retryable configuration\/auth failures/);
   assert.doesNotMatch(exporter, /throw withAccountTargetError\(error, account, 'Sentry project discovery'\)/);
 });
