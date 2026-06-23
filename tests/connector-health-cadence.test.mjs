@@ -29,11 +29,15 @@ test('ASC access answers come from Growth Engineer status, not loaded chat tools
   assert.match(skill, /ASC\/App Store Connect is not expected to appear as a loaded chat tool/);
   assert.match(skill, /never inspect loaded tools/);
   assert.match(skill, /node scripts\/openclaw-growth-status\.mjs --config <config> --json --only-connectors asc/);
-  assert.match(skill, /ASC analytics is connected through the local `asc` CLI\/API-key setup/);
-  assert.match(start, /If asked whether ASC\/App Store Connect analytics access is available, never inspect loaded chat\/MCP tools/);
-  assert.match(start, /ASC is not expected to appear as a chat tool/);
+  assert.match(skill, /If ASC status\/setup reports pass, connected, healthy, or the wizard just finished ASC connector setup successfully/);
+  assert.match(skill, /Yes\. ASC analytics is connected through Growth Engineer local asc CLI\/API-key setup/);
+  assert.match(start, /ASC\/App Store Connect is a Growth Engineer local CLI connector, not a chat tool/);
+  assert.match(start, /never answer no because no Apple tool is callable/);
+  assert.match(start, /setup just finished successfully, answer exactly: Yes\. ASC analytics is connected through Growth Engineer local asc CLI\/API-key setup/);
   assert.match(start, /openclaw-growth-status\.mjs --config .* --json --only-connectors asc/);
-  assert.match(bootstrap, /If asked whether ASC\/App Store Connect analytics access is available, never inspect loaded chat\/MCP tools/);
+  assert.match(bootstrap, /ASC\/App Store Connect is a Growth Engineer local CLI connector, not a chat tool/);
+  assert.match(bootstrap, /never answer no because no Apple tool is callable/);
+  assert.match(bootstrap, /answer exactly: Yes\. ASC analytics is connected through Growth Engineer local asc CLI\/API-key setup/);
 });
 
 test('connector wizard can refresh OpenClaw session instructions after setup changes', () => {
@@ -46,10 +50,13 @@ test('connector wizard can refresh OpenClaw session instructions after setup cha
   assert.match(wizard, /writeOpenClawSessionNote/);
   assert.match(wizard, /OpenClaw files updated/);
   assert.match(wizard, /ASC will not appear as a chat tool/);
-  assert.match(wizard, /Existing OpenClaw chat sessions may need a restart/);
+  assert.match(wizard, /If an existing OpenClaw chat still checks loaded tools/);
   assert.match(wizard, /OPENCLAW_GROWTH_REFRESH_OPENCLAW_SESSION/);
   assert.match(wizard, /HEARTBEAT_MARKER_START/);
-  assert.match(wizard, /never inspect loaded chat\/MCP tools/);
+  assert.match(wizard, /never answer no because no Apple tool is callable/);
+  assert.match(wizard, /ascAnswerPolicy/);
+  assert.match(wizard, /Do not answer no only because no App Store Connect chat tool is callable/);
+  assert.match(wizard, /If ASC setup just finished with SUCCESS, answer: Yes\. ASC analytics is connected through Growth Engineer local asc CLI\/API-key setup/);
 });
 
 test('connector wizard does not recheck unrelated connectors after focused setup', () => {

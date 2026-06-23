@@ -56,8 +56,9 @@ test('bootstrap writes an actionable OpenClaw heartbeat task for empty workspace
     assert.match(heartbeat, /interval: 6h/);
     assert.match(heartbeat, /node scripts\/openclaw-growth-runner\.mjs --config data\/openclaw-growth-engineer\/config\.json/);
     assert.match(heartbeat, /--state data\/openclaw-growth-engineer\/state\.json/);
-    assert.match(heartbeat, /If asked whether ASC\/App Store Connect analytics access is available, never inspect loaded chat\/MCP tools/);
-    assert.match(heartbeat, /ASC is not expected to appear as a chat tool/);
+    assert.match(heartbeat, /ASC\/App Store Connect is a Growth Engineer local CLI connector, not a chat tool/);
+    assert.match(heartbeat, /never answer no because no Apple tool is callable/);
+    assert.match(heartbeat, /answer exactly: Yes\. ASC analytics is connected through Growth Engineer local asc CLI\/API-key setup/);
     assert.match(heartbeat, /openclaw-growth-status\.mjs --config data\/openclaw-growth-engineer\/config\.json --json --only-connectors asc/);
     assert.match(heartbeat, /HEARTBEAT_OK/);
   } finally {
