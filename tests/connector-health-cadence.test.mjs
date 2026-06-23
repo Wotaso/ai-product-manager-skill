@@ -370,6 +370,9 @@ test('wizard self-update uses the installed Growth Engineer skill slug', () => {
   assert.match(wizard, /skills\/growth-engineer\/scripts/);
   assert.match(wizard, /clawhub --no-input --dir skills update \$\{quote\(installedSkill\.slug\)\} --force/);
   assert.match(wizard, /installedSkill\.bootstrapPath/);
+  assert.doesNotMatch(wizard, /SELF_UPDATE_INTERVAL_MS/);
+  assert.doesNotMatch(wizard, /shouldRunSelfUpdate/);
+  assert.doesNotMatch(wizard, /Date\.now\(\) - lastCheckedAt/);
   assert.doesNotMatch(wizard, /skills update openclaw-growth-engineer --force/);
   assert.doesNotMatch(wizard, /bash skills\/openclaw-growth-engineer\/scripts\/bootstrap-openclaw-workspace\.sh/);
 });
