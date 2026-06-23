@@ -760,6 +760,8 @@ test('ASC wizard requests the report-creation role and vendor number', () => {
   assert.doesNotMatch(wizard, new RegExp(['ASC', 'ANALYTICS', 'VENDOR', 'NUMBER'].join('_')));
   assert.match(status, /checkAscAnalyticsReadiness/);
   assert.match(status, /listAscAppIdsDirect/);
+  assert.match(status, /isAscAppListDeferredError/);
+  assert.match(status, /ASC credentials and ASC_VENDOR_NUMBER are configured; Apple app discovery is temporarily unavailable/);
   assert.match(status, /api\.appstoreconnect\.apple\.com/);
   assert.match(status, /\/v1\/apps\?limit=200/);
   assert.match(status, /could not list apps with asc CLI or direct Apple API/);
@@ -772,6 +774,10 @@ test('ASC wizard requests the report-creation role and vendor number', () => {
   assert.doesNotMatch(status, /ASC API-key exporter smoke test passed for accessible apps/);
   assert.match(start, /configureAscAllApps/);
   assert.match(start, /listAscAppsDirect/);
+  assert.match(start, /isAscAppListDeferredError/);
+  assert.match(start, /all_accessible_apps_deferred/);
+  assert.match(start, /Analytics Report Request check deferred/);
+  assert.match(start, /Apple Analytics Report Request creation is temporarily unavailable/);
   assert.match(start, /api\.appstoreconnect\.apple\.com/);
   assert.match(start, /\/v1\/apps\?limit=200/);
   assert.match(start, /Direct Apple API fallback also failed/);
@@ -804,7 +810,9 @@ test('ASC wizard requests the report-creation role and vendor number', () => {
   assert.match(preflight, /--analytics-instance-limit 1/);
   assert.match(preflight, /testAscCliAppsList/);
   assert.match(preflight, /testAscAppsListDirect/);
+  assert.match(preflight, /isAscAppListDeferredError/);
   assert.match(preflight, /direct Apple API apps list returned JSON/);
+  assert.match(preflight, /credentials are saved and app discovery will retry later/);
   assert.match(preflight, /asc apps list --output json/);
   assert.match(start, /phase: 'asc_analytics_request_setup'/);
   assert.match(start, /ASC_BOOTSTRAP_PRIVATE_KEY_DELETE_AFTER_USE/);

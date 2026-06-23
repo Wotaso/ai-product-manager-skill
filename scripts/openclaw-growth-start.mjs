@@ -1805,6 +1805,21 @@ async function listAscApps() {
         apps: extractAscAppChoices(payload),
     };
 }
+function isAscAppListDeferredError(error) {
+    const normalized = normalizeString(error).toLowerCase();
+    if (!normalized)
+        return false;
+    if (isInvalidAscPrivateKeyError(error) || isAscPrivateKeyPermissionError(error))
+        return false;
+    return normalized.includes('unexpected error occurred on the server side') ||
+        normalized.includes('timed out after') ||
+        normalized.includes('fetch failed') ||
+        normalized.includes('network timeout') ||
+        normalized.includes('econnreset') ||
+        normalized.includes('etimedout') ||
+        normalized.includes('eai_again') ||
+        normalized.includes('enotfound');
+}
 async function ensureAscAppConfigured(configPath, explicitAppId) {
     if (normalizeString(explicitAppId)) {
         const changed = await configureAscApp(configPath, explicitAppId);
@@ -1817,6 +1832,21 @@ async function ensureAscAppConfigured(configPath, explicitAppId) {
     const changed = await configureAscAllApps(configPath);
     const appList = await listAscApps();
     if (!appList.ok) {
+        if (isAscAppListDeferredError(appList.error)) {
+            return {
+                ok: true,
+                configured: true,
+                changed,
+                appId: null,
+                appScope: 'all_accessible_apps_deferred',
+                appCount: null,
+                apps: [],
+                needsUserInput: false,
+                deferred: true,
+                detail: 'App Store Connect app listing is temporarily unavailable; saved ASC configuration and will retry app discovery later',
+                error: truncate(appList.error, 800),
+            };
+        }
         return {
             ok: false,
             configured: false,
@@ -1973,6 +2003,15 @@ async function ensureAscAnalyticsRequest(appId) {
                 usedBootstrapAdmin,
             };
         }
+        if (isAscAppListDeferredError(error)) {
+            return {
+                ok: true,
+                status: 'deferred',
+                requestId: null,
+                detail: 'Apple Analytics Report Request creation is temporarily unavailable; setup saved ASC credentials and will retry later',
+                usedBootstrapAdmin,
+            };
+        }
         const role = attemptedBootstrapAdmin ? 'Setup Admin' : 'Reports';
         return {
             ok: false,
@@ -1995,6 +2034,16 @@ async function ensureAscAnalyticsRequest(appId) {
 async function ensureAscAnalyticsRequestsForAppScope(ascAppSetup) {
     if (!ascAppSetup?.ok || ascAppSetup.appScope === 'disabled') {
         return { ok: true, status: 'skipped', requestId: null, requestIds: [], detail: 'ASC source is not enabled', results: [] };
+    }
+    if (ascAppSetup.appScope === 'all_accessible_apps_deferred') {
+        return {
+            ok: true,
+            status: 'deferred',
+            requestId: null,
+            requestIds: [],
+            detail: 'Apple app listing is temporarily unavailable; Analytics Report Request check deferred until Apple app discovery works again',
+            results: [],
+        };
     }
     const apps = ascAppSetup.appId
         ? [{ id: ascAppSetup.appId }]
@@ -2402,7 +2451,9 @@ async function main() {
                     ? `using app ${ascAppSetup.appId}`
                     : ascAppSetup.appScope === 'all_accessible_apps'
                         ? `using all accessible apps (${ascAppSetup.appCount || 0} found)`
-                        : 'not enabled'
+                        : ascAppSetup.appScope === 'all_accessible_apps_deferred'
+                            ? 'saved ASC config; app discovery deferred because Apple app listing is temporarily unavailable'
+                            : 'not enabled'
                 : describeAscAppSetupFailure(ascAppSetup.error),
             status: ascAppSetup.ok ? 'pass' : 'fail',
         });
