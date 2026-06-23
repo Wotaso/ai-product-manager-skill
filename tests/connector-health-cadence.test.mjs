@@ -777,7 +777,9 @@ test('ASC wizard requests the report-creation role and vendor number', () => {
   assert.match(start, /isAscAppListDeferredError/);
   assert.match(start, /all_accessible_apps_deferred/);
   assert.match(start, /Analytics Report Request check deferred/);
-  assert.match(start, /Apple Analytics Report Request creation is temporarily unavailable/);
+  assert.match(start, /isAscAnalyticsRequestCreationDeferredError/);
+  assert.match(start, /forbidden for security/);
+  assert.match(start, /Apple did not create the Analytics Report Request now; setup saved ASC credentials and will retry later/);
   assert.match(start, /api\.appstoreconnect\.apple\.com/);
   assert.match(start, /\/v1\/apps\?limit=200/);
   assert.match(start, /Direct Apple API fallback also failed/);
