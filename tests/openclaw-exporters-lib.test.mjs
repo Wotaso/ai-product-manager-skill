@@ -5,6 +5,7 @@ import {
   buildAscSummary,
   buildCoolifySummary,
   buildRevenueCatSummary,
+  buildSeoSummary,
   buildSentrySummary,
 } from '../scripts/openclaw-exporters-lib.mjs';
 
@@ -233,6 +234,9 @@ test('buildAscSummary normalizes API-key ASC batch report usage and commerce met
 test('buildRevenueCatSummary emits live metrics and catalog signals', () => {
   const summary = buildRevenueCatSummary({
     project: { id: 'proj_123', name: 'Flashes' },
+    window: '2026-05-01_2026-05-30',
+    revenuePayload: { value: 1240 },
+    previousRevenuePayload: { value: 900 },
     overviewPayload: {
       metrics: [
         { id: 'revenue', name: 'Revenue', value: 1240 },
@@ -243,14 +247,73 @@ test('buildRevenueCatSummary emits live metrics and catalog signals', () => {
     productsPayload: { items: [{ id: 'prod_1', store_identifier: 'premium_monthly' }] },
     offeringsPayload: { items: [{ id: 'offering_1', display_name: 'Default' }] },
     entitlementsPayload: { items: [{ id: 'entitlement_1', display_name: 'Premium' }] },
-    maxSignals: 4,
+    paywallsPayload: { items: [{ id: 'paywall_1', display_name: 'Main paywall' }] },
+    webhooksPayload: { items: [{ id: 'webhook_1', display_name: 'Analytics webhook' }] },
+    customersPayload: {
+      items: [
+        {
+          id: 'redacted-in-real-output',
+          last_seen_platform: 'ios',
+          last_seen_country: 'US',
+          active_entitlements: { items: [{ entitlement_id: 'entitlement_1' }] },
+        },
+      ],
+    },
+    chartsPayload: {
+      mrr: { display_name: 'MRR', summary: { total: 500 } },
+      trials_new: { display_name: 'New Trials', summary: { total: 12 } },
+    },
+    maxSignals: 8,
   });
 
   assert.equal(summary.project, 'revenuecat:proj_123');
   assert.equal(summary.meta.source, 'revenuecat');
   assert.equal(summary.meta.productsCount, 1);
+  assert.equal(summary.meta.paywallsCount, 1);
+  assert.equal(summary.meta.webhookIntegrationsCount, 1);
+  assert.equal(summary.meta.customerSample.sampledCustomers, 1);
+  assert.equal(summary.meta.chartsCount, 2);
+  assert.equal(summary.meta.revenue, 1240);
+  assert(summary.signals.some((signal) => signal.id === 'revenuecat_revenue_window'));
+  assert(summary.signals.some((signal) => signal.id === 'revenuecat_growth_charts_available'));
+  assert(summary.signals.some((signal) => signal.id === 'revenuecat_customer_sample_available'));
   assert(summary.signals.some((signal) => signal.id === 'revenuecat_overview_metrics_available'));
   assert(summary.signals.some((signal) => signal.id === 'revenuecat_catalog_summary'));
+});
+
+test('buildRevenueCatSummary combines multiple projects', () => {
+  const first = buildRevenueCatSummary({
+    project: { id: 'proj_ios', name: 'iOS' },
+    revenuePayload: { value: 100 },
+    appsPayload: { items: [{ id: 'app_ios' }] },
+    productsPayload: { items: [{ id: 'prod_ios' }] },
+    offeringsPayload: { items: [{ id: 'off_ios' }] },
+    entitlementsPayload: { items: [{ id: 'ent_ios' }] },
+    paywallsPayload: { items: [{ id: 'pw_ios' }] },
+    webhooksPayload: { items: [{ id: 'wh_ios' }] },
+  });
+  const second = buildRevenueCatSummary({
+    project: { id: 'proj_android', name: 'Android' },
+    revenuePayload: { value: 50 },
+    appsPayload: { items: [{ id: 'app_android' }] },
+    productsPayload: { items: [{ id: 'prod_android' }] },
+    offeringsPayload: { items: [{ id: 'off_android' }] },
+    entitlementsPayload: { items: [{ id: 'ent_android' }] },
+    paywallsPayload: { items: [] },
+    webhooksPayload: { items: [] },
+  });
+  const summary = buildRevenueCatSummary({
+    projects: [first, second],
+    availableProjectCount: 2,
+    availableProjectIds: ['proj_ios', 'proj_android'],
+    maxSignals: 8,
+  });
+
+  assert.equal(summary.project, 'revenuecat:multiple');
+  assert.equal(summary.meta.multiProject, true);
+  assert.equal(summary.meta.projectCount, 2);
+  assert(summary.signals.some((signal) => signal.id.startsWith('proj_ios:')));
+  assert(summary.signals.some((signal) => signal.id.startsWith('proj_android:')));
 });
 
 test('buildCoolifySummary emits deployment and health-check signals', () => {
@@ -291,6 +354,49 @@ test('buildCoolifySummary emits deployment and health-check signals', () => {
   assert(summary.signals.some((signal) => signal.id === 'coolify_public_apps_without_health_checks'));
 });
 
+test('buildSeoSummary emits GSC sitemap and URL inspection signals', () => {
+  const summary = buildSeoSummary({
+    siteUrl: 'https://example.com/',
+    window: '2026-04-01_2026-06-30',
+    rows: [
+      { keys: ['analytics cli', 'https://example.com/'], impressions: 1000, clicks: 10, ctr: 0.01, position: 7 },
+    ],
+    gscContext: {
+      sites: ['https://example.com/'],
+      sitemaps: [
+        {
+          siteUrl: 'https://example.com/',
+          sitemaps: [
+            { path: 'https://example.com/sitemap.xml', errors: 2, warnings: 1, isPending: false },
+          ],
+        },
+      ],
+      inspections: [
+        {
+          siteUrl: 'https://example.com/',
+          inspectionUrl: 'https://example.com/pricing',
+          result: {
+            indexStatusResult: {
+              verdict: 'FAIL',
+              coverageState: 'Crawled - currently not indexed',
+              robotsTxtState: 'ALLOWED',
+            },
+          },
+        },
+      ],
+    },
+    maxSignals: 8,
+  });
+
+  assert.equal(summary.project, 'seo:https://example.com/');
+  assert.equal(summary.meta.gscSites.length, 1);
+  assert.equal(summary.meta.gscSitemaps.length, 1);
+  assert.equal(summary.meta.gscInspections.length, 1);
+  assert(summary.signals.some((signal) => signal.id === 'seo_gsc_high_impression_low_ctr'));
+  assert(summary.signals.some((signal) => signal.id === 'seo_gsc_sitemap_issues'));
+  assert(summary.signals.some((signal) => signal.id === 'seo_gsc_url_inspection_issues'));
+});
+
 test('buildSentrySummary emits crash issues and signals from unresolved issues', () => {
   const summary = buildSentrySummary({
     org: 'wotaso',
@@ -309,6 +415,14 @@ test('buildSentrySummary emits crash issues and signals from unresolved issues',
         lastSeen: '2026-05-03T00:00:00Z',
         culprit: 'PaywallScreen',
         permalink: 'https://sentry.io/issues/123',
+        eventsPayload: [
+          {
+            id: 'event-1',
+            timestamp: '2026-05-03T01:00:00Z',
+            release: '1.2.3',
+            webUrl: 'https://sentry.io/events/event-1',
+          },
+        ],
       },
     ],
     maxSignals: 3,
@@ -321,11 +435,15 @@ test('buildSentrySummary emits crash issues and signals from unresolved issues',
   assert.equal(summary.issues[0].priority, 'medium');
   assert.equal(summary.issues[0].sourceUrl, 'https://sentry.io/issues/123');
   assert.equal(summary.issues[0].app, 'sentry:wotaso/flashes');
+  assert.equal(summary.issues[0].sampleEvents, 1);
+  assert.equal(summary.meta.sampledIssueEvents, 1);
   assert.equal(summary.signals[0].area, 'crash');
+  assert.equal(summary.signals[0].sampleEvents, 1);
   assert.equal(summary.signals[0].sourceUrl, 'https://sentry.io/issues/123');
   assert.equal(summary.signals[0].app, 'sentry:wotaso/flashes');
   assert(summary.signals[0].evidence.some((entry) => entry.includes('FLASHES-1')));
   assert(summary.signals[0].evidence.some((entry) => entry.includes('https://sentry.io/issues/123')));
+  assert(summary.signals[0].evidence.some((entry) => entry.includes('Sampled issue events: 1')));
 });
 
 test('buildSentrySummary combines multiple Sentry-compatible accounts', () => {

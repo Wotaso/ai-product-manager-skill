@@ -28,15 +28,15 @@ Options:
   --max-sites <n>           Max GSC sites to query when --site is omitted (default: 20)
   --country <code>          Optional GSC country dimension filter
   --device <device>         Optional GSC device dimension filter
+  --include-sitemaps        Fetch Search Console sitemap status (default)
+  --no-sitemaps             Skip Search Console sitemap status
+  --inspect-url <url>       Run URL Inspection for a URL under an accessible property (repeatable)
   --gsc-csv <file>          Import Google Search Console CSV (repeatable)
   --csv <file>              Import keyword metrics CSV from Ahrefs/Semrush/DataForSEO/etc. (repeatable)
   --seed <keyword>          Seed keyword for optional DataForSEO (repeatable)
   --dataforseo              Fetch live DataForSEO keyword data
   --confirm-paid            Required for live DataForSEO calls
   --max-paid-requests <n>   DataForSEO request cap (default: 1)
-  --bing                    Fetch Bing Webmaster quota/feed status
-  --bing-site <url>         Bing verified site URL (repeatable; default: BING_WEBMASTER_SITE_URL or --site when URL-shaped)
-  --bing-feed <url>         Expected Bing sitemap/feed URL (repeatable)
   --location-code <n>       DataForSEO location code (default: 2840)
   --language-code <code>    DataForSEO language code (default: en)
   --out <file>              Write JSON to file instead of stdout
@@ -47,8 +47,6 @@ Environment:
   GSC_SITE_URL
   GOOGLE_SEARCH_CONSOLE_ACCESS_TOKEN or GSC_ACCESS_TOKEN
   GOOGLE_APPLICATION_CREDENTIALS or GSC_SERVICE_ACCOUNT_JSON
-  BING_WEBMASTER_API_KEY
-  BING_WEBMASTER_SITE_URL
   DATAFORSEO_LOGIN and DATAFORSEO_PASSWORD
 `);
   process.exit(exitCode);
@@ -83,15 +81,14 @@ function parseArgs(argv) {
     maxSites: 20,
     country: '',
     device: '',
+    includeSitemaps: true,
+    inspectUrls: [],
     gscCsvFiles: [],
     csvFiles: [],
     seeds: [],
     dataforseo: false,
     confirmPaid: false,
     maxPaidRequests: 1,
-    bing: false,
-    bingSites: [],
-    bingFeeds: [],
     locationCode: 2840,
     languageCode: 'en',
     out: '',
@@ -133,6 +130,13 @@ function parseArgs(argv) {
     } else if (token === '--device') {
       args.device = String(next || '').trim();
       index += 1;
+    } else if (token === '--include-sitemaps') {
+      args.includeSitemaps = true;
+    } else if (token === '--no-sitemaps') {
+      args.includeSitemaps = false;
+    } else if (token === '--inspect-url') {
+      args.inspectUrls.push(String(next || '').trim());
+      index += 1;
     } else if (token === '--gsc-csv') {
       args.gscCsvFiles.push(String(next || '').trim());
       index += 1;
@@ -148,16 +152,6 @@ function parseArgs(argv) {
       args.confirmPaid = true;
     } else if (token === '--max-paid-requests') {
       args.maxPaidRequests = positiveInt(next, '--max-paid-requests');
-      index += 1;
-    } else if (token === '--bing') {
-      args.bing = true;
-    } else if (token === '--bing-site') {
-      args.bing = true;
-      args.bingSites.push(String(next || '').trim());
-      index += 1;
-    } else if (token === '--bing-feed') {
-      args.bing = true;
-      args.bingFeeds.push(String(next || '').trim());
       index += 1;
     } else if (token === '--location-code') {
       args.locationCode = positiveInt(next, '--location-code');
@@ -181,20 +175,7 @@ function parseArgs(argv) {
   if (!args.from) {
     args.from = formatDate(addDays(new Date(`${args.to}T00:00:00Z`), -parseDurationDays(args.last, 90)));
   }
-  if (!args.bing && process.env.BING_WEBMASTER_API_KEY && (process.env.BING_WEBMASTER_SITE_URL || isUrlLike(args.site))) {
-    args.bing = true;
-  }
   return args;
-}
-
-function isUrlLike(value) {
-  return /^https?:\/\//i.test(String(value || '').trim());
-}
-
-function normalizeSiteUrl(value) {
-  const trimmed = String(value || '').trim();
-  if (!trimmed) return '';
-  return trimmed.endsWith('/') ? trimmed : `${trimmed}/`;
 }
 
 function positiveInt(value, label) {
@@ -415,6 +396,70 @@ async function fetchGscRows(args, warnings) {
   return rows;
 }
 
+async function fetchGscContext(args, warnings) {
+  const token = await getGscAccessToken();
+  if (!token) {
+    warnings.push('GSC access token/service account missing; skipped Search Console sitemap and URL Inspection API fetch.');
+    return { sites: [], sitemaps: [], inspections: [] };
+  }
+  const sites = await listGscSites(token, args, warnings);
+  const sitemaps = [];
+  if (args.includeSitemaps) {
+    for (const siteUrl of sites) {
+      try {
+        const payload = await gscFetchJson(
+          `https://www.googleapis.com/webmasters/v3/sites/${encodeURIComponent(siteUrl)}/sitemaps`,
+          token,
+        );
+        sitemaps.push({
+          siteUrl,
+          sitemaps: Array.isArray(payload?.sitemap) ? payload.sitemap : [],
+        });
+      } catch (error) {
+        warnings.push(`GSC sitemap query failed for ${siteUrl}: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+  }
+
+  const inspections = [];
+  for (const inspectionUrl of args.inspectUrls.filter(Boolean).slice(0, 25)) {
+    const siteUrl = sites.find((candidate) => propertyOwnsUrl(candidate, inspectionUrl)) || args.site || sites[0] || '';
+    if (!siteUrl) {
+      warnings.push(`Skipped URL Inspection for ${inspectionUrl}: no accessible GSC property found.`);
+      continue;
+    }
+    try {
+      const payload = await gscFetchJson('https://searchconsole.googleapis.com/v1/urlInspection/index:inspect', token, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          inspectionUrl,
+          siteUrl,
+        }),
+      });
+      inspections.push({ siteUrl, inspectionUrl, result: payload?.inspectionResult || payload });
+    } catch (error) {
+      warnings.push(`GSC URL Inspection failed for ${inspectionUrl}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+  return { sites, sitemaps, inspections };
+}
+
+function propertyOwnsUrl(property, inspectedUrl) {
+  const site = String(property || '').trim();
+  const url = String(inspectedUrl || '').trim();
+  if (!site || !url) return false;
+  if (site.startsWith('sc-domain:')) {
+    const domain = site.slice('sc-domain:'.length).toLowerCase();
+    try {
+      return new URL(url).hostname.toLowerCase().endsWith(domain);
+    } catch {
+      return false;
+    }
+  }
+  return url.startsWith(site);
+}
+
 async function dataForSeoRequest(endpoint, tasks) {
   const login = process.env.DATAFORSEO_LOGIN;
   const password = process.env.DATAFORSEO_PASSWORD;
@@ -476,87 +521,6 @@ async function fetchDataForSeoRows(args, warnings) {
   return normalizeDataForSeoItems(payload, 'dataforseo-ideas');
 }
 
-async function bingWebmasterGetJson(path, apiKey, queryParams = {}) {
-  const query = new URLSearchParams({ ...queryParams, apikey: apiKey });
-  const response = await fetch(`https://ssl.bing.com/webmaster/api.svc/json/${path}?${query.toString()}`, {
-    method: 'GET',
-    headers: { accept: 'application/json' },
-  });
-  const body = await response.json().catch(() => null);
-  if (!response.ok) {
-    throw new Error(`Bing Webmaster API ${path} failed (${response.status}): ${JSON.stringify(body)}`);
-  }
-  return body;
-}
-
-function normalizeBingFeed(feed) {
-  return {
-    url: String(feed?.Url || feed?.url || '').trim(),
-    status: String(feed?.Status || feed?.status || '').trim(),
-    type: String(feed?.Type || feed?.type || '').trim(),
-    urlCount: parseNumber(feed?.UrlCount ?? feed?.urlCount),
-    fileSize: parseNumber(feed?.FileSize ?? feed?.fileSize),
-    compressed: Boolean(feed?.Compressed ?? feed?.compressed),
-    submitted: feed?.Submitted || feed?.submitted || null,
-    lastCrawled: feed?.LastCrawled || feed?.lastCrawled || null,
-  };
-}
-
-async function fetchBingWebmasterSummary(args, warnings) {
-  if (!args.bing) return null;
-  const apiKey = String(process.env.BING_WEBMASTER_API_KEY || '').trim();
-  if (!apiKey) {
-    warnings.push('Bing Webmaster API key missing; skipped Bing Webmaster quota/feed status.');
-    return null;
-  }
-
-  const configuredSites = [
-    ...args.bingSites,
-    process.env.BING_WEBMASTER_SITE_URL,
-    isUrlLike(args.site) ? args.site : '',
-  ]
-    .map(normalizeSiteUrl)
-    .filter(Boolean);
-  const sites = [...new Set(configuredSites)];
-  if (sites.length === 0) {
-    warnings.push('Bing Webmaster enabled but no --bing-site, BING_WEBMASTER_SITE_URL, or URL-shaped --site was provided.');
-    return null;
-  }
-
-  const expectedFeeds = args.bingFeeds.filter(Boolean);
-  const siteSummaries = [];
-  for (const siteUrl of sites) {
-    const siteSummary = {
-      siteUrl,
-      quota: null,
-      feeds: [],
-      expectedFeeds,
-      errors: [],
-    };
-    try {
-      const quotaPayload = await bingWebmasterGetJson('GetUrlSubmissionQuota', apiKey, { siteUrl });
-      siteSummary.quota = quotaPayload?.d || quotaPayload || null;
-    } catch (error) {
-      siteSummary.errors.push(`quota: ${error instanceof Error ? error.message : String(error)}`);
-    }
-    try {
-      const feedsPayload = await bingWebmasterGetJson('GetFeeds', apiKey, { siteUrl });
-      siteSummary.feeds = (Array.isArray(feedsPayload?.d) ? feedsPayload.d : []).map(normalizeBingFeed);
-    } catch (error) {
-      siteSummary.errors.push(`feeds: ${error instanceof Error ? error.message : String(error)}`);
-    }
-    if (siteSummary.errors.length > 0) {
-      warnings.push(`Bing Webmaster read failed for ${siteUrl}: ${siteSummary.errors.join('; ')}`);
-    }
-    siteSummaries.push(siteSummary);
-  }
-
-  return {
-    source: 'bing-webmaster-api',
-    sites: siteSummaries,
-  };
-}
-
 async function main() {
   await loadOpenClawGrowthSecrets();
   const args = parseArgs(process.argv.slice(2));
@@ -569,6 +533,10 @@ async function main() {
   } catch (error) {
     warnings.push(error instanceof Error ? error.message : String(error));
   }
+  const gscContext = await fetchGscContext(args, warnings).catch((error) => {
+    warnings.push(error instanceof Error ? error.message : String(error));
+    return { sites: [], sitemaps: [], inspections: [] };
+  });
   for (const filePath of args.gscCsvFiles.filter(Boolean)) {
     try {
       rows.push(...(await readKeywordCsv(filePath, 'gsc-csv')));
@@ -588,15 +556,14 @@ async function main() {
   } catch (error) {
     warnings.push(error instanceof Error ? error.message : String(error));
   }
-  const bingWebmaster = await fetchBingWebmasterSummary(args, warnings);
 
   const summary = buildSeoSummary({
     siteUrl: args.site || 'all_verified_gsc_sites',
     window: `${args.from}_${args.to}`,
     rows,
     keywordRows,
+    gscContext,
     paidProvider: args.dataforseo && args.confirmPaid ? 'dataforseo' : null,
-    bingWebmaster,
     warnings,
     maxSignals: args.maxSignals,
   });

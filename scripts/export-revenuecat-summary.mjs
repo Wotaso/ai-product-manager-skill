@@ -16,9 +16,14 @@ Usage:
   node scripts/export-revenuecat-summary.mjs [options]
 
 Options:
-  --project <id>       RevenueCat project ID (defaults to all visible projects, first summarized)
+  --project <id>       RevenueCat project ID (default: summarize all visible projects)
   --currency <code>    Currency for overview metrics (default: USD)
+  --from <date>        Start date YYYY-MM-DD for revenue/charts (default: 30 days before --to)
+  --to <date>          End date YYYY-MM-DD for revenue/charts (default: yesterday UTC)
+  --last <duration>    Relative revenue/chart window like 30d (used when --from is omitted)
+  --charts <a,b>       RevenueCat charts to fetch (default: revenue,mrr,actives,trials,trials_new,trial_conversion_rate,churn,refund_rate)
   --limit <n>          Maximum list entries to fetch per endpoint (default: 20)
+  --max-projects <n>   Maximum visible projects to summarize when --project is omitted (default: 10)
   --out <file>         Write JSON to file instead of stdout
   --max-signals <n>    Maximum signals to emit (default: 4)
   --help, -h           Show help
@@ -26,12 +31,18 @@ Options:
     process.exit(exitCode);
 }
 function parseArgs(argv) {
+    const defaultTo = formatDate(addDays(new Date(), -1));
     const args = {
         project: '',
         currency: 'USD',
+        from: '',
+        to: defaultTo,
+        last: '30d',
+        charts: ['revenue', 'mrr', 'actives', 'trials', 'trials_new', 'trial_conversion_rate', 'churn', 'refund_rate'],
         limit: 20,
+        maxProjects: 10,
         out: '',
-        maxSignals: 4,
+        maxSignals: 8,
     };
     for (let index = 0; index < argv.length; index += 1) {
         const token = argv[index];
@@ -47,12 +58,39 @@ function parseArgs(argv) {
             args.currency = String(next || 'USD').trim().toUpperCase() || 'USD';
             index += 1;
         }
+        else if (token === '--from') {
+            args.from = String(next || '').trim();
+            index += 1;
+        }
+        else if (token === '--to') {
+            args.to = String(next || '').trim();
+            index += 1;
+        }
+        else if (token === '--last') {
+            args.last = String(next || args.last).trim() || args.last;
+            index += 1;
+        }
+        else if (token === '--charts') {
+            args.charts = String(next || '')
+                .split(',')
+                .map((value) => value.trim())
+                .filter(Boolean);
+            index += 1;
+        }
         else if (token === '--limit') {
             const parsed = Number.parseInt(String(next || ''), 10);
             if (!Number.isFinite(parsed) || parsed <= 0) {
                 printHelpAndExit(1, `Invalid value for --limit: ${String(next || '')}`);
             }
             args.limit = parsed;
+            index += 1;
+        }
+        else if (token === '--max-projects') {
+            const parsed = Number.parseInt(String(next || ''), 10);
+            if (!Number.isFinite(parsed) || parsed <= 0) {
+                printHelpAndExit(1, `Invalid value for --max-projects: ${String(next || '')}`);
+            }
+            args.maxProjects = parsed;
             index += 1;
         }
         else if (token === '--out') {
@@ -74,7 +112,33 @@ function parseArgs(argv) {
             printHelpAndExit(1, `Unknown argument: ${token}`);
         }
     }
+    if (!args.from) {
+        args.from = formatDate(addDays(new Date(`${args.to}T00:00:00Z`), -parseDurationDays(args.last, 30)));
+    }
     return args;
+}
+function formatDate(date) {
+    return date.toISOString().slice(0, 10);
+}
+function addDays(date, days) {
+    const copy = new Date(date);
+    copy.setUTCDate(copy.getUTCDate() + days);
+    return copy;
+}
+function parseDurationDays(value, fallback) {
+    const match = String(value || '').trim().match(/^(\d+)\s*d$/i);
+    if (!match)
+        return fallback;
+    const parsed = Number.parseInt(match[1], 10);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+function previousWindow(from, to) {
+    const start = new Date(`${from}T00:00:00Z`);
+    const end = new Date(`${to}T00:00:00Z`);
+    const days = Math.max(1, Math.round((end.getTime() - start.getTime()) / 86_400_000) + 1);
+    const previousEnd = addDays(start, -1);
+    const previousStart = addDays(previousEnd, -days + 1);
+    return { from: formatDate(previousStart), to: formatDate(previousEnd) };
 }
 function buildUrl(pathname, params = {}) {
     const url = new URL(`${API_BASE}${pathname}`);
@@ -132,21 +196,43 @@ async function buildSingleProjectSummary(project, args) {
     }
     const warnings = [];
     const limit = Math.max(1, Math.min(Number(args.limit) || 20, 100));
-    const [overviewPayload, appsPayload, productsPayload, offeringsPayload, entitlementsPayload] = await Promise.all([
+    const previous = previousWindow(args.from, args.to);
+    const chartParams = {
+        start_date: args.from,
+        end_date: args.to,
+        currency: args.currency,
+        aggregate: 'total,average',
+    };
+    const chartNames = [...new Set(args.charts)].slice(0, 12);
+    const [overviewPayload, revenuePayload, previousRevenuePayload, appsPayload, productsPayload, offeringsPayload, entitlementsPayload, paywallsPayload, webhooksPayload, customersPayload, ...chartResults] = await Promise.all([
         fetchOptional(id, 'overview metrics', `/projects/${encodeURIComponent(id)}/metrics/overview`, { currency: args.currency }, warnings),
+        fetchOptional(id, 'revenue metric', `/projects/${encodeURIComponent(id)}/metrics/revenue`, { start_date: args.from, end_date: args.to, currency: args.currency, revenue_type: 'revenue' }, warnings),
+        fetchOptional(id, 'previous revenue metric', `/projects/${encodeURIComponent(id)}/metrics/revenue`, { start_date: previous.from, end_date: previous.to, currency: args.currency, revenue_type: 'revenue' }, warnings),
         fetchOptional(id, 'apps', `/projects/${encodeURIComponent(id)}/apps`, { limit }, warnings),
         fetchOptional(id, 'products', `/projects/${encodeURIComponent(id)}/products`, { limit }, warnings),
         fetchOptional(id, 'offerings', `/projects/${encodeURIComponent(id)}/offerings`, { limit }, warnings),
         fetchOptional(id, 'entitlements', `/projects/${encodeURIComponent(id)}/entitlements`, { limit }, warnings),
+        fetchOptional(id, 'paywalls', `/projects/${encodeURIComponent(id)}/paywalls`, { limit }, warnings),
+        fetchOptional(id, 'webhook integrations', `/projects/${encodeURIComponent(id)}/integrations/webhooks`, { limit }, warnings),
+        fetchOptional(id, 'customers', `/projects/${encodeURIComponent(id)}/customers`, { limit }, warnings),
+        ...chartNames.map((chartName) => fetchOptional(id, `chart ${String(chartName)}`, `/projects/${encodeURIComponent(id)}/charts/${encodeURIComponent(String(chartName))}`, chartParams, warnings)
+            .then((payload) => ({ chartName: String(chartName), payload }))),
     ]);
     return buildRevenueCatSummary({
         project,
         projectId: id,
+        window: `${args.from}_${args.to}`,
         overviewPayload,
+        revenuePayload,
+        previousRevenuePayload,
         appsPayload,
         productsPayload,
         offeringsPayload,
         entitlementsPayload,
+        paywallsPayload,
+        webhooksPayload,
+        customersPayload,
+        chartsPayload: Object.fromEntries(chartResults.filter((entry) => entry.payload).map((entry) => [entry.chartName, entry.payload])),
         warnings,
         maxSignals: args.maxSignals,
     });
@@ -159,11 +245,18 @@ async function main() {
     if (projects.length === 0) {
         throw new Error('RevenueCat API returned no visible projects for this key.');
     }
-    const selectedProject = args.project
-        ? projects.find((project) => projectId(project) === args.project) || { id: args.project }
-        : projects[0];
-    const summary = await buildSingleProjectSummary(selectedProject, args);
-    if (!args.project && projects.length > 1) {
+    const selectedProjects = args.project
+        ? [projects.find((project) => projectId(project) === args.project) || { id: args.project }]
+        : projects.slice(0, Math.max(1, Math.min(Number(args.maxProjects) || 10, 50)));
+    const summaries = await Promise.all(selectedProjects.map((project) => buildSingleProjectSummary(project, args)));
+    const summary = summaries.length === 1 ? summaries[0] : buildRevenueCatSummary({
+        projects: summaries,
+        window: `${args.from}_${args.to}`,
+        maxSignals: args.maxSignals,
+        availableProjectCount: projects.length,
+        availableProjectIds: projects.map(projectId).filter(Boolean),
+    });
+    if (!args.project) {
         summary.meta.availableProjectCount = projects.length;
         summary.meta.availableProjectIds = projects.map(projectId).filter(Boolean);
     }
