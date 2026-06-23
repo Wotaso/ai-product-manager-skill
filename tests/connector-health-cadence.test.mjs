@@ -768,6 +768,17 @@ test('ASC wizard requests the report-creation role and vendor number', () => {
   assert.match(start, /configureAscAllApps/);
   assert.match(start, /removeAscAppFlag/);
   assert.match(start, /delete process\.env\.ASC_APP_ID/);
+  assert.match(start, /function isAscSource/);
+  assert.match(start, /function buildAscExtraSource/);
+  assert.match(start, /const hasAscExtra = extra\.some\(isAscSource\)/);
+  assert.match(start, /concat\(connectors\.includes\('asc'\) && !hasAscExtra \? \[buildAscExtraSource\(\)\] : \[\]\)/);
+  assert.match(start, /if \(config\?\.sources\?\.asc && config\.sources\.asc\.enabled !== false\)\s+return true/);
+  assert.doesNotMatch(start, /connectors\.includes\('asc'\) && source\?\.service === 'asc-cli'/);
+  assert.match(status, /function isAscSource/);
+  assert.match(status, /function configHasEnabledAscSource/);
+  assert.match(status, /config\?\.sources\?\.asc && config\.sources\.asc\.enabled !== false/);
+  assert.match(status, /if \(!configHasEnabledAscSource\(config\)\)/);
+  assert.doesNotMatch(status, /source\?\.service === 'asc-cli' && source\.enabled !== false/);
   assert.match(start, /ensureAscAnalyticsRequestsForAppScope/);
   assert.match(start, /asc analytics request --app/);
   assert.match(start, /extractAscAnalyticsRequests/);
