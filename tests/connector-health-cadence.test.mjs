@@ -509,6 +509,16 @@ test('wizard sandbox smoke migrates Sentry and Coolify commands to the active co
             baseUrl: 'https://coolify.example.com',
             tokenEnv: 'COOLIFY_API_TOKEN',
           },
+          extra: [
+            {
+              key: 'asc_cli',
+              service: 'asc-cli',
+              label: 'ASC / App Store Connect CLI',
+              enabled: true,
+              mode: 'command',
+              command: "node '/home/lo/.npm/_npx/9bdf6aa37e0ec220/node_modules/@analyticscli/growth-engineer/dist/runtime/export-asc-summary.mjs' --max-signals 6",
+            },
+          ],
         },
       }, null, 2)}\n`,
     );
@@ -537,6 +547,10 @@ test('wizard sandbox smoke migrates Sentry and Coolify commands to the active co
     assert.match(migrated.sources.sentry.command, new RegExp(`--config ${configPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
     assert.match(migrated.sources.coolify.command, /exporters coolify-summary/);
     assert.match(migrated.sources.coolify.command, new RegExp(`--config ${configPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
+    assert.match(migrated.sources.extra[0].command, /export-asc-summary\.mjs/);
+    assert.match(migrated.sources.extra[0].command, /--max-signals 6/);
+    assert.doesNotMatch(migrated.sources.extra[0].command, /node_modules\/@analyticscli\/growth-engineer/);
+    assert.doesNotMatch(migrated.sources.extra[0].command, /_npx\/9bdf6aa37e0ec220/);
     assert.doesNotMatch(migrated.sources.sentry.command, /data\/openclaw-growth-engineer\/config\.json/);
   } finally {
     rmSync(tmp, { recursive: true, force: true });

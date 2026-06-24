@@ -96,9 +96,9 @@ const CONNECTOR_DEFINITIONS = [
     },
     {
         key: 'seo',
-        label: 'SEO / GSC / Bing / DataForSEO',
-        summary: 'Read organic search demand, GSC clicks/impressions/CTR/position, Bing Webmaster sitemap/indexing status, and optional capped DataForSEO keyword ideas.',
-        needs: 'A GSC property plus an access token/service-account credential. Bing Webmaster API and DataForSEO credentials are optional.',
+        label: 'SEO / GSC / DataForSEO',
+        summary: 'Read organic search demand, GSC clicks/impressions/CTR/position, and optional capped DataForSEO keyword ideas.',
+        needs: 'A GSC property plus an access token/service-account credential. DataForSEO credentials are optional and paid.',
     },
     {
         key: 'sentry',
@@ -790,7 +790,6 @@ function parseArgs(argv) {
     const args = {
         config: defaultConfigPath,
         connectorWizard: false,
-        connectorRecovery: false,
         connectors: '',
         noSelfUpdate: false,
         out: defaultConfigPath,
@@ -809,14 +808,6 @@ function parseArgs(argv) {
         }
         else if (token === '--connectors' || token === '--connector-setup') {
             args.connectorWizard = true;
-            if (next && !next.startsWith('-')) {
-                args.connectors = next;
-                i += 1;
-            }
-        }
-        else if (token === '--recover-connectors' || token === '--restore-connectors' || token === '--connector-recovery') {
-            args.connectorWizard = true;
-            args.connectorRecovery = true;
             if (next && !next.startsWith('-')) {
                 args.connectors = next;
                 i += 1;
@@ -853,10 +844,9 @@ OpenClaw Growth Setup Wizard
 Usage:
   npx -y @analyticscli/growth-engineer@preview wizard [--out <config-path>]
   npx -y @analyticscli/growth-engineer@preview wizard --connectors [${CONNECTOR_KEYS.join(',')}]
-  npx -y @analyticscli/growth-engineer@preview wizard --recover-connectors [${CONNECTOR_KEYS.join(',')}]
 
 Compatibility note:
-  --connectors is the full setup path. --recover-connectors first retests existing config/secrets and only asks for credentials when the connector still fails.
+  Existing cron/heartbeat runners may still execute generated runtime scripts, but user-facing setup and connector repair should use the npx command above.
 
 Options:
   --config <file>    Override auto-discovered config path
@@ -899,7 +889,7 @@ function getWizardDefaultSourceCommand(sourceName) {
     if (normalized === 'paddle') {
         return nodeRuntimeScriptCommand('export-paddle-summary.mjs');
     }
-    if (['seo', 'gsc', 'google-search-console', 'search-console', 'dataforseo', 'bing', 'bing-webmaster', 'bing-webmaster-tools'].includes(normalized)) {
+    if (['seo', 'gsc', 'google-search-console', 'search-console', 'dataforseo'].includes(normalized)) {
         return nodeRuntimeScriptCommand('export-seo-summary.mjs');
     }
     if (normalized === 'sentry' || normalized === 'glitchtip') {
@@ -920,7 +910,9 @@ function replaceLegacyRuntimeScriptCommand(command) {
     const trimmed = String(command || '').trim();
     if (!trimmed)
         return trimmed;
-    return trimmed.replace(/^node\s+scripts\/(export-analytics-summary\.mjs|export-revenuecat-summary\.mjs|export-paddle-summary\.mjs|export-seo-summary\.mjs|export-sentry-summary\.mjs|export-coolify-summary\.mjs|export-asc-summary\.mjs|openclaw-growth-start\.mjs|openclaw-growth-status\.mjs|openclaw-growth-runner\.mjs|openclaw-growth-preflight\.mjs)(?=\s|$)/, (_match, scriptName) => nodeRuntimeScriptCommand(scriptName));
+    return trimmed
+        .replace(/^node\s+scripts\/(export-analytics-summary\.mjs|export-revenuecat-summary\.mjs|export-paddle-summary\.mjs|export-seo-summary\.mjs|export-sentry-summary\.mjs|export-coolify-summary\.mjs|export-asc-summary\.mjs|openclaw-growth-start\.mjs|openclaw-growth-status\.mjs|openclaw-growth-runner\.mjs|openclaw-growth-preflight\.mjs)(?=\s|$)/, (_match, scriptName) => nodeRuntimeScriptCommand(scriptName))
+        .replace(/^node\s+(['"]?)(?:\S*\/)?node_modules\/@analyticscli\/growth-engineer\/dist\/runtime\/(export-analytics-summary\.mjs|export-revenuecat-summary\.mjs|export-paddle-summary\.mjs|export-seo-summary\.mjs|export-sentry-summary\.mjs|export-coolify-summary\.mjs|export-asc-summary\.mjs|openclaw-growth-start\.mjs|openclaw-growth-status\.mjs|openclaw-growth-runner\.mjs|openclaw-growth-preflight\.mjs)\1(?=\s|$)/, (_match, _quote, scriptName) => nodeRuntimeScriptCommand(scriptName));
 }
 function sourceCommandNeedsActiveConfig(sourceName, command) {
     const normalized = String(sourceName || '').trim().toLowerCase();
@@ -1005,7 +997,7 @@ function normalizeConnectorKey(value) {
         return 'revenuecat';
     if (['paddle', 'paddle-billing', 'billing-metrics', 'web-revenue'].includes(normalized))
         return 'paddle';
-    if (['seo', 'gsc', 'google-search-console', 'search-console', 'dataforseo', 'bing', 'bing-webmaster', 'bing-webmaster-tools', 'organic-search'].includes(normalized))
+    if (['seo', 'gsc', 'google-search-console', 'search-console', 'dataforseo', 'organic-search'].includes(normalized))
         return 'seo';
     if (['sentry', 'sentry-api', 'sentry-mcp', 'crashes', 'errors', 'crash-reporting'].includes(normalized))
         return 'sentry';
@@ -1088,8 +1080,7 @@ function isConnectorLocallyConfigured(key) {
         return Boolean(process.env.GOOGLE_SEARCH_CONSOLE_ACCESS_TOKEN?.trim() ||
             process.env.GSC_ACCESS_TOKEN?.trim() ||
             process.env.GOOGLE_APPLICATION_CREDENTIALS?.trim() ||
-            process.env.GSC_SERVICE_ACCOUNT_JSON?.trim() ||
-            process.env.BING_WEBMASTER_API_KEY?.trim());
+            process.env.GSC_SERVICE_ACCOUNT_JSON?.trim());
     }
     if (key === 'sentry')
         return Boolean(process.env.SENTRY_AUTH_TOKEN?.trim());
@@ -1461,7 +1452,7 @@ function normalizeConnectorProgressKey(key) {
         return 'revenuecat';
     if (normalized === 'paddle')
         return 'paddle';
-    if (normalized === 'seo' || normalized === 'gsc' || normalized === 'google-search-console' || normalized === 'bing' || normalized === 'bing-webmaster')
+    if (normalized === 'seo' || normalized === 'gsc' || normalized === 'google-search-console')
         return 'seo';
     if (normalized === 'sentry')
         return 'sentry';
@@ -2385,7 +2376,7 @@ function connectorFromCheckName(name) {
         return 'revenuecat';
     if (value.includes('paddle') || value.includes('PADDLE'))
         return 'paddle';
-    if (value.includes('seo') || value.includes('GSC') || value.includes('GOOGLE_SEARCH_CONSOLE') || value.includes('BING_WEBMASTER'))
+    if (value.includes('seo') || value.includes('GSC') || value.includes('GOOGLE_SEARCH_CONSOLE'))
         return 'seo';
     if (value.includes('sentry') || value.includes('SENTRY') || value.includes('GLITCHTIP'))
         return 'sentry';
@@ -2549,7 +2540,7 @@ function buildSetupTestProgressPlan(selected) {
         items.push({ key: 'paddle', label: 'Paddle', detail: 'waiting for metrics API auth + revenue read', status: 'pending' });
     }
     if (selectedSet.has('seo')) {
-        items.push({ key: 'seo', label: 'SEO / GSC / Bing', detail: 'waiting for Search Console, Bing Webmaster, CSV, or DataForSEO config', status: 'pending' });
+        items.push({ key: 'seo', label: 'SEO / GSC', detail: 'waiting for Search Console auth or CSV/DataForSEO config', status: 'pending' });
     }
     if (selectedSet.has('coolify')) {
         items.push({ key: 'coolify', label: 'Coolify', detail: 'waiting for API key auth + deployment/resource read', status: 'pending' });
@@ -3784,10 +3775,9 @@ async function guidePaddleConnector(rl, secrets) {
     return accounts;
 }
 async function guideSeoConnector(rl, secrets) {
-    printSection('SEO / Google Search Console / Bing Webmaster / DataForSEO', [
+    printSection('SEO / Google Search Console / DataForSEO', [
         `${bold('GSC')}: https://search.google.com/search-console`,
         `${bold('Service account')}: https://console.cloud.google.com/iam-admin/serviceaccounts`,
-        `${bold('Optional Bing')}: https://www.bing.com/webmasters/`,
         `${bold('Optional paid keyword data')}: https://app.dataforseo.com/api-dashboard`,
         `${bold('Default')}: leave property URL empty to use all verified GSC properties.`,
     ]);
@@ -3797,15 +3787,6 @@ async function guideSeoConnector(rl, secrets) {
     const gscToken = await maybePromptSecret(rl, 'Paste GOOGLE_SEARCH_CONSOLE_ACCESS_TOKEN, or leave empty for service-account/all-sites/CSV mode', 'GOOGLE_SEARCH_CONSOLE_ACCESS_TOKEN');
     if (gscToken)
         secrets.GOOGLE_SEARCH_CONSOLE_ACCESS_TOKEN = gscToken;
-    const useBingWebmaster = await askYesNo(rl, 'Also store Bing Webmaster API access for sitemap/indexing status?', false);
-    if (useBingWebmaster) {
-        const bingSiteUrl = await ask(rl, 'Optional Bing verified site URL', process.env.BING_WEBMASTER_SITE_URL || siteUrl.trim() || '');
-        if (bingSiteUrl.trim())
-            secrets.BING_WEBMASTER_SITE_URL = bingSiteUrl.trim();
-        const bingApiKey = await maybePromptSecret(rl, 'Paste BING_WEBMASTER_API_KEY into this local terminal', 'BING_WEBMASTER_API_KEY');
-        if (bingApiKey)
-            secrets.BING_WEBMASTER_API_KEY = bingApiKey;
-    }
     const useDataForSeo = await askYesNo(rl, 'Also store DataForSEO credentials for optional paid keyword research?', false);
     if (useDataForSeo) {
         const login = await maybePromptSecret(rl, 'Paste DATAFORSEO_LOGIN into this local terminal', 'DATAFORSEO_LOGIN');
@@ -4524,61 +4505,6 @@ async function runConnectorSetupSteps({ rl, args, selected, healthByConnector, a
     process.exitCode = 1;
     return false;
 }
-function buildGrowthEngineerWizardCommand(flag, args, selected) {
-    const configArg = args.config && args.config !== DEFAULT_CONFIG_PATH ? ` --config ${quote(args.config)}` : '';
-    return `${nodeRuntimeScriptCommand('openclaw-growth-wizard.mjs')}${configArg} ${flag} ${quote(selected.join(','))}`;
-}
-async function runConnectorRecoverySteps({ rl, args, selected, healthByConnector }) {
-    clearTerminal();
-    printConnectorIntro({
-        introTitle: 'OpenClaw connector recovery',
-        introDetail: 'Recovery first reuses the existing config and local secrets. It only opens focused credential prompts if the connector still fails.',
-    });
-    process.stdout.write(`${ANSI.bold}Recovering connectors${ANSI.reset}\n`);
-    for (const key of selected) {
-        process.stdout.write(`  - ${connectorLabel(key)}\n`);
-    }
-    process.stdout.write('\n');
-    const setupCommand = `${nodeRuntimeScriptCommand('openclaw-growth-start.mjs')} --config ${quote(args.config)} --setup-only --connectors ${quote(selected.join(','))} --only-connectors ${quote(selected.join(','))}`;
-    const recoveryCommand = buildGrowthEngineerWizardCommand('--recover-connectors', args, selected);
-    const fullSetupCommand = buildGrowthEngineerWizardCommand('--connectors', args, selected);
-    const setupResult = await runSetupCommandWithProgress(setupCommand, { ...process.env }, selected, 'Retesting connector health with existing config and local secrets...');
-    const setupPayload = parseJsonFromStdout(setupResult.stdout);
-    const failedConnectors = selected.filter((connector) => payloadHasConnectorFailures(setupPayload, connector));
-    if (setupResult.ok && setupPayload?.ok !== false && failedConnectors.length === 0) {
-        process.stdout.write('\nSUCCESS: Connector health is restored. No credentials were re-entered.\n');
-        printConnectorSetupProgress(setupPayload);
-        return true;
-    }
-    process.stdout.write('\nConnector is still unhealthy after retesting existing config/secrets.\n');
-    if (setupPayload) {
-        printConciseSetupBlockers(setupPayload, recoveryCommand, {
-            focusConnectors: selected,
-            hideRerunWhenClean: true,
-        });
-    }
-    else {
-        const reason = setupResult.code === null ? 'health command did not report an exit code' : `health command exited with code ${setupResult.code}`;
-        process.stdout.write(`Reason: ${reason}.\n`);
-        const output = truncate(setupResult.stderr || setupResult.stdout);
-        if (output)
-            process.stdout.write(`Details: ${output}\n`);
-    }
-    const openPrompts = await askYesNo(rl, 'Open focused credential prompts for the failed connector now?', false);
-    if (!openPrompts) {
-        process.stdout.write(`\nRecovery command: ${recoveryCommand}\n`);
-        process.stdout.write(`Full setup command: ${fullSetupCommand}\n`);
-        process.exitCode = 1;
-        return false;
-    }
-    return await runConnectorSetupSteps({
-        rl,
-        args,
-        selected,
-        healthByConnector,
-        allowIsolationPrompt: false,
-    });
-}
 async function runConnectorSetupWizard(args) {
     if (!process.stdin.isTTY || !process.stdout.isTTY) {
         throw new Error('Connector wizard requires an interactive terminal.');
@@ -4609,20 +4535,14 @@ async function runConnectorSetupWizard(args) {
                     return 'back';
                 throw error;
             }
-            const selected = requestedConnectors.length > 0 || args.connectorRecovery
+            const selected = requestedConnectors.length > 0
                 ? orderConnectors(chosenConnectors)
                 : withMissingRequiredAnalyticsConnector(chosenConnectors);
             if (selected.length === 0) {
                 throw new Error(`No supported connectors selected. Use ${CONNECTOR_KEYS.join(', ')}, or all.`);
             }
             try {
-                let setupOk = false;
-                if (args.connectorRecovery) {
-                    setupOk = await runConnectorRecoverySteps({ rl, args, selected, healthByConnector });
-                }
-                else {
-                    setupOk = await runConnectorSetupSteps({ rl, args, selected, healthByConnector });
-                }
+                const setupOk = await runConnectorSetupSteps({ rl, args, selected, healthByConnector });
                 if (!setupOk)
                     return 'done';
             }
@@ -4908,11 +4828,6 @@ async function buildDefaultWizardConfig(configPath = null) {
                 mode: 'command',
                 command: getWizardDefaultSourceCommand('seo'),
                 siteUrl: process.env.GSC_SITE_URL || '',
-                bingWebmaster: {
-                    enabled: Boolean(process.env.BING_WEBMASTER_API_KEY),
-                    siteUrl: process.env.BING_WEBMASTER_SITE_URL || '',
-                    feeds: [],
-                },
                 paidProvider: {
                     dataforseo: {
                         enabled: false,
@@ -5051,8 +4966,6 @@ async function buildDefaultWizardConfig(configPath = null) {
             paddleTokenRef: { source: 'env', provider: 'default', id: 'PADDLE_API_KEY' },
             gscTokenEnv: 'GOOGLE_SEARCH_CONSOLE_ACCESS_TOKEN',
             gscTokenRef: { source: 'env', provider: 'default', id: 'GOOGLE_SEARCH_CONSOLE_ACCESS_TOKEN' },
-            bingWebmasterApiKeyEnv: 'BING_WEBMASTER_API_KEY',
-            bingWebmasterApiKeyRef: { source: 'env', provider: 'default', id: 'BING_WEBMASTER_API_KEY' },
             dataforseoLoginEnv: 'DATAFORSEO_LOGIN',
             dataforseoLoginRef: { source: 'env', provider: 'default', id: 'DATAFORSEO_LOGIN' },
             dataforseoPasswordEnv: 'DATAFORSEO_PASSWORD',
@@ -5087,11 +5000,6 @@ function buildRecommendedSourceConfig(configPath = null) {
             mode: 'command',
             command: getWizardDefaultSourceCommand('seo'),
             siteUrl: process.env.GSC_SITE_URL || '',
-            bingWebmaster: {
-                enabled: Boolean(process.env.BING_WEBMASTER_API_KEY),
-                siteUrl: process.env.BING_WEBMASTER_SITE_URL || '',
-                feeds: [],
-            },
             paidProvider: {
                 dataforseo: {
                     enabled: false,

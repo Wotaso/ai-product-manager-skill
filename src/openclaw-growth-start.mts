@@ -216,7 +216,7 @@ function normalizeConnectorKey(value) {
   if (['asc', 'asc-cli', 'app-store-connect', 'appstoreconnect', 'app-store'].includes(normalized)) return 'asc';
   if (['revenuecat', 'revenue-cat', 'rc', 'revenuecat-mcp'].includes(normalized)) return 'revenuecat';
   if (['paddle', 'paddle-billing', 'billing-metrics', 'web-revenue'].includes(normalized)) return 'paddle';
-  if (['seo', 'gsc', 'google-search-console', 'search-console', 'dataforseo', 'bing', 'bing-webmaster', 'bing-webmaster-tools', 'organic-search'].includes(normalized)) return 'seo';
+  if (['seo', 'gsc', 'google-search-console', 'search-console', 'dataforseo', 'organic-search'].includes(normalized)) return 'seo';
   if (['sentry', 'sentry-api', 'sentry-mcp', 'crashes', 'errors', 'crash-reporting'].includes(normalized)) return 'sentry';
   if (['coolify', 'coolify-api', 'deployment', 'deployments', 'hosting', 'infra', 'infrastructure'].includes(normalized)) return 'coolify';
   if (['stripe', 'stripe-billing', 'stripe-payments'].includes(normalized)) return 'stripe';
@@ -294,7 +294,7 @@ function getRuntimeSourceCommand(sourceName) {
   if (normalized === 'paddle') {
     return nodeRuntimeScriptCommand('export-paddle-summary.mjs');
   }
-  if (['seo', 'gsc', 'google-search-console', 'search-console', 'dataforseo', 'bing', 'bing-webmaster', 'bing-webmaster-tools'].includes(normalized)) {
+  if (['seo', 'gsc', 'google-search-console', 'search-console', 'dataforseo'].includes(normalized)) {
     return nodeRuntimeScriptCommand('export-seo-summary.mjs');
   }
   if (normalized === 'sentry' || normalized === 'glitchtip') {
@@ -312,10 +312,15 @@ function getRuntimeSourceCommand(sourceName) {
 function replaceLegacyRuntimeScriptCommand(command) {
   const trimmed = String(command || '').trim();
   if (!trimmed) return trimmed;
-  return trimmed.replace(
+  return trimmed
+    .replace(
     /^node\s+scripts\/(export-analytics-summary\.mjs|export-revenuecat-summary\.mjs|export-paddle-summary\.mjs|export-seo-summary\.mjs|export-sentry-summary\.mjs|export-coolify-summary\.mjs|export-asc-summary\.mjs|openclaw-growth-start\.mjs|openclaw-growth-status\.mjs|openclaw-growth-preflight\.mjs|openclaw-growth-runner\.mjs|openclaw-growth-engineer\.mjs)(?=\s|$)/,
     (_match, scriptName) => nodeRuntimeScriptCommand(scriptName),
-  );
+    )
+    .replace(
+      /^node\s+(['"]?)(?:\S*\/)?node_modules\/@analyticscli\/growth-engineer\/dist\/runtime\/(export-analytics-summary\.mjs|export-revenuecat-summary\.mjs|export-paddle-summary\.mjs|export-seo-summary\.mjs|export-sentry-summary\.mjs|export-coolify-summary\.mjs|export-asc-summary\.mjs|openclaw-growth-start\.mjs|openclaw-growth-status\.mjs|openclaw-growth-preflight\.mjs|openclaw-growth-runner\.mjs|openclaw-growth-engineer\.mjs)\1(?=\s|$)/,
+      (_match, _quote, scriptName) => nodeRuntimeScriptCommand(scriptName),
+    );
 }
 
 function normalizeSourceCommand(sourceName, source) {

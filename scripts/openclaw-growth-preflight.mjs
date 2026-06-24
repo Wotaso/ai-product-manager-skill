@@ -138,7 +138,7 @@ function normalizeConnectorKey(value) {
         return 'revenuecat';
     if (['paddle', 'paddle-billing', 'billing-metrics', 'web-revenue'].includes(normalized))
         return 'paddle';
-    if (['seo', 'gsc', 'google-search-console', 'search-console', 'dataforseo', 'bing', 'bing-webmaster', 'bing-webmaster-tools', 'organic-search'].includes(normalized))
+    if (['seo', 'gsc', 'google-search-console', 'search-console', 'dataforseo', 'organic-search'].includes(normalized))
         return 'seo';
     if (['sentry', 'sentry-api', 'sentry-mcp', 'glitchtip', 'crashes', 'errors', 'crash-reporting'].includes(normalized))
         return 'sentry';
@@ -234,7 +234,9 @@ function replaceLegacyRuntimeScriptCommand(command) {
     const trimmed = String(command || '').trim();
     if (!trimmed)
         return trimmed;
-    return trimmed.replace(/^node\s+scripts\/(export-analytics-summary\.mjs|export-revenuecat-summary\.mjs|export-paddle-summary\.mjs|export-seo-summary\.mjs|export-sentry-summary\.mjs|export-asc-summary\.mjs|openclaw-growth-start\.mjs|openclaw-growth-status\.mjs|openclaw-growth-preflight\.mjs|openclaw-growth-runner\.mjs|openclaw-growth-engineer\.mjs)(?=\s|$)/, (_match, scriptName) => nodeRuntimeScriptCommand(scriptName));
+    return trimmed
+        .replace(/^node\s+scripts\/(export-analytics-summary\.mjs|export-revenuecat-summary\.mjs|export-paddle-summary\.mjs|export-seo-summary\.mjs|export-sentry-summary\.mjs|export-asc-summary\.mjs|openclaw-growth-start\.mjs|openclaw-growth-status\.mjs|openclaw-growth-preflight\.mjs|openclaw-growth-runner\.mjs|openclaw-growth-engineer\.mjs)(?=\s|$)/, (_match, scriptName) => nodeRuntimeScriptCommand(scriptName))
+        .replace(/^node\s+(['"]?)(?:\S*\/)?node_modules\/@analyticscli\/growth-engineer\/dist\/runtime\/(export-analytics-summary\.mjs|export-revenuecat-summary\.mjs|export-paddle-summary\.mjs|export-seo-summary\.mjs|export-sentry-summary\.mjs|export-asc-summary\.mjs|openclaw-growth-start\.mjs|openclaw-growth-status\.mjs|openclaw-growth-preflight\.mjs|openclaw-growth-runner\.mjs|openclaw-growth-engineer\.mjs)\1(?=\s|$)/, (_match, _quote, scriptName) => nodeRuntimeScriptCommand(scriptName));
 }
 function commandHasConfigArg(command) {
     return /(?:^|\s)--config(?:=|\s|$)/.test(String(command || ''));
@@ -1256,8 +1258,8 @@ async function runConnectionChecks({ checks, config, configPath, timeoutMs, prog
     if (onlyAllows(onlyConnectors, 'seo')) {
         scheduleProgressGroup(tasks, checks, progressJson, {
             key: 'seo',
-            label: 'SEO / GSC / Bing',
-            detail: 'Search Console auth, Bing Webmaster API, CSV, or DataForSEO config',
+            label: 'SEO / GSC',
+            detail: 'Search Console auth or CSV/DataForSEO config',
             run: async (groupChecks) => {
                 if (sourceEnabled(config, 'seo')) {
                     const hasGscCredential = Boolean(process.env[gscTokenEnv] ||
@@ -1271,19 +1273,6 @@ async function runConnectionChecks({ checks, config, configPath, timeoutMs, prog
                     addCheck(groupChecks, 'connection:seo:gsc-site', true, process.env.GSC_SITE_URL || seoSource?.siteUrl || seoSource?.site_url
                         ? 'GSC site/property is pinned intentionally'
                         : 'no GSC site/property pinned; exporter will list and query all verified Search Console properties', 'pass');
-                    const bingApiKeyEnv = getSecretName(config, 'bingWebmasterApiKeyEnv', 'BING_WEBMASTER_API_KEY');
-                    const bingSource = seoSource?.bingWebmaster || seoSource?.bing || {};
-                    const hasBingApiKey = Boolean(process.env[bingApiKeyEnv] || process.env.BING_WEBMASTER_API_KEY);
-                    addCheck(groupChecks, 'connection:seo:bing-webmaster', hasBingApiKey || !bingSource?.enabled, hasBingApiKey
-                        ? 'Bing Webmaster API key is configured'
-                        : bingSource?.enabled
-                            ? 'Bing Webmaster API key missing; Bing indexing/feed status will be skipped'
-                            : 'Bing Webmaster API not enabled', hasBingApiKey || !bingSource?.enabled ? 'pass' : 'warn');
-                    if (hasBingApiKey || bingSource?.enabled) {
-                        addCheck(groupChecks, 'connection:seo:bing-site', true, process.env.BING_WEBMASTER_SITE_URL || bingSource?.siteUrl || bingSource?.site_url
-                            ? 'Bing Webmaster site URL is pinned intentionally'
-                            : 'no Bing site URL pinned; exporter needs --bing-site or BING_WEBMASTER_SITE_URL for live Bing reads', 'pass');
-                    }
                     if (seoSource?.mode === 'command') {
                         const command = withActiveConfigArg(replaceLegacyRuntimeScriptCommand(String(seoSource.command || '').trim()), configPath);
                         if (!command) {
@@ -1590,7 +1579,6 @@ async function main() {
                 }
                 if (sourceName === 'seo') {
                     const gscTokenEnv = getSecretName(config, 'gscTokenEnv', 'GOOGLE_SEARCH_CONSOLE_ACCESS_TOKEN');
-                    const bingWebmasterApiKeyEnv = getSecretName(config, 'bingWebmasterApiKeyEnv', 'BING_WEBMASTER_API_KEY');
                     const hasSearchConsoleAuth = Boolean(process.env[gscTokenEnv] ||
                         process.env.GSC_ACCESS_TOKEN ||
                         process.env.GOOGLE_APPLICATION_CREDENTIALS ||
@@ -1598,17 +1586,11 @@ async function main() {
                         process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
                     const commandText = String(source.command || '');
                     const csvOnly = /--csv|--gsc-csv/.test(commandText);
-                    const bingEnabled = /--bing(?:\s|$)/.test(commandText) || Boolean(source.bingWebmaster?.enabled || source.bing?.enabled);
                     addCheck(checks, `secret:${gscTokenEnv}`, hasSearchConsoleAuth || csvOnly, hasSearchConsoleAuth
                         ? 'set or service-account auth configured'
                         : csvOnly
                             ? 'not required for configured CSV-only SEO command'
                             : 'missing (required for GSC API mode; CSV-only mode may use --gsc-csv/--csv)', hasSearchConsoleAuth || csvOnly ? 'pass' : 'warn');
-                    addCheck(checks, `secret:${bingWebmasterApiKeyEnv}`, !bingEnabled || Boolean(process.env[bingWebmasterApiKeyEnv] || process.env.BING_WEBMASTER_API_KEY), bingEnabled
-                        ? process.env[bingWebmasterApiKeyEnv] || process.env.BING_WEBMASTER_API_KEY
-                            ? 'set (required for Bing Webmaster API mode)'
-                            : 'missing (required for Bing Webmaster API mode)'
-                        : 'not required unless Bing Webmaster mode is enabled', !bingEnabled || Boolean(process.env[bingWebmasterApiKeyEnv] || process.env.BING_WEBMASTER_API_KEY) ? 'pass' : 'warn');
                 }
                 if (sourceName === 'sentry') {
                     const sentryTokenEnv = getSecretName(config, 'sentryTokenEnv', 'SENTRY_AUTH_TOKEN');
