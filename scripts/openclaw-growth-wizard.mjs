@@ -4275,6 +4275,7 @@ async function runConnectorSetupSteps({ rl, args, selected, healthByConnector, a
     let sentryAccounts = [];
     let paddleAccounts = [];
     let coolifyConfig = null;
+    let ascBootstrapRevokeEnv = null;
     if (selected.includes('analytics')) {
         let forceFreshAnalyticsToken = shouldForceFreshAnalyticsToken(healthByConnector);
         while (true) {
@@ -4394,7 +4395,7 @@ async function runConnectorSetupSteps({ rl, args, selected, healthByConnector, a
             });
             await cleanupTemporaryAscBootstrapPrivateKey(bootstrapEnv);
             if (check.ok) {
-                printAscBootstrapAdminRevokeNotice(bootstrapEnv);
+                ascBootstrapRevokeEnv = bootstrapEnv;
             }
             if (!check.retry)
                 break;
@@ -4488,6 +4489,9 @@ async function runConnectorSetupSteps({ rl, args, selected, healthByConnector, a
         printSetupSuccess(setupPayload);
         if (wroteSecrets) {
             process.stdout.write('Future OpenClaw Growth commands load this secrets file automatically.\n');
+        }
+        if (ascBootstrapRevokeEnv) {
+            printAscBootstrapAdminRevokeNotice(ascBootstrapRevokeEnv);
         }
         await maybeRefreshOpenClawSessionInstructions(rl, args.config);
         const configureIsolation = allowIsolationPrompt && ENABLE_ISOLATED_SECRET_RUNNER_WIZARD && await askYesNo(rl, 'Generate an isolated secret runner so OpenClaw can run health checks without reading API keys?', true);

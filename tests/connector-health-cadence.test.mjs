@@ -45,6 +45,9 @@ test('connector wizard can refresh OpenClaw session instructions after setup cha
 
   assert.match(wizard, /Update OpenClaw runtime and heartbeat files now/);
   assert.match(wizard, /maybeRefreshOpenClawSessionInstructions\(rl, args\.config\)/);
+  assert.match(wizard, /let ascBootstrapRevokeEnv/);
+  assert.match(wizard, /ascBootstrapRevokeEnv = bootstrapEnv/);
+  assert.match(wizard, /if \(ascBootstrapRevokeEnv\)\s*\{\s*printAscBootstrapAdminRevokeNotice\(ascBootstrapRevokeEnv\)/);
   assert.match(wizard, /refreshWorkspaceRuntimeFromCurrentWizard/);
   assert.match(wizard, /writeOpenClawHeartbeat/);
   assert.match(wizard, /writeOpenClawSessionNote/);
@@ -769,7 +772,8 @@ test('ASC wizard requests the report-creation role and vendor number', () => {
   assert.match(wizard, /function printAscBootstrapAdminRevokeNotice/);
   assert.match(wizard, /Revoke \$\{keyLabel\} in App Store Connect now/);
   assert.match(wizard, /https:\/\/appstoreconnect\.apple\.com\/access\/integrations\/api/);
-  assert.match(wizard, /printAscBootstrapAdminRevokeNotice\(bootstrapEnv\)/);
+  assert.match(wizard, /ascBootstrapRevokeEnv = bootstrapEnv/);
+  assert.match(wizard, /printAscBootstrapAdminRevokeNotice\(ascBootstrapRevokeEnv\)/);
   assert.doesNotMatch(wizard, /Delete this temporary Admin \.p8 file from this host/);
   assert.doesNotMatch(wizard, /Provide a temporary Admin API key now/);
   assert.doesNotMatch(wizard, /payloadNeedsAscAnalyticsBootstrap/);
