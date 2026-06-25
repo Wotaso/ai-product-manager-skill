@@ -3,7 +3,7 @@ name: growth-engineer
 description: Growth Engineer for mobile apps and agent runtimes including OpenClaw and Hermes. Correlate analytics, crashes, billing, feedback, store signals, and repo context into proposal drafts that can flow into agent chat, GitHub issues, or draft pull requests.
 license: MIT
 homepage: https://github.com/Wotaso/growth-engineer-skill
-metadata: {"author":"wotaso","version":"1.0.206","analyticscli-target":"@analyticscli/cli","analyticscli-supported-range":">=0.1.3 <0.2.0","openclaw":{"emoji":"🚀","homepage":"https://github.com/Wotaso/growth-engineer-skill","requires":{"bins":["node","analyticscli"]},"install":[{"id":"analyticscli-cli","kind":"node","package":"@analyticscli/cli","bins":["analyticscli"],"label":"Install/update AnalyticsCLI CLI (npm package @analyticscli/cli)"}]},"hermes":{"tags":["Growth","Analytics","Mobile","Product","OpenClaw","Hermes"],"homepage":"https://github.com/Wotaso/growth-engineer-skill","requires":{"bins":["node","analyticscli"]},"install":[{"id":"growth-engineer","kind":"skill","package":"Wotaso/growth-engineer-skill","label":"Install the shared Growth Engineer for Hermes"}]}}
+metadata: {"author":"wotaso","version":"1.0.207","analyticscli-target":"@analyticscli/cli","analyticscli-supported-range":">=0.1.3 <0.2.0","openclaw":{"emoji":"🚀","homepage":"https://github.com/Wotaso/growth-engineer-skill","requires":{"bins":["node","analyticscli"]},"install":[{"id":"analyticscli-cli","kind":"node","package":"@analyticscli/cli","bins":["analyticscli"],"label":"Install/update AnalyticsCLI CLI (npm package @analyticscli/cli)"}]},"hermes":{"tags":["Growth","Analytics","Mobile","Product","OpenClaw","Hermes"],"homepage":"https://github.com/Wotaso/growth-engineer-skill","requires":{"bins":["node","analyticscli"]},"install":[{"id":"growth-engineer","kind":"skill","package":"Wotaso/growth-engineer-skill","label":"Install the shared Growth Engineer for Hermes"}]}}
 ---
 
 # Growth Engineer
@@ -185,7 +185,9 @@ Retention reliability:
 
 - Treat D1/D3/D7 retention as an identity-quality-sensitive metric, not as an unconditional product fact.
 - Before making strong retention claims, inspect the `analyticscli retention` response `quality.reliability`, stable identity share, and warnings.
-- If retention reliability is `low` or `unknown`, say the metric may be undercounted because some SDK sessions/users do not have persistent identity. Recommend verifying SDK identity persistence and rerunning retention with `analyticscli retention --identity-quality stable` before prioritizing major retention work from D1/D7 alone.
+- `analyticscli retention` defaults to `--identity-quality stable`. This excludes ephemeral/unknown SDK identities so consent-gated users without persistent identity do not create misleading multi-day retention noise.
+- Use `--identity-quality all` only as an explicit diagnostic comparison. Do not treat all-identity D1/D3/D7 as product truth when stable identity share is low.
+- If retention reliability is `low` or `unknown`, say the metric may be undercounted because some SDK sessions/users do not have persistent identity. Recommend verifying SDK identity persistence before prioritizing major retention work from D1/D7 alone.
 - Do not filter silently. If using stable-only retention, disclose that ephemeral/unknown identities were excluded and compare the remaining cohort size.
 - Product recommendations can still mention weak retention, but phrase it as "appears low" when reliability is weak and pair it with an instrumentation/persistence action.
 
