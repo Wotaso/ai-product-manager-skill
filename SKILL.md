@@ -3,7 +3,7 @@ name: growth-engineer
 description: Growth Engineer for mobile apps and agent runtimes including OpenClaw and Hermes. Correlate analytics, crashes, billing, feedback, store signals, and repo context into proposal drafts that can flow into agent chat, GitHub issues, or draft pull requests.
 license: MIT
 homepage: https://github.com/Wotaso/growth-engineer-skill
-metadata: {"author":"wotaso","version":"1.0.205","analyticscli-target":"@analyticscli/cli","analyticscli-supported-range":">=0.1.2-preview.0 <0.2.0","openclaw":{"emoji":"🚀","homepage":"https://github.com/Wotaso/growth-engineer-skill","requires":{"bins":["node","analyticscli"]},"install":[{"id":"analyticscli-cli","kind":"node","package":"@analyticscli/cli@preview","bins":["analyticscli"],"label":"Install/update AnalyticsCLI CLI (npm package @analyticscli/cli@preview)"}]},"hermes":{"tags":["Growth","Analytics","Mobile","Product","OpenClaw","Hermes"],"homepage":"https://github.com/Wotaso/growth-engineer-skill","requires":{"bins":["node","analyticscli"]},"install":[{"id":"growth-engineer","kind":"skill","package":"Wotaso/growth-engineer-skill","label":"Install the shared Growth Engineer for Hermes"}]}}
+metadata: {"author":"wotaso","version":"1.0.206","analyticscli-target":"@analyticscli/cli","analyticscli-supported-range":">=0.1.3 <0.2.0","openclaw":{"emoji":"🚀","homepage":"https://github.com/Wotaso/growth-engineer-skill","requires":{"bins":["node","analyticscli"]},"install":[{"id":"analyticscli-cli","kind":"node","package":"@analyticscli/cli","bins":["analyticscli"],"label":"Install/update AnalyticsCLI CLI (npm package @analyticscli/cli)"}]},"hermes":{"tags":["Growth","Analytics","Mobile","Product","OpenClaw","Hermes"],"homepage":"https://github.com/Wotaso/growth-engineer-skill","requires":{"bins":["node","analyticscli"]},"install":[{"id":"growth-engineer","kind":"skill","package":"Wotaso/growth-engineer-skill","label":"Install the shared Growth Engineer for Hermes"}]}}
 ---
 
 # Growth Engineer
@@ -46,10 +46,10 @@ Use this minimal reply shape:
 Use this command block for OpenClaw, Hermes, VPS, Linux, and macOS hosts:
 
 ```bash
-npx -y @analyticscli/growth-engineer@preview wizard --connectors
+npx -y @analyticscli/growth-engineer wizard --connectors
 ```
 
-Run this from the OpenClaw/Hermes workspace. Connector setup should route through the npm preview wizard so hosts get the latest wizard fixes without manual bootstrap commands.
+Run this from the OpenClaw/Hermes workspace. Connector setup should route through the npm wizard so hosts get the latest wizard fixes without manual bootstrap commands.
 
 ## Post-Setup Reply Contract
 
@@ -61,7 +61,7 @@ After the VPS/host wizard finishes successfully, OpenClaw or Hermes should not a
 4. Provide exactly one next command for a manual verification run:
 
 ```bash
-npx -y @analyticscli/growth-engineer@preview run --config ~/data/openclaw-growth-engineer/config.json
+npx -y @analyticscli/growth-engineer run --config ~/data/openclaw-growth-engineer/config.json
 ```
 
 Do not ask for project/repo scoping after successful setup. Do not claim a connector is broken unless `growth-engineer status --config ...` or the wizard result says it is blocked/partial.
@@ -77,7 +77,7 @@ When Hermes is running from chat/Discord or any non-interactive agent terminal, 
 Use this exact command block in the reply after skill installation:
 
 ```bash
-npx -y @analyticscli/growth-engineer@preview wizard --connectors
+npx -y @analyticscli/growth-engineer wizard --connectors
 ```
 
 Then add exactly one short instruction sentence: "Run this in your VPS/host shell and paste secrets only there."
@@ -196,7 +196,7 @@ AnalyticsCLI product feedback:
 - Do not confuse this with tenant-owned end-user feedback collected by the AnalyticsCLI feedback feature. Tenant feedback is a product signal for the tenant's app; `analyticscli feedback submit` is operator feedback about AnalyticsCLI/OpenClaw tooling.
 - When an AnalyticsCLI/OpenClaw/SDK command, endpoint, or documented workflow fails, first try to refetch or update the relevant current version before declaring the behavior broken:
   - Growth Engineer: `npx -y clawhub --no-input --dir skills update growth-engineer --force` or reinstall from the canonical skill source, then rerun the workflow.
-  - AnalyticsCLI CLI: update `@analyticscli/cli@preview`, verify `analyticscli --help`, then rerun the exact failing command.
+  - AnalyticsCLI CLI: update `@analyticscli/cli`, verify `analyticscli --help`, then rerun the exact failing command.
   - AnalyticsCLI SDK: upgrade `@analyticscli/sdk` within the supported range and rerun the minimal host-app or test repro.
 - If no newer version is available, the update cannot be applied, or the newest version still fails, submit a bounded `analyticscli feedback submit` report if feedback service credentials are configured. Include installed versions checked, command/endpoint, project id when safe, sanitized payload shape, status code, error body, request id if present, expected behavior, workaround used, and whether an update was attempted.
 - Example:
@@ -265,7 +265,7 @@ Run the wizard from the active agent workspace:
 ```
 
 ```bash
-npx -y @analyticscli/growth-engineer@preview wizard --connectors
+npx -y @analyticscli/growth-engineer wizard --connectors
 ```
 
 Then add only: "Select the connectors in the wizard. Secrets stay in the terminal."
@@ -288,7 +288,7 @@ Run the wizard from the active agent workspace:
 ```
 
 ```bash
-npx -y @analyticscli/growth-engineer@preview wizard --connectors
+npx -y @analyticscli/growth-engineer wizard --connectors
 ```
 
 Then add one sentence: "The wizard will ask for the selected connectors and any secrets in the local terminal only."
@@ -298,7 +298,7 @@ If the user asks which connectors exist, list only the connector names and one s
 If the user already names specific connectors, still prefer the checkbox wizard unless they explicitly ask for a non-interactive command. For explicit connector setup, use one copy-paste command from the active agent workspace:
 
 ```bash
-npx -y @analyticscli/growth-engineer@preview wizard --connectors analytics,github,revenuecat,paddle,seo,sentry,coolify,asc
+npx -y @analyticscli/growth-engineer wizard --connectors analytics,github,revenuecat,paddle,seo,sentry,coolify,asc
 ```
 
 Use only the connectors the user accepted. The wizard owns provider-specific instructions, local-terminal secret prompts, helper setup, and smoke tests. Chat should only summarize results after the wizard finishes or when the user asks.
@@ -415,7 +415,7 @@ Host update boundary:
    Do not describe an interactive `skills add` prompt as a successful refresh.
 3. Install or update the npm package that provides the `analyticscli` binary:
    ```bash
-   npm install -g @analyticscli/cli@preview
+   npm install -g @analyticscli/cli
    ```
 4. If global npm install fails with a permissions error, use the bundled helper from the installed skill root:
    ```bash
@@ -463,7 +463,7 @@ Do not search npm for `analyticscli` or `analyticsscli`.
 Use this exact install/update command:
 
 ```bash
-npm install -g @analyticscli/cli@preview
+npm install -g @analyticscli/cli
 ```
 
 Then verify:
@@ -568,10 +568,10 @@ Sentry setup guidance:
 
 Coolify setup guidance:
 
-- Use the direct Coolify API exporter through the standalone CLI as the canonical deployment/hosting source: `npx -y @analyticscli/growth-engineer@preview exporters coolify-summary`.
+- Use the direct Coolify API exporter through the standalone CLI as the canonical deployment/hosting source: `npx -y @analyticscli/growth-engineer exporters coolify-summary`.
 - Ask for the Coolify base URL and token only in the local terminal wizard. For Wotaso-hosted Coolify, the token page is `https://coolify.wotaso.com/security/api-tokens`.
 - Tell the user to open the Coolify dashboard, choose `Keys & Tokens` in the sidebar, open `API tokens`, and create an API key/token with read-only permissions.
-- Persist non-secret config in `sources.coolify` with `enabled=true`, `mode=command`, `command=npx -y @analyticscli/growth-engineer@preview exporters coolify-summary --config <config>`, `baseUrl`, and `tokenEnv`.
+- Persist non-secret config in `sources.coolify` with `enabled=true`, `mode=command`, `command=npx -y @analyticscli/growth-engineer exporters coolify-summary --config <config>`, `baseUrl`, and `tokenEnv`.
 - Persist the secret only as `COOLIFY_API_TOKEN`; keep `COOLIFY_BASE_URL` non-secret but allow it in the local secrets file for convenience.
 - The daily guardrail must read Coolify when configured and correlate failed deploys, unhealthy resources, disabled/missing health checks, and server/resource anomalies with Sentry errors, AnalyticsCLI traffic/conversion drops, and recent code changes.
 - Mark Coolify connected only after the auth check and exporter smoke test pass. Do not infer Coolify access from a token being present.
@@ -611,12 +611,12 @@ Do not list GlitchTip or ASC CLI as mobile extras in setup answers. GlitchTip be
 
 When the user says "start", "run", or "kick off" the skill:
 
-1. Run the Dependency Refresh Protocol first. It must update this skill, the `analyticscli-cli` skill when available, and the `@analyticscli/cli@preview` npm package, then verify `command -v analyticscli`.
+1. Run the Dependency Refresh Protocol first. It must update this skill, the `analyticscli-cli` skill when available, and the `@analyticscli/cli` npm package, then verify `command -v analyticscli`.
 2. If setup is incomplete, connectors are not selected, AnalyticsCLI auth is missing/invalid, or the host is Hermes, route the user to the bundled wizard before any preflight/start run.
    - In Hermes chat/Discord/non-interactive terminals, do not run the wizard yourself. Show the full command below and tell the user to paste it into the VPS/host shell.
    - Only run this command yourself when you are already operating inside an interactive user terminal that can safely receive secret input outside chat.
    ```bash
-   npx -y @analyticscli/growth-engineer@preview wizard --connectors
+   npx -y @analyticscli/growth-engineer wizard --connectors
    ```
    Do not tell the user to run `analyticscli login` as the next step; the wizard owns AnalyticsCLI token collection and retesting.
 3. Prefer the CLI entrypoint after the wizard/config exists:

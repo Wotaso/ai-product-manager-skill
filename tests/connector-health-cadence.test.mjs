@@ -508,7 +508,7 @@ test('wizard sandbox smoke migrates Sentry and Coolify commands to the active co
           coolify: {
             enabled: true,
             mode: 'command',
-            command: 'npx -y @analyticscli/growth-engineer@preview exporters coolify-summary',
+            command: 'npx -y @analyticscli/growth-engineer exporters coolify-summary',
             baseUrl: 'https://coolify.example.com',
             tokenEnv: 'COOLIFY_API_TOKEN',
           },
@@ -602,7 +602,7 @@ test('wizard sandbox smoke migrates Sentry and Coolify commands to the active co
           coolify: {
             enabled: true,
             mode: 'command',
-            command: 'npx -y @analyticscli/growth-engineer@preview exporters coolify-summary',
+            command: 'npx -y @analyticscli/growth-engineer exporters coolify-summary',
             baseUrl: 'https://coolify.example.com',
             tokenEnv: 'COOLIFY_API_TOKEN',
           },
@@ -659,7 +659,7 @@ test('connector health alerts include direct repair commands without broad menu 
   assert.ok(runner.includes('Fix: \\`${command}\\`'));
   assert.match(runner, /SENTRY_AUTH_TOKEN missing for source collection/);
   assert.doesNotMatch(runner, /lines\.push\('  Account targets:'\)/);
-  assert.match(runner, /npx -y @analyticscli\/growth-engineer@preview wizard/);
+  assert.match(runner, /npx -y @analyticscli\/growth-engineer wizard/);
   assert.match(runner, /--connectors \$\{quote\(connector\)\}/);
   assert.doesNotMatch(runner, /nodeRuntimeScriptCommand\('openclaw-growth-wizard\.mjs'\)/);
   assert.doesNotMatch(runner, /ASC web-auth only/);
@@ -684,7 +684,7 @@ test('agent-facing wizard guidance uses the npx Growth Engineer wizard', () => {
 
   for (const file of files) {
     const source = readFileSync(join(skillRoot, file), 'utf8');
-    assert.match(source, /npx -y @analyticscli\/growth-engineer@preview wizard/);
+    assert.match(source, /npx -y @analyticscli\/growth-engineer wizard/);
   }
 });
 
@@ -770,7 +770,8 @@ test('ASC wizard requests the report-creation role and vendor number', () => {
   assert.doesNotMatch(wizard, /Deleted temporary Admin \.p8/);
   assert.doesNotMatch(wizard, /fs\.unlink\(privateKeyPath\)/);
   assert.match(wizard, /function printAscBootstrapAdminRevokeNotice/);
-  assert.match(wizard, /Revoke \$\{keyLabel\} in App Store Connect now/);
+  assert.match(wizard, /IMPORTANT: Revoke the ASC \$\{keyLabel\} now/);
+  assert.match(wizard, /Growth Engineer only needed this Admin key once for setup/);
   assert.match(wizard, /https:\/\/appstoreconnect\.apple\.com\/access\/integrations\/api/);
   assert.match(wizard, /ascBootstrapRevokeEnv = bootstrapEnv/);
   assert.match(wizard, /printAscBootstrapAdminRevokeNotice\(ascBootstrapRevokeEnv\)/);

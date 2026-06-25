@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-package="${ANALYTICSCLI_CLI_PACKAGE:-@analyticscli/cli@preview}"
+package="${ANALYTICSCLI_CLI_PACKAGE:-@analyticscli/cli}"
 home_dir="${HOME:-$(pwd)}"
 user_prefix="${ANALYTICSCLI_NPM_PREFIX:-${home_dir}/.local}"
 

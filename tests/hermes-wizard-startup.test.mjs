@@ -9,7 +9,7 @@ test('Hermes startup instructions tell chat agents to hand off a full wizard com
   const skill = readFileSync(join(skillRoot, 'SKILL.md'), 'utf8');
 
   assert.match(skill, /## Hermes Startup Override/);
-  assert.match(skill, /npx -y @analyticscli\/growth-engineer@preview wizard --connectors/);
+  assert.match(skill, /npx -y @analyticscli\/growth-engineer wizard --connectors/);
   assert.match(skill, /Do not satisfy those messages by only installing `analyticscli`/);
   assert.match(skill, /do not start the interactive wizard process yourself/i);
   assert.match(skill, /Post-Install Reply Contract/);
@@ -26,6 +26,6 @@ test('runtime auth remediation does not route AnalyticsCLI setup to standalone l
   for (const file of runtimeFiles) {
     const source = readFileSync(join(skillRoot, file), 'utf8');
     assert.doesNotMatch(source, /analyticscli login/);
-    assert.match(source, /npx -y @analyticscli\/growth-engineer@preview wizard --connectors analytics/);
+    assert.match(source, /npx -y @analyticscli\/growth-engineer wizard --connectors analytics/);
   }
 });

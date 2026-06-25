@@ -19,7 +19,7 @@ test('installer falls back to user-local prefix, updates profiles, and verifies 
     `#!/usr/bin/env bash
 set -euo pipefail
 
-if [[ "$*" == "install -g @analyticscli/cli@preview" ]]; then
+if [[ "$*" == "install -g @analyticscli/cli" ]]; then
   echo "EACCES: permission denied, mkdir '/usr/local/lib/node_modules'" >&2
   exit 243
 fi

@@ -27,7 +27,7 @@ hermes skills install Wotaso/openclaw-growth-engineer-skill
 1. Paste this into the VPS, Mac mini, or host shell for the active app workspace:
 
 ```bash
-npx -y @analyticscli/growth-engineer@preview wizard --connectors
+npx -y @analyticscli/growth-engineer wizard --connectors
 ```
 
 Secrets stay in the VPS/host shell wizard. Do not use chat or a standalone `analyticscli login` step for first setup.
@@ -41,7 +41,7 @@ growth-engineer setup --config openclaw.config.json
 This should:
 
 - initialize `openclaw.config.json`
-- install/update `@analyticscli/cli@preview` so the `analyticscli` binary exists
+- install/update `@analyticscli/cli` so the `analyticscli` binary exists
 - reuse the existing AnalyticsCLI setup flow
 - install/update the shared skills like `analyticscli-cli` and `analyticscli-ts-sdk`
 - install the canonical OpenClaw skill path through the shared installer instead of redefining it locally
@@ -55,7 +55,7 @@ growth-engineer preflight --config openclaw.config.json --test-connections
 The preflight/start runtime also repairs a missing `analyticscli` binary by running:
 
 ```bash
-npm install -g @analyticscli/cli@preview
+npm install -g @analyticscli/cli
 ```
 
 If global npm installs are blocked, it falls back to a user-local npm prefix at `~/.local`.
