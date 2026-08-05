@@ -487,6 +487,14 @@ function normalizeSignals(payload, source, service = source) {
                     ? String(payload.project)
                     : null;
     const normalizeSourceUrl = (item) => String(item?.sourceUrl || item?.source_url || item?.issueUrl || item?.issue_url || item?.permalink || '').trim();
+    const normalizeOccurredAt = (item) => String(item?.occurredAt ||
+        item?.occurred_at ||
+        item?.lastSeenAt ||
+        item?.last_seen_at ||
+        item?.lastSeen ||
+        item?.latestEventAt ||
+        item?.latest_event_at ||
+        '').trim() || null;
     if (Array.isArray(payload.signals)) {
         for (const signal of payload.signals) {
             const sourceUrl = normalizeSourceUrl(signal);
@@ -507,6 +515,7 @@ function normalizeSignals(payload, source, service = source) {
                 releaseVersions: toStringArray(signal.releaseVersions || signal.release_versions),
                 app: normalizeApp(signal),
                 sourceUrl: sourceUrl || null,
+                occurredAt: normalizeOccurredAt(signal),
             });
         }
     }
@@ -536,6 +545,7 @@ function normalizeSignals(payload, source, service = source) {
                 releaseVersions: toStringArray(issue.releaseVersions || issue.release_versions),
                 app: normalizeApp(issue),
                 sourceUrl: sourceUrl || null,
+                occurredAt: normalizeOccurredAt(issue),
             });
         }
     }
@@ -898,6 +908,7 @@ function buildIssueDraft(signal, matchedFiles, titlePrefix, activeCadences = [])
         focus: signal.focus || null,
         data_mode: signal.dataMode || null,
         source_url: signal.sourceUrl || null,
+        occurred_at: signal.occurredAt || null,
         cadences: activeCadences.map((cadence) => cadence.key),
     };
 }

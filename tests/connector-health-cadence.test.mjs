@@ -225,12 +225,14 @@ test('social notifications render structured channel payloads without raw host d
         status: 'Partial',
         summary: notificationUx.humanizeConnectorDiagnostic(rawDiagnostic),
         action: 'Check the source credentials in the host terminal.',
+        occurredAt: '2026-08-04T22:00:20.000Z',
       },
     ],
     nextStep: 'Review the affected source.',
     automation: 'Growth Engineer retries automatically.',
     generatedAt: '2026-07-23T10:00:00.000Z',
     fingerprint: 'fixture',
+    timeZone: 'Europe/Berlin',
   };
 
   const markdown = notificationUx.renderSocialNotificationMarkdown(notification);
@@ -241,6 +243,9 @@ test('social notifications render structured channel payloads without raw host d
   assert.match(markdown, /\*\*Impact:\*\*/);
   assert.match(markdown, /\*\*Next:\*\*/);
   assert.match(markdown, /\*\*Automation:\*\*/);
+  assert.match(markdown, /Last seen: 05\/08\/2026, 00:00:20 CEST/);
+  assert.match(JSON.stringify(discord), /Last seen/);
+  assert.match(JSON.stringify(slack), /Last seen/);
   assert.equal(discord.embeds.length, 1);
   assert.ok(discord.embeds[0].fields.length >= 1);
   assert.ok(slack.blocks.length >= 2);
@@ -365,19 +370,22 @@ test('due growth cadences still run and log, but suppress social delivery when f
   assert.match(runner, /lastGrowthRunNotifications: growthRunNotificationDeliveries/);
 });
 
-test('short operational findings are deduped per issue per day unless events spike', () => {
+test('short operational findings stay deduped across days unless events spike', () => {
   const runner = readFileSync(join(skillRoot, 'scripts/openclaw-growth-runner.mjs'), 'utf8');
 
   assert.match(runner, /DEFAULT_DAILY_ISSUE_EVENT_GROWTH_MULTIPLIER = 2/);
   assert.match(runner, /DEFAULT_DAILY_ISSUE_EVENT_GROWTH_MIN_DELTA = 10/);
+  assert.match(runner, /DEFAULT_DAILY_ISSUE_HISTORY_RETENTION_DAYS = 365/);
   assert.match(runner, /function applyDailyIssueDedupe/);
   assert.match(runner, /function buildDailyIssueKey/);
   assert.match(runner, /function issueEventCount/);
   assert.match(runner, /isDrasticDailyIssueEventGrowth/);
+  assert.match(runner, /function pruneDailyIssueHistory/);
+  assert.doesNotMatch(runner, /dailyIssueReports\?\.date === date/);
   assert.match(runner, /skippedReason: 'daily_issue_dedupe'/);
   assert.match(runner, /externalGrowthNotification: 'suppressed_daily_issue_dedupe'/);
   assert.match(runner, /suppressed_issue_count/);
-  assert.match(runner, /previously reported \$\{suppressedIssueCount === 1 \? 'finding was' : 'findings were'\} suppressed today/);
+  assert.match(runner, /previously reported \$\{suppressedIssueCount === 1 \? 'finding was' : 'findings were'\} omitted/);
   assert.doesNotMatch(runner, /dailyIssueDedupe\.suppressedCount === 0/);
 });
 
@@ -570,6 +578,8 @@ test('Sentry exporter retries retryable API failures before surfacing the error'
   assert.match(exporter, /environment=\$\{account\.environment\}/);
   assert.match(exporter, /withAccountTargetError\(error, account, 'Sentry issue fetch'\)/);
   assert.match(exporter, /withAccountTargetError\(error, account, 'Sentry project discovery'\)/);
+  assert.match(exporter, /function buildRecentIssueQuery/);
+  assert.match(exporter, /`lastSeen:-\$\{normalizedLast\}`/);
 });
 
 test('Sentry exporter keeps transient provider failures out of connector-health alerts', () => {

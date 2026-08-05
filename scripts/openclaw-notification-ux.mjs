@@ -212,11 +212,26 @@ export const humanizeConnectorDiagnostic = (value) => {
         .replace(/\{["'][\s\S]*$/g, '')
         .replace(/\s*[-–—]\s*$/g, ''), MAX_ITEM_SUMMARY_LENGTH) || 'Needs attention.';
 };
-const formatTimestamp = (value) => {
+const formatTimestamp = (value, timeZone = 'UTC') => {
     const parsed = Date.parse(value);
     if (!Number.isFinite(parsed))
         return normalizeWhitespace(value);
-    return new Date(parsed).toISOString().replace('T', ' ').replace('.000Z', ' UTC');
+    try {
+        return new Intl.DateTimeFormat('en-GB', {
+            timeZone,
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+            timeZoneName: 'short',
+            hourCycle: 'h23',
+        }).format(new Date(parsed));
+    }
+    catch {
+        return new Date(parsed).toISOString().replace('T', ' ').replace('.000Z', ' UTC');
+    }
 };
 const notificationHeader = (notification) => `${SEVERITY_ICONS[notification.severity]} **${truncate(notification.title, 180)}**`;
 const socialNotificationPhase = (notification) => ['new', 'changed', 'ongoing'].includes(String(notification.state || ''))
@@ -257,6 +272,9 @@ export const renderSocialNotificationMarkdown = (notification) => {
         const itemUrl = safeHttpUrl(item.url);
         const link = itemUrl ? ` · [Open](${itemUrl})` : '';
         lines.push('', `**${label}${status}**${link}`, truncate(item.summary, MAX_ITEM_SUMMARY_LENGTH));
+        if (item.occurredAt) {
+            lines.push(`Last seen: ${formatTimestamp(item.occurredAt, notification.timeZone)}`);
+        }
         const action = humanizeRecommendedAction(item.action);
         if (action)
             lines.push(`Next: ${truncate(action, MAX_ITEM_SUMMARY_LENGTH)}`);
@@ -289,7 +307,10 @@ export const buildDiscordSocialPayload = (notification) => {
         const action = recommendedAction
             ? `\n**Next:** ${recommendedAction}`
             : '';
-        return discordField(item.label, `${status}${item.summary}${action}${link}`);
+        const occurredAt = item.occurredAt
+            ? `\n**Last seen:** ${formatTimestamp(item.occurredAt, notification.timeZone)}`
+            : '';
+        return discordField(item.label, `${status}${item.summary}${occurredAt}${action}${link}`);
     });
     if (notification.impact) {
         fields.unshift(discordField('Impact', notification.impact));
@@ -371,12 +392,15 @@ export const buildSlackSocialPayload = (notification) => {
         const action = recommendedAction
             ? `\n*Next:* ${boundedSlackText(recommendedAction, MAX_RECOMMENDED_ACTION_LENGTH)}`
             : '';
+        const occurredAt = item.occurredAt
+            ? `\n*Last seen:* ${boundedSlackText(formatTimestamp(item.occurredAt, notification.timeZone), 160)}`
+            : '';
         blocks.push({
             type: 'section',
             text: {
                 type: 'mrkdwn',
                 text: truncateRendered(`*${boundedSlackText(item.label, 256)}${status}*${url}\n` +
-                    `${boundedSlackText(item.summary, MAX_ITEM_SUMMARY_LENGTH)}${action}`, MAX_SLACK_SECTION_LENGTH),
+                    `${boundedSlackText(item.summary, MAX_ITEM_SUMMARY_LENGTH)}${occurredAt}${action}`, MAX_SLACK_SECTION_LENGTH),
             },
         });
     }
@@ -429,6 +453,7 @@ export const socialNotificationSummary = (notification) => ({
             ? truncate(humanizeRecommendedAction(item.action), 1_000)
             : undefined,
         url: safeHttpUrl(item.url),
+        occurredAt: item.occurredAt,
     })),
     nextStep: notification.nextStep
         ? truncate(humanizeRecommendedAction(notification.nextStep), 1_000)
@@ -443,4 +468,5 @@ export const socialNotificationSummary = (notification) => ({
         ? truncate(notification.fingerprint, 256)
         : undefined,
     scopeHash: socialNotificationScopeHash(notification),
+    timeZone: notification.timeZone,
 });

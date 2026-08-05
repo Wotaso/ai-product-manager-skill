@@ -34,6 +34,7 @@ const DEFAULT_SCHEDULER_PROOF_PATH = 'data/openclaw-growth-engineer/runtime/sche
 const DEFAULT_CONNECTOR_HEALTH_INTERVAL_MINUTES = 360;
 const DEFAULT_DAILY_ISSUE_EVENT_GROWTH_MULTIPLIER = 2;
 const DEFAULT_DAILY_ISSUE_EVENT_GROWTH_MIN_DELTA = 10;
+const DEFAULT_DAILY_ISSUE_HISTORY_RETENTION_DAYS = 365;
 const DEFAULT_DAILY_RUNNER_FAILURE_RETENTION_DAYS = 14;
 const SELF_UPDATE_INTERVAL_MS = 24 * 60 * 60 * 1000;
 const SELF_UPDATE_SKILL_SLUG_CANDIDATES = ['growth-engineer', 'openclaw-growth-engineer'];
@@ -2762,6 +2763,35 @@ function formatIssueSummaryLine(issue, maxTitleLength = 92) {
   return url ? `${title} (${url})` : title;
 }
 
+function issueOccurredAt(issue) {
+  const directCandidates = [
+    issue?.occurredAt,
+    issue?.occurred_at,
+    issue?.lastSeenAt,
+    issue?.last_seen_at,
+    issue?.lastSeen,
+    issue?.latestEventAt,
+    issue?.latest_event_at,
+    issue?.timestamp,
+  ];
+  for (const candidate of directCandidates) {
+    const value = String(candidate || '').trim();
+    if (value && Number.isFinite(Date.parse(value))) return new Date(value).toISOString();
+  }
+  const text = [
+    ...(Array.isArray(issue?.evidence) ? issue.evidence : []),
+    issue?.body,
+  ]
+    .filter(Boolean)
+    .join('\n');
+  const timestampMatch = text.match(
+    /(?:Last seen|Latest sampled event|Latest event|Occurred at):\s*([^\n]+)/i,
+  );
+  if (!timestampMatch?.[1]) return null;
+  const value = timestampMatch[1].replace(/^[`'"\s]+|[`'"\s]+$/g, '');
+  return Number.isFinite(Date.parse(value)) ? new Date(value).toISOString() : null;
+}
+
 function groupIssuesByProject(issues, maxIssues = 4) {
   const grouped = new Map();
   for (const issue of issues.slice(0, maxIssues)) {
@@ -2777,6 +2807,7 @@ function getDailyIssueDedupeConfig(config) {
   const raw = config?.schedule?.dailyIssueDedupe || config?.notifications?.growthRun?.dailyIssueDedupe || {};
   const multiplier = Number(raw.eventGrowthMultiplier ?? raw.multiplier);
   const minDelta = Number(raw.eventGrowthMinDelta ?? raw.minDelta);
+  const historyRetentionDays = Number(raw.historyRetentionDays ?? raw.retentionDays);
   return {
     enabled: raw.enabled !== false,
     eventGrowthMultiplier:
@@ -2787,6 +2818,10 @@ function getDailyIssueDedupeConfig(config) {
       Number.isFinite(minDelta) && minDelta > 0
         ? minDelta
         : DEFAULT_DAILY_ISSUE_EVENT_GROWTH_MIN_DELTA,
+    historyRetentionDays:
+      Number.isFinite(historyRetentionDays) && historyRetentionDays > 0
+        ? historyRetentionDays
+        : DEFAULT_DAILY_ISSUE_HISTORY_RETENTION_DAYS,
   };
 }
 
@@ -3129,6 +3164,22 @@ function isDrasticDailyIssueEventGrowth(currentEvents, previousEntry, dedupeConf
   return currentEvents >= requiredEvents;
 }
 
+function pruneDailyIssueHistory(
+  issues: Record<string, any>,
+  now: Date,
+  retentionDays: number,
+): Record<string, any> {
+  const cutoffMs = now.getTime() - retentionDays * 24 * 60 * 60 * 1000;
+  return Object.fromEntries(
+    Object.entries(issues || {}).filter(([, entry]: any) => {
+      const lastSeenMs = Date.parse(
+        String(entry?.lastSeenAt || entry?.lastReportedAt || ''),
+      );
+      return !Number.isFinite(lastSeenMs) || lastSeenMs >= cutoffMs;
+    }),
+  );
+}
+
 function applyDailyIssueDedupe(issuesPayload, state, config, activeCadences, now = new Date()) {
   const issues = Array.isArray(issuesPayload?.issues) ? issuesPayload.issues : [];
   const dedupeConfig = getDailyIssueDedupeConfig(config);
@@ -3145,10 +3196,14 @@ function applyDailyIssueDedupe(issuesPayload, state, config, activeCadences, now
   const timeZone = resolveDailyIssueDedupeTimeZone(config);
   const date = formatDateInTimeZone(now, timeZone);
   const nowIso = now.toISOString();
-  const previousState = state?.dailyIssueReports?.date === date ? state.dailyIssueReports : null;
-  const previousIssues = previousState?.issues && typeof previousState.issues === 'object'
-    ? previousState.issues
-    : {};
+  const previousState = state?.dailyIssueReports || null;
+  const previousIssues = pruneDailyIssueHistory(
+    previousState?.issues && typeof previousState.issues === 'object'
+      ? previousState.issues
+      : {},
+    now,
+    dedupeConfig.historyRetentionDays,
+  );
   const nextIssues = { ...previousIssues };
   const reportableIssues = [];
   let suppressedCount = 0;
@@ -3168,6 +3223,7 @@ function applyDailyIssueDedupe(issuesPayload, state, config, activeCadences, now
       sourceUrl: issueSourceUrl(issue) || previousEntry?.sourceUrl || null,
       lastSeenAt: nowIso,
       lastSeenEvents: events ?? previousEntry?.lastSeenEvents ?? null,
+      occurredAt: issueOccurredAt(issue) || previousEntry?.occurredAt || null,
     };
 
     if (shouldReport) {
@@ -3197,6 +3253,7 @@ function applyDailyIssueDedupe(issuesPayload, state, config, activeCadences, now
         reportedCount: reportableIssues.length,
         eventGrowthMultiplier: dedupeConfig.eventGrowthMultiplier,
         eventGrowthMinDelta: dedupeConfig.eventGrowthMinDelta,
+        historyRetentionDays: dedupeConfig.historyRetentionDays,
       },
     },
     dailyIssueReports: {
@@ -3463,6 +3520,7 @@ function buildGrowthSocialNotification({
   createdGitHubArtifact,
   charts = [],
   scope = '',
+  timeZone = 'UTC',
 }): SocialNotification {
   const issues = Array.isArray(issuesPayload?.issues) ? issuesPayload.issues : [];
   const issueCount = Number(issuesPayload?.issue_count || 0);
@@ -3499,6 +3557,7 @@ function buildGrowthSocialNotification({
       summary: String(issue?.title || 'Untitled finding').trim(),
       action: issueNotificationAction(issue),
       url: issueSourceUrl(issue) || undefined,
+      occurredAt: issueOccurredAt(issue) || undefined,
     })),
     nextStep:
       issueCount > 0
@@ -3523,12 +3582,13 @@ function buildGrowthSocialNotification({
     ...(suppressedIssueCount > 0
       ? {
           nextRetryAt: undefined,
-          summary: `${summary ? `${summary} ` : ''}${suppressedIssueCount} previously reported ${suppressedIssueCount === 1 ? 'finding was' : 'findings were'} suppressed today.`.trim(),
+          summary: `${summary ? `${summary} ` : ''}${suppressedIssueCount} previously reported ${suppressedIssueCount === 1 ? 'finding was' : 'findings were'} omitted.`.trim(),
         }
       : {}),
     generatedAt: new Date().toISOString(),
     fingerprint: String(fingerprint || '') || undefined,
     scope: String(scope || '') || undefined,
+    timeZone: String(timeZone || 'UTC'),
   };
 }
 
@@ -3570,7 +3630,7 @@ function buildDiscordGrowthRunPayload(message, issuesPayload, activeCadences, so
   }
   const suppressedIssueCount = Number(issuesPayload?.suppressed_issue_count || 0);
   if (suppressedIssueCount > 0) {
-    fields.push(discordField('Suppressed today', `${suppressedIssueCount} previously reported finding(s).`, true));
+    fields.push(discordField('Omitted', `${suppressedIssueCount} previously reported finding(s).`, true));
   }
   if (charts.length > 0) {
     fields.push(discordField('Charts', String(charts.length), true));
@@ -3879,6 +3939,7 @@ async function deliverGrowthRunSummary({
     createdGitHubArtifact,
     charts,
     scope: notificationScope(config, configPath),
+    timeZone: resolveDailyIssueDedupeTimeZone(config),
   });
   const message = renderSocialNotificationMarkdown(notification);
   const results = [];
